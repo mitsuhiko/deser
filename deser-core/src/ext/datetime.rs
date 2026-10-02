@@ -3,7 +3,7 @@ use alloc::string::ToString;
 use core::fmt;
 use core::str::FromStr;
 
-use crate::error::Error;
+use crate::error::{Error, ErrorKind};
 use crate::event::Atom;
 use crate::ext::Extension;
 use crate::ext::known::{WellKnown, floor, impl_well_known, invalid, out_of_range, round};
@@ -187,7 +187,10 @@ impl Datetime {
 
     /// Creates an error for a date-time of the wrong kind.
     pub(crate) fn unexpected_kind(&self, expected: &str) -> Error {
-        invalid(format!("unexpected {}, expected {}", self.kind(), expected))
+        Error::new(
+            ErrorKind::InvalidType,
+            format!("unexpected {}, expected {}", self.kind(), expected),
+        )
     }
 
     /// Returns the date if this is a local date.

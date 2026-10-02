@@ -119,7 +119,7 @@ fn test_f32_fallback() {
     let err = driver.emit(Event::Atom(Atom::Bool(true))).unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: unexpected bool, expected F64Only"
+        "InvalidType: unexpected bool, expected F64Only"
     );
 
     // integers do not accept floats of either precision
@@ -128,7 +128,7 @@ fn test_f32_fallback() {
     let err = driver.emit(Event::Atom(Atom::F32(1.0))).unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: unexpected float, expected u32"
+        "InvalidType: unexpected float, expected u32"
     );
 }
 

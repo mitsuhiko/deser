@@ -202,7 +202,7 @@ async fn test_feeding_read_is_cancellation_safe() {
     let err = reader.read::<u32>().await.unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: a value of another type is being read"
+        "InvalidState: a value of another type is being read"
     );
     client.write_all(b"sage 1\"}\n").await.unwrap();
     assert_eq!(reader.read::<Message>().await.unwrap(), Some(message(1)));

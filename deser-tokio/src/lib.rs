@@ -194,7 +194,7 @@ impl<R: AsyncRead + Unpin, D: StreamDeserializer> Reader<R, D> {
                 Err(pending) => {
                     self.pending = Some(pending);
                     return Poll::Ready(Err(Error::new(
-                        ErrorKind::Unexpected,
+                        ErrorKind::InvalidState,
                         "a value of another type is being read",
                     )));
                 }
@@ -275,7 +275,7 @@ impl<R: AsyncRead + Unpin, D: StreamDeserializer> Reader<R, D> {
                 Err(pending) => {
                     self.pending = Some(pending);
                     return Poll::Ready(Err(Error::new(
-                        ErrorKind::Unexpected,
+                        ErrorKind::InvalidState,
                         "a value of another type is being read",
                     )));
                 }
@@ -571,7 +571,7 @@ impl<W: AsyncWrite + Unpin, S: StreamSerializer> Writer<W, S> {
     {
         if self.writing || self.serializer.in_progress() {
             return Err(Error::new(
-                ErrorKind::Unexpected,
+                ErrorKind::InvalidState,
                 "a value was only partially written, the stream cannot continue",
             ));
         }

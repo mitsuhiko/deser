@@ -478,7 +478,7 @@ where
                         Ok(())
                     }
                     None => Err(Error::new(
-                        ErrorKind::Unexpected,
+                        ErrorKind::InvalidType,
                         format!("unexpected bytes, expected {}", self.expecting()),
                     )),
                 },
@@ -1695,7 +1695,7 @@ impl<'de, T: Send, A: Deserialize<'de, T>, const N: usize> Deserialize<'de, [T; 
                             "byte array of wrong length",
                         )),
                         None => Err(Error::new(
-                            ErrorKind::Unexpected,
+                            ErrorKind::InvalidType,
                             format!("unexpected bytes, expected {}", self.expecting()),
                         )),
                     },
@@ -2067,7 +2067,7 @@ where
 #[cold]
 fn expected_borrowed(what: &str) -> Error {
     Error::new(
-        ErrorKind::Unexpected,
+        ErrorKind::UnsupportedType,
         format!(
             "unexpected owned {what}, expected a borrowed {what} (the data format \
              or the type buffering the value does not support borrowing)"
@@ -2112,7 +2112,7 @@ impl<'de: 'a, 'a> Deserialize<'de> for &'a [u8] {
         match atom {
             Atom::Bytes(_) => Err(expected_borrowed("bytes")),
             Atom::Str(_) => Err(Error::new(
-                ErrorKind::Unexpected,
+                ErrorKind::UnsupportedType,
                 "unexpected string, expected borrowed bytes (bytes cannot be borrowed \
                  from strings, use Vec<u8> or Cow<[u8]> instead)",
             )),

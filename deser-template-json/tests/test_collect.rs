@@ -53,11 +53,11 @@ fn test_collect_errors() {
     assert_eq!(
         errors(rv),
         expected_errors(&[
-            "Unexpected: unexpected unsigned integer, expected string at line 2 column 12",
-            "Unexpected: unexpected string, expected u16 at line 2 column 23",
-            "Unexpected: unexpected unsigned integer, expected string at line 2 column 42",
-            "Unexpected: unexpected unsigned integer, expected string at line 2 column 50",
-            "Unexpected: unknown field `extra`, expected one of `host`, `port`, `tags`, `backup` at line 3 column 17",
+            "InvalidType: unexpected unsigned integer, expected string at line 2 column 12",
+            "InvalidType: unexpected string, expected u16 at line 2 column 23",
+            "InvalidType: unexpected unsigned integer, expected string at line 2 column 42",
+            "InvalidType: unexpected unsigned integer, expected string at line 2 column 50",
+            "UnknownField: unknown field `extra`, expected one of `host`, `port`, `tags`, `backup` at line 3 column 17",
             "MissingField: missing field `host` at line 4 column 14",
             "MissingField: missing field `port` at line 4 column 14",
             "OutOfRange: invalid value -1, expected u16 at line 5 column 60",
@@ -71,12 +71,12 @@ fn test_collect_errors_display() {
     assert_eq!(err.errors().count(), 2);
     assert_eq!(
         err.to_string(),
-        "Unexpected: unexpected string, expected u32 at line 1 column 5 (and 1 more error)"
+        "InvalidType: unexpected string, expected u32 at line 1 column 5 (and 1 more error)"
     );
     assert_eq!(
         format!("{:#}", err),
-        "Unexpected: unexpected string, expected u32 at line 1 column 5\n\
-         Unexpected: unexpected string, expected u32 at line 1 column 13"
+        "InvalidType: unexpected string, expected u32 at line 1 column 5\n\
+         InvalidType: unexpected string, expected u32 at line 1 column 13"
     );
 }
 
@@ -101,8 +101,8 @@ fn test_collect_maps_and_sets() {
     assert_eq!(
         errors(rv),
         [
-            "Unexpected: unexpected string, expected u32 at line 1 column 11",
-            "Unexpected: unexpected unsigned integer, expected BTreeSet at line 1 column 22",
+            "InvalidType: unexpected string, expected u32 at line 1 column 11",
+            "InvalidType: unexpected unsigned integer, expected BTreeSet at line 1 column 22",
         ]
     );
 }
@@ -114,8 +114,8 @@ fn test_collect_duplicate_keys_of_the_last_entry() {
     assert_eq!(
         errors(rv),
         [
-            "Unexpected: unexpected string, expected u32 at line 1 column 15",
-            "Unexpected: duplicate key in map at line 1 column 26",
+            "InvalidType: unexpected string, expected u32 at line 1 column 15",
+            "DuplicateKey: duplicate key in map at line 1 column 26",
         ]
     );
 }
@@ -134,8 +134,8 @@ fn test_collect_duplicate_fields() {
     assert_eq!(
         errors(collect::<Server>(input)),
         [
-            "Unexpected: duplicate field `host` at line 1 column 23",
-            "Unexpected: duplicate field `port` at line 1 column 47",
+            "DuplicateKey: duplicate field `host` at line 1 column 23",
+            "DuplicateKey: duplicate field `port` at line 1 column 47",
         ]
     );
 }
@@ -152,9 +152,9 @@ fn test_max_errors() {
     assert_eq!(
         errors(rv),
         [
-            "Unexpected: unexpected string, expected u32 at line 1 column 3",
-            "Unexpected: unexpected string, expected u32 at line 1 column 8",
-            "Unexpected: unexpected string, expected u32 at line 1 column 15",
+            "InvalidType: unexpected string, expected u32 at line 1 column 3",
+            "InvalidType: unexpected string, expected u32 at line 1 column 8",
+            "InvalidType: unexpected string, expected u32 at line 1 column 15",
         ]
     );
 }
@@ -174,8 +174,8 @@ fn test_collect_untagged() {
     assert_eq!(
         errors(rv),
         [
-            "Unexpected: data did not match any variant of Value at line 1 column 40",
-            "Unexpected: data did not match any variant of Value at line 1 column 43",
+            "UnknownVariant: data did not match any variant of Value at line 1 column 40",
+            "UnknownVariant: data did not match any variant of Value at line 1 column 43",
         ]
     );
     let values = collect::<Vec<Value>>(r#"[1, {"x": 1, "y": 2}]"#).unwrap();
@@ -200,10 +200,10 @@ fn test_collect_tagged() {
     assert_eq!(
         errors(rv),
         [
-            "Unexpected: unexpected string, expected u32 at line 1 column 13",
-            "Unexpected: unexpected string, expected u32 at line 1 column 63",
+            "InvalidType: unexpected string, expected u32 at line 1 column 13",
+            "InvalidType: unexpected string, expected u32 at line 1 column 63",
             "MissingField: missing field `height` at line 1 column 66",
-            "Unexpected: unknown variant `x` of Shape, expected `circle` or `rect` at line 1 column 81",
+            "UnknownVariant: unknown variant `x` of Shape, expected `circle` or `rect` at line 1 column 81",
         ]
     );
 }
@@ -234,7 +234,7 @@ fn test_collect_flatten() {
         assert_eq!(
             errors(rv),
             [
-                "Unexpected: unexpected string, expected u32 at line 1 column 7",
+                "InvalidType: unexpected string, expected u32 at line 1 column 7",
                 "MissingField: missing field `b` at line 1 column 46",
             ]
         );
@@ -243,10 +243,10 @@ fn test_collect_flatten() {
     assert_eq!(
         errors(rv),
         [
-            "Unexpected: unexpected unsigned integer, expected string at line 1 column 20",
-            "Unexpected: unexpected string, expected u32 at line 1 column 7",
+            "InvalidType: unexpected unsigned integer, expected string at line 1 column 20",
+            "InvalidType: unexpected string, expected u32 at line 1 column 7",
             "MissingField: missing field `b` at line 1 column 46",
-            "Unexpected: unexpected string, expected u32 at line 1 column 32",
+            "InvalidType: unexpected string, expected u32 at line 1 column 32",
         ]
     );
 }
@@ -268,8 +268,8 @@ fn test_collect_separated() {
     assert_eq!(
         errors(rv),
         [
-            r#"Unexpected: invalid value "x", expected u16 at line 1 column 11"#,
-            r#"Unexpected: invalid value "y", expected u16 at line 1 column 11"#,
+            r#"InvalidValue: invalid value "x", expected u16 at line 1 column 11"#,
+            r#"InvalidValue: invalid value "y", expected u16 at line 1 column 11"#,
         ]
     );
     let config = collect::<Config>(r#"{"ports": "80, 443"}"#).unwrap();

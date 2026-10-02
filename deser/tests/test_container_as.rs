@@ -99,7 +99,7 @@ fn test_struct() {
         vec!["jane@example.com".into()],
     );
     let err = deserialize::<Email>(vec!["jane".into()]).unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Unexpected);
+    assert_eq!(err.kind(), ErrorKind::InvalidValue);
     assert!(err.to_string().contains("missing @"), "{}", err);
 }
 
@@ -697,7 +697,7 @@ fn test_flatten() {
     let err = serialize_drive(&value).unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: only structs and maps can be flattened"
+        "UnsupportedType: only structs and maps can be flattened"
     );
     let err = deserialize::<Flattened>(vec![
         Event::map_start(),
@@ -710,7 +710,7 @@ fn test_flatten() {
     .unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: failed to deserialize flattened field `marker`"
+        "InvalidState: failed to deserialize flattened field `marker`"
     );
 }
 
@@ -781,7 +781,7 @@ fn test_enums_with_adapted_content() {
         Event::MapEnd,
     ])
     .unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Unexpected);
+    assert_eq!(err.kind(), ErrorKind::UnknownVariant);
     assert_eq!(
         deserialize::<Bound>(vec!["x".into()]).unwrap(),
         Bound::Name("x".into())

@@ -64,12 +64,12 @@ fn test_bytes_lenient() {
     let err = from_str::<Vec<u8>>(r#"[1, "A"]"#).unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: unexpected string, expected u8 at line 1 column 5"
+        "InvalidType: unexpected string, expected u8 at line 1 column 5"
     );
     let err = from_str::<Vec<u8>>(r#""A""#).unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: invalid base64 string at line 1 column 1"
+        "InvalidValue: invalid base64 string at line 1 column 1"
     );
     let err = from_str::<[u8; 4]>(r#""AAH/""#).unwrap_err();
     assert_eq!(

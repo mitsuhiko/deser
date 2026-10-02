@@ -153,7 +153,7 @@ fn test_errors() {
     .unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: unknown variant `triangle` of Shape, expected one of `circle`, `rect`, `empty`, `polygon`"
+        "UnknownVariant: unknown variant `triangle` of Shape, expected one of `circle`, `rect`, `empty`, `polygon`"
     );
 
     let err = deserialize::<Shape>(vec![
@@ -166,7 +166,7 @@ fn test_errors() {
     assert_eq!(err.to_string(), "MissingField: missing field `radius`");
 
     let err = deserialize::<Shape>(vec!["circle".into()]).unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Unexpected);
+    assert_eq!(err.kind(), ErrorKind::InvalidType);
 
     // errors in buffered values are reported when they are replayed
     let err = deserialize::<Shape>(vec![
@@ -178,7 +178,7 @@ fn test_errors() {
         Event::MapEnd,
     ])
     .unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Unexpected);
+    assert_eq!(err.kind(), ErrorKind::InvalidType);
 }
 
 #[test]

@@ -417,14 +417,14 @@ fn test_locations() {
         .unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: invalid value: must not be empty at line 1 column 22 (path: hosts)"
+        "InvalidValue: invalid value: must not be empty at line 1 column 22 (path: hosts)"
     );
     let err = deser_json::Deserializer::from_str(r#"{"port": 1, "range": {"min": 3, "max": 2}}"#)
         .deserialize_with::<Server, _>(|driver| driver.push_layer(deser_path::PathLayer::new()))
         .unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: invalid value: min 3 is larger than max 2 at line 1 column 22 (path: range)"
+        "InvalidValue: invalid value: min 3 is larger than max 2 at line 1 column 22 (path: range)"
     );
 }
 

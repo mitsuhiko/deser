@@ -114,7 +114,7 @@ fn test_external_tag_only() {
     );
     // the tag field only accepts strings
     let err = deserialize::<ExternalTag>(vec![42u64.into()]).unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Unexpected);
+    assert_eq!(err.kind(), ErrorKind::InvalidType);
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -194,7 +194,7 @@ fn test_external_capture() {
         Event::MapEnd,
     ])
     .unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Unexpected);
+    assert_eq!(err.kind(), ErrorKind::InvalidType);
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -425,7 +425,7 @@ fn test_default_variant() {
     .unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: unknown variant `quic` of Bind, expected `http` or `tls`"
+        "UnknownVariant: unknown variant `quic` of Bind, expected `http` or `tls`"
     );
 
     assert_eq!(

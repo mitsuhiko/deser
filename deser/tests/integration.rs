@@ -12,6 +12,7 @@ mod test_de_derive;
 mod test_derive_unscoped;
 mod test_duplicates;
 mod test_enums;
+mod test_errors;
 mod test_event_data;
 mod test_expecting;
 mod test_ext;

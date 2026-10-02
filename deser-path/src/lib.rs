@@ -28,7 +28,7 @@
 //! assert_eq!(path.segments()[0], PathSegment::Index(0));
 //! assert_eq!(
 //!     err.to_string(),
-//!     "Unexpected: unexpected string, expected u16 at line 1 column 24 \
+//!     "InvalidType: unexpected string, expected u16 at line 1 column 24 \
 //!      (path: [0].port)"
 //! );
 //! ```

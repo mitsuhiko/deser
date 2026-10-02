@@ -355,7 +355,7 @@ impl<'a> Deserializer<'a> {
         if self.is_end() {
             return Ok(());
         }
-        Err(Error::new(ErrorKind::Unexpected, "garbage after input")
+        Err(Error::new(ErrorKind::Syntax, "garbage after input")
             .with_offset(self.next_token())
             .resolve_position(self.input))
     }
@@ -443,7 +443,7 @@ impl<'a> Deserializer<'a> {
     pub fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
         if self.failed {
             return Err(Error::new(
-                ErrorKind::Unexpected,
+                ErrorKind::InvalidState,
                 "cannot continue after an error",
             ));
         }
@@ -542,7 +542,7 @@ impl<'a> Deserializer<'a> {
         // an unterminated comment does not reach the end of the input
         self.skip_whitespace();
         if self.pos < self.input.len() {
-            return Err(Error::new(ErrorKind::Unexpected, msg));
+            return Err(Error::new(ErrorKind::Syntax, msg));
         }
         Ok(())
     }

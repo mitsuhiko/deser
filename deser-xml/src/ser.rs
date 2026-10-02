@@ -532,7 +532,7 @@ impl ser::StreamSerializer for Serializer {
             }
             if self.written {
                 return Err(Error::new(
-                    ErrorKind::Unexpected,
+                    ErrorKind::InvalidState,
                     "an XML document holds a single root element",
                 ));
             }
@@ -1081,7 +1081,7 @@ impl Writer {
             &mut element.late
         } else {
             return Err(Error::new(
-                ErrorKind::Unexpected,
+                ErrorKind::InvalidValue,
                 format!(
                     "attribute `{name}` comes after the start tag of the element was written \
                      (the fields the value described are not the keys it has)"
@@ -1429,7 +1429,7 @@ impl Writer {
     /// that was not passed on is final afterwards.
     fn finish(&mut self) -> Result<(), Error> {
         if !self.stack.is_empty() || self.depth > 0 {
-            return Err(Error::new(ErrorKind::Unexpected, "incomplete document"));
+            return Err(Error::new(ErrorKind::InvalidState, "incomplete document"));
         }
         self.declare_root()
     }

@@ -756,25 +756,25 @@ fn test_error_locations() {
         // `2 x]` is a string without quotes
         assert_eq!(
             fails::<Vec<u32>>("[1,\n 2 x]"),
-            "Unexpected: unexpected string, expected u32 at line 2 column 2"
+            "InvalidType: unexpected string, expected u32 at line 2 column 2"
         );
         assert_eq!(
             fails::<Vec<u32>>("  \n  [:]"),
-            "Unexpected: unexpected colon at line 2 column 4"
+            "Syntax: unexpected colon at line 2 column 4"
         );
     } else {
         assert_eq!(
             fails::<Vec<u32>>("[1,\n 2 x]"),
-            "Unexpected: expected a comma at line 2 column 4"
+            "Syntax: expected a comma at line 2 column 4"
         );
         assert_eq!(
             fails::<Vec<u32>>("  \n  @"),
-            "Unexpected: unexpected character at line 2 column 3"
+            "Syntax: unexpected character at line 2 column 3"
         );
     }
     assert_eq!(
         fails::<Vec<u32>>("[1, , 2]"),
-        "Unexpected: unexpected comma at line 1 column 5"
+        "Syntax: unexpected comma at line 1 column 5"
     );
     assert_eq!(
         fails::<Vec<u32>>("[1, 2"),
@@ -784,12 +784,12 @@ fn test_error_locations() {
     // errors of the values
     assert_eq!(
         fails::<Vec<u32>>("[1,\n  true]"),
-        "Unexpected: unexpected bool, expected u32 at line 2 column 3"
+        "InvalidType: unexpected bool, expected u32 at line 2 column 3"
     );
     // columns are counted in characters
     assert_eq!(
         fails::<Vec<(String, u32)>>("[[\"äöü\", \"x\"]]"),
-        "Unexpected: unexpected string, expected u32 at line 1 column 10"
+        "InvalidType: unexpected string, expected u32 at line 1 column 10"
     );
 
     #[derive(Deserialize, Debug)]
@@ -824,11 +824,11 @@ fn test_limits() {
     assert_eq!(parse(Limits::new().max_depth(3).max_len(5)), Ok(()));
     assert_eq!(
         parse(Limits::new().max_depth(2)),
-        Err("Unexpected: recursion limit exceeded at line 1 column 8".into())
+        Err("LimitExceeded: recursion limit exceeded at line 1 column 8".into())
     );
     assert_eq!(
         parse(Limits::new().max_len(4)),
-        Err("Unexpected: string or bytes too long at line 1 column 19".into())
+        Err("LimitExceeded: string or bytes too long at line 1 column 19".into())
     );
 }
 
@@ -971,4 +971,40 @@ fn test_error_messages() {
         "invalid escape in string"
     );
     assert_eq!(msg(from_str::<S>("{}").unwrap_err()), "missing field `x`");
+}
+
+#[test]
+fn test_error_categories() {
+    use deser::ErrorCategory;
+
+    #[derive(Deserialize, Debug)]
+    #[allow(dead_code)]
+    struct Item {
+        id: u16,
+        name: String,
+    }
+
+    // the input is not well-formed (HTTP 400 Bad Request)
+    let syntax = |input: &str| {
+        let err = from_str::<Vec<Item>>(input).unwrap_err();
+        assert_eq!(err.category(), ErrorCategory::Syntax, "{input}: {err}");
+    };
+    syntax(r#"[{"id": 1, "name": "a"}}"#);
+    syntax(r#"[{"id": 1, "name": "a"}] x"#);
+    syntax(r#"[{"id": 1, "name": "\u12"}]"#);
+    let err = from_str::<Vec<Item>>(r#"[{"id": 1, "name": "a""#).unwrap_err();
+    assert_eq!(err.category(), ErrorCategory::Eof, "{err}");
+    let err = from_str::<Vec<Item>>("").unwrap_err();
+    assert_eq!(err.category(), ErrorCategory::Eof, "{err}");
+
+    // the input is well-formed but does not fit (HTTP 422 Unprocessable
+    // Entity)
+    let data = |input: &str| {
+        let err = from_str::<Vec<Item>>(input).unwrap_err();
+        assert_eq!(err.category(), ErrorCategory::Data, "{input}: {err}");
+    };
+    data(r#"[{"id": "1", "name": "a"}]"#);
+    data(r#"[{"id": 70000, "name": "a"}]"#);
+    data(r#"[{"id": 1}]"#);
+    data(r#"{"id": 1, "name": "a"}"#);
 }

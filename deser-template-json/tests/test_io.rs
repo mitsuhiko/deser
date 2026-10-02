@@ -82,7 +82,7 @@ fn test_from_reader() {
     let err = dialect::from_reader::<Vec<u32>, _>(&b"[1, 2]\n [3]"[..]).unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: garbage after input at line 2 column 2"
+        "Syntax: garbage after input at line 2 column 2"
     );
     let err = dialect::from_reader::<Vec<u32>, _>(&b"  "[..]).unwrap_err();
     assert_eq!(err.kind(), ErrorKind::EndOfFile);
@@ -99,7 +99,7 @@ fn test_from_reader() {
     let err = STOP.from_reader::<u32, _>(input).unwrap_err();
     assert_eq!(
         err.to_string(),
-        format!("Unexpected: unexpected value after the end at {column}")
+        format!("Syntax: unexpected value after the end at {column}")
     );
 }
 
@@ -124,12 +124,12 @@ fn test_errors() {
             results,
             [
                 Ok(vec![1]),
-                Err("Unexpected: unexpected string, expected u32 at line 2 column 2".into()),
+                Err("InvalidType: unexpected string, expected u32 at line 2 column 2".into()),
                 Err(if DIALECT.hjson {
                     // `x]` is a string without quotes
-                    "Unexpected: unexpected string, expected u32 at line 3 column 7".into()
+                    "InvalidType: unexpected string, expected u32 at line 3 column 7".into()
                 } else {
-                    "Unexpected: unexpected character at line 3 column 7".into()
+                    "Syntax: unexpected character at line 3 column 7".into()
                 }),
                 Ok(vec![3]),
             ]
@@ -145,7 +145,7 @@ fn test_errors() {
         let err = reader.read::<Vec<u32>>().unwrap_err();
         assert_eq!(
             err.to_string(),
-            "Unexpected: unexpected string, expected u32 at line 1 column 6"
+            "InvalidType: unexpected string, expected u32 at line 1 column 6"
         );
         let err = reader.read::<Vec<u32>>().unwrap_err();
         assert_eq!(err.offset(), Some(16));
@@ -161,12 +161,12 @@ fn test_errors() {
     let err = reader.read::<Vec<u32>>().unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: expected map key at line 1 column 6"
+        "Syntax: expected map key at line 1 column 6"
     );
     let err = reader.read::<Vec<u32>>().unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: cannot continue after an error"
+        "InvalidState: cannot continue after an error"
     );
 
     // values which are read from their frames (borrowing) are skipped
@@ -300,7 +300,7 @@ fn test_feeding_with_layers() {
         .unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: too many items at line 1 column 8"
+        "LimitExceeded: too many items at line 1 column 8"
     );
 }
 

@@ -31,7 +31,7 @@ depth anyway.
 ```
 depth: 1000000
 JSON: 15000000 bytes, CBOR: 11000000 bytes
-with limits: Unexpected: recursion limit exceeded at line 1 column 417
+with limits: LimitExceeded: recursion limit exceeded at line 1 column 417
 ```
 
 It takes a moment in debug builds because the input is 15 MB.

@@ -178,7 +178,7 @@ impl<'n, 'de> Next<'n, 'de> {
 /// driver.push_layer(Limits::new().max_depth(1));
 /// driver.emit(Event::seq_start()).unwrap();
 /// let err = driver.emit(Event::seq_start()).unwrap_err();
-/// assert_eq!(err.to_string(), "Unexpected: recursion limit exceeded");
+/// assert_eq!(err.to_string(), "LimitExceeded: recursion limit exceeded");
 /// ```
 ///
 /// Formats typically accept a limits layer when deserializing with
@@ -252,7 +252,7 @@ impl Limits {
 
 #[cold]
 fn limit_error(msg: &'static str) -> Error {
-    Error::new(ErrorKind::Unexpected, msg)
+    Error::new(ErrorKind::LimitExceeded, msg)
 }
 
 impl Layer for Limits {

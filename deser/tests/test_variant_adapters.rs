@@ -71,7 +71,7 @@ impl<'de> Deserialize<'de, (u32, u32)> for Joined {
     ) -> Result<(), Error> {
         match atom {
             Atom::Str(ref s) => {
-                let invalid = || Error::new(ErrorKind::Unexpected, "invalid pair");
+                let invalid = || Error::new(ErrorKind::InvalidValue, "invalid pair");
                 let (a, b) = s.split_once(',').ok_or_else(invalid)?;
                 slot.set((
                     a.parse().map_err(|_| invalid())?,

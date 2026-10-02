@@ -308,7 +308,7 @@ impl<'a> Deserializer<'a> {
             Err(err) => Deserializer {
                 input: "",
                 error: Some(
-                    Error::new(ErrorKind::Unexpected, "input is not valid UTF-8")
+                    Error::new(ErrorKind::Syntax, "input is not valid UTF-8")
                         .with_offset(err.valid_up_to()),
                 ),
                 config: config.clone(),
@@ -567,10 +567,8 @@ impl<'a> Parser<'a, '_> {
     ) -> Result<(), Error> {
         if self.stack.is_empty() {
             if self.root_done {
-                return Err(
-                    Error::new(ErrorKind::Unexpected, "more than one root element")
-                        .with_offset(range.0),
-                );
+                return Err(Error::new(ErrorKind::Syntax, "more than one root element")
+                    .with_offset(range.0));
             }
             self.root = Some(self.root_data(tag, range.0)?);
         } else {
@@ -594,7 +592,7 @@ impl<'a> Parser<'a, '_> {
 
         for attr in tag.attributes() {
             let attr = attr.map_err(|err| {
-                Error::new(ErrorKind::Unexpected, format!("invalid attribute: {err}"))
+                Error::new(ErrorKind::Syntax, format!("invalid attribute: {err}"))
                     .with_offset(range.0)
             })?;
             let raw = attr.key.as_ref();
@@ -712,7 +710,7 @@ impl<'a> Parser<'a, '_> {
             }
             None if is_blank(&text) => Ok(()),
             None => Err(
-                Error::new(ErrorKind::Unexpected, "text outside of the root element")
+                Error::new(ErrorKind::Syntax, "text outside of the root element")
                     .with_offset(range.0),
             ),
         }
@@ -735,7 +733,7 @@ impl<'a> Parser<'a, '_> {
             Namespace::Uri(uri) => Cow::Owned(format!("{{{uri}}}{local}")),
             Namespace::Unknown if self.config.resolve_namespaces => {
                 return Err(Error::new(
-                    ErrorKind::Unexpected,
+                    ErrorKind::Syntax,
                     format!("the prefix of `{written}` is not declared"),
                 )
                 .with_offset(offset));
@@ -825,14 +823,13 @@ fn resolve_reference(reference: &BytesRef<'_>, offset: usize) -> Result<char, Er
         "apos" => Ok('\''),
         "quot" => Ok('"'),
         name => Err(
-            Error::new(ErrorKind::Unexpected, format!("unknown entity `&{name};`"))
-                .with_offset(offset),
+            Error::new(ErrorKind::Syntax, format!("unknown entity `&{name};`")).with_offset(offset),
         ),
     }
 }
 
 fn xml_error(err: quick_xml::Error, offset: usize) -> Error {
-    Error::new(ErrorKind::Unexpected, format!("invalid XML: {err}")).with_offset(offset)
+    Error::new(ErrorKind::Syntax, format!("invalid XML: {err}")).with_offset(offset)
 }
 
 fn emit_key<'a>(

@@ -186,7 +186,7 @@
 //!                     .map(|i| u8::from_str_radix(&s[i..i + 2], 16))
 //!                     .collect::<Result<Vec<_>, _>>()
 //!                     .map_err(|_| {
-//!                         Error::new(ErrorKind::Unexpected, "invalid hex")
+//!                         Error::new(ErrorKind::InvalidValue, "invalid hex")
 //!                     })?;
 //!                 slot.set(bytes);
 //!                 Ok(())

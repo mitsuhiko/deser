@@ -231,7 +231,7 @@
 use alloc::borrow::Cow;
 use alloc::vec::Vec;
 
-use crate::error::{Error, ErrorKind};
+use crate::error::Error;
 use crate::event::Atom;
 
 pub(crate) mod atoms;
@@ -647,7 +647,7 @@ pub(crate) fn is_empty_lexical(atom: &Atom, state: &State) -> bool {
 
 /// Delivers an empty lexical atom to an optional value.
 ///
-/// Returns `false` if the value rejects it with [`ErrorKind::Unexpected`],
+/// Returns `false` if the value rejects it (see `ErrorKind::is_rejection`),
 /// the optional is `None` then.  As that error is thrown away, it's created
 /// without a message (optional numbers are empty in every other row of
 /// some CSV files).  Other errors are passed on with their message (the
@@ -661,7 +661,7 @@ pub(crate) fn empty_lexical_or_none<'a>(
     let retry = atom.clone();
     match state.discard_errors(|state| deliver(atom, state)) {
         Ok(()) => Ok(true),
-        Err(err) if err.kind() == ErrorKind::Unexpected => Ok(false),
+        Err(err) if err.kind().is_rejection() => Ok(false),
         Err(err) if state.discards_errors => Err(err),
         Err(_) => deliver(retry, state).map(|()| true),
     }

@@ -159,7 +159,7 @@ impl From<String> for Param {
 /// let err = deser_json::from_str::<User>(json).unwrap_err();
 /// assert_eq!(
 ///     err.to_string(),
-///     "Unexpected: invalid value: must be an email address \
+///     "InvalidValue: invalid value: must be an email address \
 ///      at line 1 column 11"
 /// );
 /// assert_eq!(err.attachment::<Violation>().unwrap().code(), "email");
@@ -220,7 +220,7 @@ impl Violation {
     /// the one of `#[deser(validate = ...)]`.
     pub fn into_error(self) -> Error {
         Error::new(
-            ErrorKind::Unexpected,
+            ErrorKind::InvalidValue,
             format!("invalid value: {}", self.message),
         )
         .with_attachment(self)

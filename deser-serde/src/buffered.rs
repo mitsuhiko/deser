@@ -107,7 +107,7 @@ impl EventOut for SerBuffer {
                 Ok(())
             }
             SerBuffer::Atom(_) => Err(Error::new(
-                ErrorKind::Unexpected,
+                ErrorKind::InvalidState,
                 "serde serializer produced more than one value",
             )),
         }
@@ -125,7 +125,7 @@ pub(crate) fn serialize<T: serde::Serialize + ?Sized>(
         .map_err(Error::into_deser)?;
     match buffer {
         SerBuffer::Empty => Err(deser_core::Error::new(
-            ErrorKind::Unexpected,
+            ErrorKind::InvalidState,
             "serde serializer produced no value",
         )),
         SerBuffer::Atom(atom) => Ok(Emit::Atom(atom)),

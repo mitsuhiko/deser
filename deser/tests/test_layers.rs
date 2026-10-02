@@ -239,12 +239,12 @@ fn test_limits() {
     assert_eq!(check(Limits::new().max_depth(2), nested()), Ok(()));
     assert_eq!(
         check(Limits::new().max_depth(1), nested()),
-        Err("Unexpected: recursion limit exceeded at offset 1".into())
+        Err("LimitExceeded: recursion limit exceeded at offset 1".into())
     );
     assert_eq!(check(Limits::new().max_events(5), nested()), Ok(()));
     assert_eq!(
         check(Limits::new().max_events(4), nested()),
-        Err("Unexpected: too many events at offset 4".into())
+        Err("LimitExceeded: too many events at offset 4".into())
     );
 
     let map = || {
@@ -264,7 +264,7 @@ fn test_limits() {
     assert_eq!(check(Limits::new().max_items(3), map()), Ok(()));
     assert_eq!(
         check(Limits::new().max_items(2), map()),
-        Err("Unexpected: too many items at offset 7".into())
+        Err("LimitExceeded: too many items at offset 7".into())
     );
     assert_eq!(check(Limits::new().max_len(1), map()), Ok(()));
     assert_eq!(
@@ -272,7 +272,7 @@ fn test_limits() {
             Limits::new().max_len(3),
             vec![Event::seq_start(), "abcd".into(), Event::SeqEnd]
         ),
-        Err("Unexpected: string or bytes too long at offset 1".into())
+        Err("LimitExceeded: string or bytes too long at offset 1".into())
     );
 }
 
@@ -294,7 +294,7 @@ fn test_error_context() {
     assert_eq!(err.offset(), Some(3));
     assert_eq!(
         err.to_string(),
-        "Unexpected: unexpected bool, expected u32 at offset 3"
+        "InvalidType: unexpected bool, expected u32 at offset 3"
     );
 
     // without a range there is no offset
@@ -316,7 +316,7 @@ fn test_error_context() {
     assert_eq!(err.attachment::<Depths>().unwrap().0, vec![2]);
     assert_eq!(
         err.to_string(),
-        "Unexpected: unexpected string, expected u32 at offset 2 (depths: [2])"
+        "InvalidType: unexpected string, expected u32 at offset 2 (depths: [2])"
     );
 
     // errors of layers get the context too
@@ -530,7 +530,7 @@ fn test_ser_error_context() {
             _value: &'a Self,
             _state: &mut State,
         ) -> Result<deser::ser::Emit<'a>, Error> {
-            Err(Error::new(ErrorKind::Unexpected, "nope"))
+            Err(Error::new(ErrorKind::Custom, "nope"))
         }
     }
 
@@ -538,7 +538,7 @@ fn test_ser_error_context() {
     let mut driver = SerializeDriver::new(&value);
     driver.state_mut().add_error_context::<Depths>();
     let err = driver.drive(|_, _| Ok(())).unwrap_err();
-    assert_eq!(err.to_string(), "Unexpected: nope (depths: [2])");
+    assert_eq!(err.to_string(), "Custom: nope (depths: [2])");
 
     let mut driver = SerializeDriver::new(&value);
     driver.state_mut().add_error_context::<Depths>();
@@ -549,7 +549,7 @@ fn test_ser_error_context() {
             Err(err) => break err,
         }
     };
-    assert_eq!(err.to_string(), "Unexpected: nope (depths: [2])");
+    assert_eq!(err.to_string(), "Custom: nope (depths: [2])");
 }
 
 #[test]

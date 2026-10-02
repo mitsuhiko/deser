@@ -106,7 +106,7 @@ impl<'a> FlattenedStruct<'a> {
             Emit::Atom(Atom::Null) => Content::Empty,
             _ => {
                 return Err(Error::new(
-                    ErrorKind::Unexpected,
+                    ErrorKind::UnsupportedType,
                     "only structs and maps can be flattened",
                 ));
             }

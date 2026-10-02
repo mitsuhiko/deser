@@ -663,7 +663,7 @@ impl<'a> Parser<'a> {
 /// error (for instance an invalid value).
 #[cold]
 pub(crate) fn error_at(mark: Mark, msg: &str) -> Error {
-    Error::new(ErrorKind::Unexpected, msg.to_string()).with_position(
+    Error::new(ErrorKind::Syntax, msg.to_string()).with_position(
         mark.offset,
         mark.line + 1,
         mark.column + 1,
@@ -672,7 +672,7 @@ pub(crate) fn error_at(mark: Mark, msg: &str) -> Error {
 
 #[cold]
 pub(crate) fn syntax_error(mark: Mark, msg: &str) -> Error {
-    Error::new(ErrorKind::Unexpected, format!("syntax error: {}", msg)).with_position(
+    Error::new(ErrorKind::Syntax, format!("syntax error: {}", msg)).with_position(
         mark.offset,
         mark.line + 1,
         mark.column + 1,

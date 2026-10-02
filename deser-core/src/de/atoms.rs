@@ -228,7 +228,7 @@ pub fn default_atom(sink: &mut dyn Sink<'_>, atom: Atom, state: &mut State) -> R
         }
     }
     if state.discards_errors {
-        return Err(discarded_error(ErrorKind::Unexpected));
+        return Err(discarded_error(ErrorKind::InvalidType));
     }
     Err(atom.unexpected_error(&sink.expecting()))
 }
@@ -246,7 +246,7 @@ fn lexical_into_map(
     state: &mut State,
 ) -> Result<(), Error> {
     let err = match sink.atom(Atom::Str(text.clone()), state) {
-        Err(err) if err.kind() == ErrorKind::Unexpected => err,
+        Err(err) if err.kind().is_rejection() => err,
         rv => return rv,
     };
     if sink.map(state).is_err() {
@@ -268,9 +268,7 @@ fn lexical_into_map(
 fn implicit_into(sink: &mut dyn Sink<'_>, value: Implicit, state: &mut State) -> Result<(), Error> {
     let (text, value) = value.into_parts();
     match sink.atom(value.to_atom(), state) {
-        Err(err) if err.kind() == ErrorKind::Unexpected => {
-            sink.atom(Atom::Str(text), state).map_err(|_| err)
-        }
+        Err(err) if err.kind().is_rejection() => sink.atom(Atom::Str(text), state).map_err(|_| err),
         rv => rv,
     }
 }
@@ -284,10 +282,10 @@ pub(crate) fn default_container(
     state: &State,
 ) -> Result<(), Error> {
     if state.discards_errors {
-        return Err(discarded_error(ErrorKind::Unexpected));
+        return Err(discarded_error(ErrorKind::InvalidType));
     }
     Err(Error::new(
-        ErrorKind::Unexpected,
+        ErrorKind::InvalidType,
         format!("unexpected {}, expected {}", got, sink.expecting()),
     ))
 }

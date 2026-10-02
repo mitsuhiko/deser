@@ -145,7 +145,7 @@
 //! assert_eq!(err.attachment::<EnvVar>().unwrap().name(), "APP_PORT");
 //! assert_eq!(
 //!     err.to_string(),
-//!     "Unexpected: invalid value \"http\", expected u16 \
+//!     "InvalidValue: invalid value \"http\", expected u16 \
 //!      (environment variable APP_PORT)"
 //! );
 //! ```
@@ -393,13 +393,10 @@ pub fn var<T: DeserializeOwned>(name: &str) -> Result<T, Error> {
             Ok(text) => driver.emit(Atom::Lexical(Text::borrowed(&text))),
             Err(value) => match de::os_bytes(value) {
                 Some(bytes) => driver.emit(Atom::Bytes(deser_core::Bytes::borrowed(&bytes))),
-                None => Err(Error::new(
-                    ErrorKind::Unexpected,
-                    "value is not valid unicode",
-                )),
+                None => Err(Error::new(ErrorKind::Syntax, "value is not valid unicode")),
             },
         }
         .map_err(attach)?;
     }
-    out.ok_or_else(|| attach(Error::new(ErrorKind::Unexpected, "no value")))
+    out.ok_or_else(|| attach(Error::new(ErrorKind::InvalidState, "no value")))
 }

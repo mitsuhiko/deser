@@ -595,7 +595,7 @@ impl<'a> Deserializer<'a> {
             Err(err)
         } else {
             Err(Error::new(
-                ErrorKind::Unexpected,
+                ErrorKind::Syntax,
                 "expected a single document, found more",
             ))
         }
@@ -654,7 +654,7 @@ impl<'a> Deserializer<'a> {
         }
         if self.failed {
             return Err(Error::new(
-                ErrorKind::Unexpected,
+                ErrorKind::InvalidState,
                 "cannot continue after a syntax error",
             ));
         }
@@ -902,7 +902,7 @@ impl<'a> Deserializer<'a> {
         *replayed += count;
         if *replayed > self.config.alias_limit {
             Err(Error::new(
-                ErrorKind::Unexpected,
+                ErrorKind::LimitExceeded,
                 "aliases expand to too many events",
             ))
         } else {
@@ -1076,7 +1076,7 @@ fn str_from_utf8(bytes: &[u8]) -> Result<&str, Error> {
         }
     }
     std::str::from_utf8(bytes).map_err(|err| {
-        Error::new(ErrorKind::Unexpected, "invalid UTF-8").with_offset(err.valid_up_to())
+        Error::new(ErrorKind::Syntax, "invalid UTF-8").with_offset(err.valid_up_to())
     })
 }
 

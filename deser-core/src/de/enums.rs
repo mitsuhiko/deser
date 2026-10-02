@@ -550,7 +550,7 @@ impl<'a, 'de, E: Send> ExternallyTaggedSink<'a, 'de, E> {
     fn begin_key(&mut self) -> Result<(), Error> {
         if self.has_key {
             return Err(Error::new(
-                ErrorKind::Unexpected,
+                ErrorKind::InvalidType,
                 format!("expected a map with a single key for {}", self.expecting()),
             ));
         }
@@ -632,7 +632,7 @@ impl<'a, 'de, E: Send> Sink<'de> for ExternallyTaggedSink<'a, 'de, E> {
         }
         let variant = self.variant.as_mut().ok_or_else(|| {
             Error::new(
-                ErrorKind::Unexpected,
+                ErrorKind::InvalidType,
                 format!("expected a map with a single key for {}", self.name),
             )
         })?;
@@ -673,7 +673,7 @@ impl EnumKey {
 /// Creates the error for a key that is given more than once.
 fn duplicate_key(what: &str, key: &str) -> Error {
     Error::new(
-        ErrorKind::Unexpected,
+        ErrorKind::DuplicateKey,
         format!("duplicate {} `{}`", what, key),
     )
 }
@@ -967,7 +967,7 @@ fn try_untagged_atom<'de, E>(
 #[cold]
 fn no_matching_variant(name: &str) -> Error {
     Error::new(
-        ErrorKind::Unexpected,
+        ErrorKind::UnknownVariant,
         format!("data did not match any variant of {}", name),
     )
 }
@@ -1053,7 +1053,7 @@ impl<'a, 'de, E: Send> FallbackCapture<'a, 'de, E> {
         };
         let err = match tagged((self.tagged)(self.out, state), state) {
             Ok(()) if self.out.is_some() => return Ok(()),
-            Ok(()) => Error::new(ErrorKind::Unexpected, "enum was not deserialized"),
+            Ok(()) => Error::new(ErrorKind::InvalidState, "enum was not deserialized"),
             Err(err) => err,
         };
         *self.out = None;

@@ -129,7 +129,7 @@ fn test_error_paths() {
     );
     assert_eq!(
         err.to_string(),
-        "Unexpected: unexpected bool, expected u16 at line 1 column 62 (path: servers[1].port)"
+        "InvalidType: unexpected bool, expected u16 at line 1 column 62 (path: servers[1].port)"
     );
 
     // missing fields are reported for the struct
@@ -183,7 +183,7 @@ fn test_unknown_field_paths() {
     .unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: unknown field `prot`, expected `host` at line 1 column 43 (path: servers[1].prot)"
+        "UnknownField: unknown field `prot`, expected `host` at line 1 column 43 (path: servers[1].prot)"
     );
 
     // collected keys carry the same information
@@ -202,7 +202,7 @@ fn test_unknown_field_paths() {
     assert_eq!(ignored.len(), 1);
     assert_eq!(
         ignored[0].to_string(),
-        "Unexpected: unknown field `tiemout`, expected `host` or `port` at line 2 column 28 (path: servers[0].tiemout)"
+        "UnknownField: unknown field `tiemout`, expected `host` or `port` at line 2 column 28 (path: servers[0].tiemout)"
     );
 
     // keys of flattened internally tagged enums before the tag are located
@@ -225,7 +225,7 @@ fn test_unknown_field_paths() {
     let err = from_json::<Vec<Holder>>(r#"[{"x": 1, "a": 2, "type": "A"}]"#).unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: unknown field `x` at line 1 column 8 (path: [0].x)"
+        "UnknownField: unknown field `x` at line 1 column 8 (path: [0].x)"
     );
 }
 

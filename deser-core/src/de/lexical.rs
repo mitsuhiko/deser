@@ -227,7 +227,7 @@ pub(crate) fn is_empty_null(value: &str, state: &State) -> bool {
 pub(crate) fn int_error(value: &str, err: ParseIntError, expecting: &str, state: &State) -> Error {
     let kind = match err.kind() {
         IntErrorKind::PosOverflow | IntErrorKind::NegOverflow => ErrorKind::OutOfRange,
-        _ => ErrorKind::Unexpected,
+        _ => ErrorKind::InvalidValue,
     };
     if state.discards_errors {
         return discarded_error(kind);
@@ -239,9 +239,9 @@ pub(crate) fn int_error(value: &str, err: ParseIntError, expecting: &str, state:
 #[cold]
 pub(crate) fn invalid(value: &str, expecting: &str, state: &State) -> Error {
     if state.discards_errors {
-        return discarded_error(ErrorKind::Unexpected);
+        return discarded_error(ErrorKind::InvalidValue);
     }
-    Error::new(ErrorKind::Unexpected, invalid_message(value, expecting))
+    Error::new(ErrorKind::InvalidValue, invalid_message(value, expecting))
 }
 
 fn invalid_message(value: &str, expecting: &str) -> String {

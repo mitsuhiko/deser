@@ -106,7 +106,7 @@ mod with_indexmap {
             .unwrap_err();
         assert_eq!(
             err.to_string(),
-            "Unexpected: unexpected sequence, expected IndexMap"
+            "InvalidType: unexpected sequence, expected IndexMap"
         );
 
         let err = deserialize::<IndexMap<String, u32>>(map(
@@ -200,7 +200,7 @@ mod with_hashbrown {
         let err = deserialize::<HashMap<String, u32>>(vec![1u64.into()]).unwrap_err();
         assert_eq!(
             err.to_string(),
-            "Unexpected: unexpected unsigned integer, expected HashMap"
+            "InvalidType: unexpected unsigned integer, expected HashMap"
         );
     }
 
@@ -277,7 +277,7 @@ mod with_smallvec {
         let err = deserialize::<SmallVec<[u32; 2]>>(vec![true.into()]).unwrap_err();
         assert_eq!(
             err.to_string(),
-            "Unexpected: unexpected bool, expected SmallVec"
+            "InvalidType: unexpected bool, expected SmallVec"
         );
     }
 
@@ -371,7 +371,7 @@ mod with_arrayvec {
         let err = deserialize::<ArrayString<4>>(vec![1u64.into()]).unwrap_err();
         assert_eq!(
             err.to_string(),
-            "Unexpected: unexpected unsigned integer, expected string"
+            "InvalidType: unexpected unsigned integer, expected string"
         );
     }
 
@@ -423,7 +423,7 @@ mod with_bytes {
         let err = deserialize::<Bytes>(vec![true.into()]).unwrap_err();
         assert_eq!(
             err.to_string(),
-            "Unexpected: unexpected bool, expected bytes"
+            "InvalidType: unexpected bool, expected bytes"
         );
     }
 
@@ -505,7 +505,7 @@ mod with_bstr {
         let err = deserialize::<BString>(vec![true.into()]).unwrap_err();
         assert_eq!(
             err.to_string(),
-            "Unexpected: unexpected bool, expected byte string"
+            "InvalidType: unexpected bool, expected byte string"
         );
         let err = deserialize::<BString>(seq(Order::Natural, [256u64.into()])).unwrap_err();
         assert_eq!(err.kind(), ErrorKind::OutOfRange);

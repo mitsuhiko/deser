@@ -447,7 +447,7 @@ impl Parser {
                 .and_then(|data| data.downcast_ref::<crate::raw::Scanner>())
             else {
                 return Err(Err(Error::new(
-                    ErrorKind::Unexpected,
+                    ErrorKind::InvalidState,
                     "raw value of an unknown format requested",
                 )));
             };
@@ -514,7 +514,7 @@ pub(crate) fn skip_raw(cur: &mut Cursor<'_>) -> Result<(), Error> {
 fn requested_format(state: &mut State) -> Result<&'static RawFormatInfo, Error> {
     state.take_raw_request().ok_or_else(|| {
         Error::new(
-            ErrorKind::Unexpected,
+            ErrorKind::InvalidState,
             "raw value requested without a format",
         )
     })
@@ -747,7 +747,7 @@ fn is_utf8(bytes: &[u8]) -> bool {
 
 #[cold]
 pub(crate) fn syntax_error(offset: usize, msg: &str) -> Error {
-    Error::new(ErrorKind::Unexpected, format!("syntax error: {}", msg)).with_offset(offset)
+    Error::new(ErrorKind::Syntax, format!("syntax error: {}", msg)).with_offset(offset)
 }
 
 #[cold]

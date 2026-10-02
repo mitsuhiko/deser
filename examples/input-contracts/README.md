@@ -37,10 +37,10 @@ A valid `Create` request (debug and JSON), a `Search` that ignores
 the parent is required, even if it's an option:
   MissingField: missing field `parent` ...
 typos are errors when creating issues:
-  Unexpected: unknown field `lables`, expected one of ... (path: lables)
+  UnknownField: unknown field `lables`, expected one of ... (path: lables)
 ...
 labels are described in the words of the API:
-  Unexpected: unexpected string, expected a label ... (path: labels[0])
+  InvalidType: unexpected string, expected a label ... (path: labels[0])
 ```
 
 ## How to read it

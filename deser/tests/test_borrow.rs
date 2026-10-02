@@ -56,7 +56,7 @@ fn test_borrowed_primitives() {
 #[test]
 fn test_transient_data_cannot_be_borrowed() {
     let err = transient::<&str>(vec!["hello".into()]).unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Unexpected);
+    assert_eq!(err.kind(), ErrorKind::UnsupportedType);
     assert!(err.to_string().contains("expected a borrowed string"));
     // owned data in a borrowed atom cannot be borrowed either
     let err = borrowed::<&str>(vec![Event::Atom(Atom::Str(deser::Text::owned("x")))]).unwrap_err();

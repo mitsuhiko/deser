@@ -166,7 +166,7 @@ impl<'a> Deserializer<'a> {
             .unwrap_or(self.input);
         let text = core::str::from_utf8(input).map_err(|err| {
             let offset = self.input.len() - input.len() + err.valid_up_to();
-            Error::new(ErrorKind::Unexpected, "invalid UTF-8").with_offset(offset)
+            Error::new(ErrorKind::Syntax, "invalid UTF-8").with_offset(offset)
         })?;
         self.drive_text(text, &mut Borrowing(driver))
     }

@@ -683,7 +683,7 @@ impl Serializer {
         }
         match self.config.trailing_mode() {
             Trailing::Strict if self.written > 0 => Err(Error::new(
-                ErrorKind::Unexpected,
+                ErrorKind::InvalidState,
                 "with Trailing::Strict only a single value can be written",
             )),
             Trailing::Stop if self.written > 0 => {
@@ -971,12 +971,12 @@ impl Writer {
     fn end(&mut self, is_map: bool) -> Result<(), Error> {
         if is_map {
             if self.container != Container::Map || !self.is_key {
-                return Err(Error::new(ErrorKind::Unexpected, "unexpected map end"));
+                return Err(Error::new(ErrorKind::InvalidState, "unexpected map end"));
             }
             self.ser.write_char('}');
         } else {
             if self.container != Container::Seq {
-                return Err(Error::new(ErrorKind::Unexpected, "unexpected array end"));
+                return Err(Error::new(ErrorKind::InvalidState, "unexpected array end"));
             }
             self.ser.write_char(']');
         }

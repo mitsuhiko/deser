@@ -557,7 +557,7 @@ impl Parser {
             () => {
                 match next_byte!(Expect::Colon) {
                     b':' => cur.bump(),
-                    _ => return Err(Error::new(ErrorKind::Unexpected, "expected colon")),
+                    _ => return Err(Error::new(ErrorKind::Syntax, "expected colon")),
                 }
             };
         }
@@ -943,7 +943,7 @@ impl Parser {
                     }
                     b']' | b'}' => {
                         return Err(Error::new(
-                            ErrorKind::Unexpected,
+                            ErrorKind::Syntax,
                             if container == Container::Map {
                                 "unexpected end of seq"
                             } else {
@@ -953,7 +953,7 @@ impl Parser {
                     }
                     #[cfg(not(hjson))]
                     _ => {
-                        return Err(Error::new(ErrorKind::Unexpected, "expected a comma"));
+                        return Err(Error::new(ErrorKind::Syntax, "expected a comma"));
                     }
                     // the comma between values is optional
                     #[cfg(hjson)]
@@ -1002,7 +1002,7 @@ fn raw_value<'i, O: Out<'i>>(
     {
         Some(scanner) => (scanner.0)(cur, scratch, eof, base, out.state_mut()),
         None => Err(Error::new(
-            ErrorKind::Unexpected,
+            ErrorKind::InvalidState,
             "raw value of an unknown format requested",
         )),
     };
@@ -1051,7 +1051,7 @@ fn sink_error(err: Error) -> Option<Error> {
 #[cold]
 fn raw_without_format() -> Error {
     Error::new(
-        ErrorKind::Unexpected,
+        ErrorKind::InvalidState,
         "raw value requested without a format",
     )
 }
@@ -1298,7 +1298,7 @@ impl<'a> Cursor<'a> {
             // start with a continuation byte, so validating the unescaped
             // string is equivalent to validating the raw one.
             if validate_utf8 && !is_ascii(bytes) && !validate_utf8_slice(bytes) {
-                return Err(Error::new(ErrorKind::Unexpected, "invalid utf-8 in string"));
+                return Err(Error::new(ErrorKind::Syntax, "invalid utf-8 in string"));
             }
             // SAFETY: the input is valid UTF-8 as it comes from a `&str` or
             // was validated above.  The borrowed slices start and end at
@@ -1341,10 +1341,7 @@ impl<'a> Cursor<'a> {
             if self.pos == self.input.len() {
                 self.hit_end = true;
                 self.partial = (self.pos, copied);
-                return Err(Error::new(
-                    ErrorKind::Unexpected,
-                    "unexpected end of string",
-                ));
+                return Err(Error::new(ErrorKind::Syntax, "unexpected end of string"));
             }
             let byte = self.input[self.pos];
             // the closing single quote is handled like a double quote
@@ -1390,7 +1387,7 @@ impl<'a> Cursor<'a> {
                 byte if byte != b'\n' && byte != b'\r' => self.pos += 1,
                 _ => {
                     return Err(Error::new(
-                        ErrorKind::Unexpected,
+                        ErrorKind::Syntax,
                         "unexpected character in string",
                     ));
                 }
@@ -1473,7 +1470,7 @@ impl<'a> Cursor<'a> {
                 _ => {
                     self.pos = start;
                     return Err(Error::new(
-                        ErrorKind::Unexpected,
+                        ErrorKind::Syntax,
                         match byte {
                             b',' => "unexpected comma",
                             b':' => "unexpected colon",
@@ -1508,7 +1505,7 @@ impl<'a> Cursor<'a> {
                     }
                     Some(b']' | b'}') => {
                         return Err(Error::new(
-                            ErrorKind::Unexpected,
+                            ErrorKind::Syntax,
                             if is_map {
                                 "unexpected end of seq"
                             } else {
@@ -1517,7 +1514,7 @@ impl<'a> Cursor<'a> {
                         ));
                     }
                     Some(_) => {
-                        return Err(Error::new(ErrorKind::Unexpected, "expected a comma"));
+                        return Err(Error::new(ErrorKind::Syntax, "expected a comma"));
                     }
                     None => return Err(eof_error()),
                 }
@@ -1534,7 +1531,7 @@ impl<'a> Cursor<'a> {
                 self.pos += 1;
                 self.parse_str(scratch, start, None)?;
             }
-            Some(_) => return Err(Error::new(ErrorKind::Unexpected, "expected map key")),
+            Some(_) => return Err(Error::new(ErrorKind::Syntax, "expected map key")),
             None => return Err(eof_error()),
         }
         match self.parse_whitespace() {
@@ -1542,7 +1539,7 @@ impl<'a> Cursor<'a> {
                 self.pos += 1;
                 Ok(())
             }
-            Some(_) => Err(Error::new(ErrorKind::Unexpected, "expected colon")),
+            Some(_) => Err(Error::new(ErrorKind::Syntax, "expected colon")),
             None => Err(eof_error()),
         }
     }
@@ -1605,7 +1602,7 @@ impl<'a> Cursor<'a> {
             self.hit_end = true;
             return Err(eof_error());
         }
-        Err(Error::new(ErrorKind::Unexpected, "invalid number"))
+        Err(Error::new(ErrorKind::Syntax, "invalid number"))
     }
 
     #[inline]
@@ -1791,7 +1788,7 @@ impl<'a> Cursor<'a> {
                     match char::from(self.next_or_eof()?).to_digit(16) {
                         Some(digit) => n = n * 16 + digit,
                         None => {
-                            return Err(Error::new(ErrorKind::Unexpected, "invalid hex escape"));
+                            return Err(Error::new(ErrorKind::Syntax, "invalid hex escape"));
                         }
                     }
                 }
@@ -1880,14 +1877,14 @@ impl<'a> Cursor<'a> {
                     match str::from_utf8(bytes).ok().and_then(|s| s.chars().next()) {
                         Some(c) if is_identifier_char(c, first) => self.pos += len,
                         Some(_) => break,
-                        None => return Err(Error::new(ErrorKind::Unexpected, "invalid utf-8")),
+                        None => return Err(Error::new(ErrorKind::Syntax, "invalid utf-8")),
                     }
                 }
                 _ => break,
             }
         }
         if self.pos == start {
-            return Err(Error::new(ErrorKind::Unexpected, "expected map key"));
+            return Err(Error::new(ErrorKind::Syntax, "expected map key"));
         }
         match copied {
             Some(from) => {
@@ -1922,10 +1919,7 @@ impl<'a> Cursor<'a> {
         self.pos = start + len;
         let key = &input[start..self.pos];
         if self.validate_utf8 && !is_ascii(key) && !validate_utf8_slice(key) {
-            return Err(Error::new(
-                ErrorKind::Unexpected,
-                "invalid utf-8 in map key",
-            ));
+            return Err(Error::new(ErrorKind::Syntax, "invalid utf-8 in map key"));
         }
         // SAFETY: the key is valid UTF-8 as it comes from a `&str` or was
         // validated above, it ends at an ASCII character
@@ -2042,7 +2036,7 @@ impl<'a> Cursor<'a> {
         }
         let bytes = &input[start..stop];
         if self.validate_utf8 && !is_ascii(bytes) && !validate_utf8_slice(bytes) {
-            return Err(Error::new(ErrorKind::Unexpected, "invalid utf-8 in string"));
+            return Err(Error::new(ErrorKind::Syntax, "invalid utf-8 in string"));
         }
         self.pos = stop;
         // SAFETY: the input is valid UTF-8 as it comes from a `&str` or was
@@ -2072,7 +2066,7 @@ impl<'a> Cursor<'a> {
         let close = content + len;
         let text = &input[content..close];
         if self.validate_utf8 && !is_ascii(text) && !validate_utf8_slice(text) {
-            return Err(Error::new(ErrorKind::Unexpected, "invalid utf-8 in string"));
+            return Err(Error::new(ErrorKind::Syntax, "invalid utf-8 in string"));
         }
         let indent = match input[..start].iter().rposition(|&byte| byte == b'\n') {
             Some(index) => count_chars(&input[index + 1..start]),
@@ -2128,7 +2122,7 @@ impl<'a> Cursor<'a> {
                 b'e' | b'E' => n * 16_u16 + 14_u16,
                 b'f' | b'F' => n * 16_u16 + 15_u16,
                 _ => {
-                    return Err(Error::new(ErrorKind::Unexpected, "invalid hex escape"));
+                    return Err(Error::new(ErrorKind::Syntax, "invalid hex escape"));
                 }
             };
         }
@@ -2261,7 +2255,7 @@ impl<'a> Cursor<'a> {
                 }
                 Some(next) => {
                     if next != *expected {
-                        return Err(Error::new(ErrorKind::Unexpected, "unexpected character"));
+                        return Err(Error::new(ErrorKind::Syntax, "unexpected character"));
                     }
                 }
             }
@@ -2273,7 +2267,7 @@ impl<'a> Cursor<'a> {
         match first_digit {
             b'0' => match self.peek_or_nul() {
                 b'0'..=b'9' => Err(Error::new(
-                    ErrorKind::Unexpected,
+                    ErrorKind::Syntax,
                     "only a single leading 0 is allowed",
                 )),
                 #[cfg(json5)]
@@ -2287,7 +2281,7 @@ impl<'a> Cursor<'a> {
                     self.pos -= 1;
                     self.parse_decimal(nonnegative, 0, 0)
                 }
-                _ => Err(Error::new(ErrorKind::Unexpected, "expected a digit")),
+                _ => Err(Error::new(ErrorKind::Syntax, "expected a digit")),
             },
             #[cfg(json5)]
             b'I' => {
@@ -2336,7 +2330,7 @@ impl<'a> Cursor<'a> {
                     }
                 }
             }
-            _ => Err(Error::new(ErrorKind::Unexpected, "invalid integer")),
+            _ => Err(Error::new(ErrorKind::Syntax, "invalid integer")),
         }
     }
 
@@ -2499,7 +2493,7 @@ impl<'a> Cursor<'a> {
         //# JSON5 allows a trailing decimal point
         #[cfg(not(json5))]
         if !at_least_one_digit {
-            return Err(Error::new(ErrorKind::Unexpected, "expected a digit"));
+            return Err(Error::new(ErrorKind::Syntax, "expected a digit"));
         }
 
         match self.peek_or_nul() {
@@ -2546,7 +2540,7 @@ impl<'a> Cursor<'a> {
             }
         }
         if digits == 0 {
-            return Err(Error::new(ErrorKind::Unexpected, "expected a hex digit"));
+            return Err(Error::new(ErrorKind::Syntax, "expected a hex digit"));
         }
         if dropped > 0 {
             // the value has more than 64 significant bits, the lowest bit
@@ -2595,7 +2589,7 @@ impl<'a> Cursor<'a> {
             c @ b'0'..=b'9' => i32::from(c - b'0'),
             _ => {
                 return Err(Error::new(
-                    ErrorKind::Unexpected,
+                    ErrorKind::Syntax,
                     "expected digit after exponent",
                 ));
             }
@@ -2677,7 +2671,7 @@ impl<'a> Cursor<'a> {
     ) -> Result<f64, Error> {
         // Error instead of +/- infinity.
         if significand != 0 && positive_exp {
-            return Err(Error::new(ErrorKind::Unexpected, "infinity takes no sign"));
+            return Err(Error::new(ErrorKind::Syntax, "infinity takes no sign"));
         }
 
         while let b'0'..=b'9' = self.peek_or_nul() {
@@ -2833,7 +2827,7 @@ fn eisel_lemire(significand: u64, exponent: i32) -> Option<f64> {
 /// Creates an error for the token at the offset.
 #[cold]
 fn token_error(offset: usize, msg: &'static str) -> Error {
-    Error::new(ErrorKind::Unexpected, msg).with_offset(offset)
+    Error::new(ErrorKind::Syntax, msg).with_offset(offset)
 }
 
 /// Returns `true` if a decimal number without exponent is the shortest
@@ -3060,18 +3054,18 @@ fn is_identifier_char(c: char, first: bool) -> bool {
 #[cold]
 #[cfg(json5)]
 fn invalid_identifier() -> Error {
-    Error::new(ErrorKind::Unexpected, "invalid escape in identifier")
+    Error::new(ErrorKind::Syntax, "invalid escape in identifier")
 }
 
 #[cold]
 fn invalid_escape() -> Error {
-    Error::new(ErrorKind::Unexpected, "invalid escape in string")
+    Error::new(ErrorKind::Syntax, "invalid escape in string")
 }
 
 #[cold]
 fn lone_surrogate() -> Error {
     Error::new(
-        ErrorKind::Unexpected,
+        ErrorKind::Syntax,
         "lone surrogate in unicode escape in string",
     )
 }

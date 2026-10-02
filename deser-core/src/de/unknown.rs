@@ -185,7 +185,7 @@ pub(crate) fn unknown_field_error(key: &str, fields: Option<&[&str]>) -> Error {
     if let Some(fields) = fields {
         push_expected(&mut msg, fields, "fields");
     }
-    Error::new(ErrorKind::Unexpected, msg)
+    Error::new(ErrorKind::UnknownField, msg)
 }
 
 /// Handles a key of a struct that neither a field nor a flattened field took.

@@ -62,6 +62,20 @@ All notable changes to deser are documented here.
   as sink (a `deser::de::Slot`, which dereferences to the `Option<T>`),
   so no macro, no sink and no `deserialize_into` are needed.
   `deserialize_borrowed_atom` receives borrowed atoms.
+- **Breaking:** `ErrorKind` is `#[non_exhaustive]` and replaced
+  `Unexpected` with precise kinds: `Syntax` (input that is not
+  well-formed), `LimitExceeded`, `InvalidType`, `InvalidValue`,
+  `UnknownField`, `UnknownVariant`, `DuplicateKey`, `InvalidState` (APIs
+  used in an unsupported way) and `Custom`.  The kind is part of the
+  `Display` output (like `InvalidType: unexpected string, expected u16`).
+  Values which cannot borrow from the input fail with `UnsupportedType`,
+  integers and floats which TOML cannot represent with `Syntax`.  #46
+- Added `Error::category` and `ErrorCategory`, which tell apart input
+  that is not well-formed (`Syntax`, `Eof`) from input that does not fit
+  the values (`Data`), for instance to answer HTTP requests with 400 or
+  422.  The category follows from the kind, errors of the `Custom` kind
+  are in the `Data` category if a value failed with them and in the
+  `Syntax` category if the format did.  #46
 - Added `ContainerShape::cautious_capacity`, the number of elements to
   preallocate for the length that the input declares, capped at about a
   megabyte.  The standard containers and `deser_value::Value` use it, so

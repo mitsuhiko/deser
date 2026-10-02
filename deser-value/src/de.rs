@@ -97,7 +97,7 @@ impl<'a> ValueSink<'a> {
                 let key = self
                     .slot
                     .take()
-                    .ok_or_else(|| Error::new(ErrorKind::Unexpected, "missing map key"))?;
+                    .ok_or_else(|| Error::new(ErrorKind::InvalidState, "missing map key"))?;
                 if map.contains_key(&key) {
                     self.entry = if map.is_multimap() {
                         Entry::Repeat
@@ -154,7 +154,7 @@ fn add_repeated(map: &mut Map, key: &Value, value: Value) {
 #[cold]
 fn duplicate_key(key: &Value) -> Error {
     let err = Error::new(
-        ErrorKind::Unexpected,
+        ErrorKind::DuplicateKey,
         format!("duplicate map key {:?}", key),
     );
     // point at the key if its location is known
@@ -182,7 +182,7 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
     fn map(&mut self, state: &mut State) -> Result<(), Error> {
         if let Out::Seq(_) = self.out {
             return Err(Error::new(
-                ErrorKind::Unexpected,
+                ErrorKind::InvalidType,
                 "unexpected map, expected sequence",
             ));
         }
@@ -199,7 +199,7 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
     fn seq(&mut self, state: &mut State) -> Result<(), Error> {
         if let Out::Map(_) | Out::UpdateMap(_) = self.out {
             return Err(Error::new(
-                ErrorKind::Unexpected,
+                ErrorKind::InvalidType,
                 "unexpected sequence, expected map",
             ));
         }

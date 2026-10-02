@@ -362,7 +362,7 @@ macro_rules! adapter_tests {
             fn test_error_location() {
                 let json = "{\"doc\": {\n  \"shapes\": [\n    {\"Circle\": \"x\"}\n  ]}}";
                 let err = deser_json::from_str::<Wrapper>(json).unwrap_err();
-                assert_eq!(err.kind(), ErrorKind::Unexpected);
+                assert_eq!(err.kind(), ErrorKind::Custom);
                 assert!(
                     err.message().contains("invalid type: string \"x\", expected f64"),
                     "{}",

@@ -409,7 +409,7 @@ where
         fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
             if self.variant.is_some() {
                 return Err(Error::new(
-                    ErrorKind::Unexpected,
+                    ErrorKind::InvalidType,
                     "expected a single entry for Result",
                 ));
             }
@@ -454,7 +454,7 @@ where
                 (None, Some(err)) => Err(err),
                 (None, None) => {
                     return Err(Error::new(
-                        ErrorKind::Unexpected,
+                        ErrorKind::InvalidType,
                         "expected an entry with Ok or Err",
                     ));
                 }
@@ -519,7 +519,7 @@ fn parse_atom<'de, T: Parse + Deserialize<'de>>(
                 Ok(())
             }
             Err(err) => Err(Error::new(
-                ErrorKind::Unexpected,
+                ErrorKind::InvalidValue,
                 format!("invalid {}: {}", T::EXPECTING, err),
             )),
         },
@@ -593,7 +593,7 @@ impl Serialize for CString {
 impl Via<Vec<u8>> for CString {
     #[inline]
     fn convert(value: Vec<u8>) -> Result<Self, Error> {
-        CString::new(value).map_err(|err| Error::new(ErrorKind::Unexpected, err.to_string()))
+        CString::new(value).map_err(|err| Error::new(ErrorKind::InvalidValue, err.to_string()))
     }
 }
 
@@ -918,7 +918,7 @@ impl<'a, 'de, T: Deserialize<'de>> Sink<'de> for BoundSink<'a, T> {
     fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         if self.included.is_some() {
             return Err(Error::new(
-                ErrorKind::Unexpected,
+                ErrorKind::InvalidType,
                 "expected a map with a single key for Bound",
             ));
         }
@@ -944,7 +944,7 @@ impl<'a, 'de, T: Deserialize<'de>> Sink<'de> for BoundSink<'a, T> {
             (Some(false), Some(value)) => Bound::Excluded(value),
             _ => {
                 return Err(Error::new(
-                    ErrorKind::Unexpected,
+                    ErrorKind::InvalidType,
                     "expected a map with a single key for Bound",
                 ));
             }

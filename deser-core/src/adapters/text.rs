@@ -691,7 +691,7 @@ fn join<'v, T: 'v, A: Serialize<T>>(
         A::finish(value, state)?;
         if out[start..].contains(sep) {
             return Err(Error::new(
-                ErrorKind::Unexpected,
+                ErrorKind::InvalidValue,
                 format!(
                     "cannot join {:?}, it contains the separator {:?}",
                     &out[start..],
@@ -702,7 +702,7 @@ fn join<'v, T: 'v, A: Serialize<T>>(
     }
     if count == 1 && out.is_empty() {
         return Err(Error::new(
-            ErrorKind::Unexpected,
+            ErrorKind::InvalidValue,
             "cannot join a single empty string, it would read back as no elements",
         ));
     }

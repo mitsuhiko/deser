@@ -205,7 +205,7 @@ impl Deserializer<'static> {
                 Err(name) => {
                     if strip_prefix(&name.to_string_lossy(), prefix).is_some() {
                         rv.fail(Error::new(
-                            ErrorKind::Unexpected,
+                            ErrorKind::Syntax,
                             format!(
                                 "the name of the environment variable {:?} is not valid unicode",
                                 name
@@ -224,7 +224,7 @@ impl Deserializer<'static> {
                     Some(bytes) => Value::Bytes(bytes),
                     None => {
                         rv.fail(
-                            Error::new(ErrorKind::Unexpected, "value is not valid unicode")
+                            Error::new(ErrorKind::Syntax, "value is not valid unicode")
                                 .with_attachment(EnvVar::new(name.as_str().into())),
                         );
                         continue;
@@ -455,7 +455,7 @@ impl Tree {
             split_name(&var.name[var.prefix_len..], config.separator, &mut segments);
             if segments.len() > config.max_depth + 1 {
                 return Err(
-                    Error::new(ErrorKind::Unexpected, "name is nested too deeply")
+                    Error::new(ErrorKind::LimitExceeded, "name is nested too deeply")
                         .with_attachment(EnvVar::new(var.name.clone())),
                 );
             }
@@ -611,7 +611,7 @@ impl Tree {
                         DuplicateKeys::First => values[0],
                         DuplicateKeys::Error => {
                             return Err(Error::new(
-                                ErrorKind::Unexpected,
+                                ErrorKind::Syntax,
                                 "more than one variable for the same index",
                             )
                             .with_attachment(EnvVar::new(vars[values[1]].name.clone())));
@@ -641,7 +641,7 @@ impl Tree {
                 }
                 (&[var, ..], false) => {
                     return Err(Error::new(
-                        ErrorKind::Unexpected,
+                        ErrorKind::Syntax,
                         "variable has a value and nested variables",
                     )
                     .with_attachment(EnvVar::new(vars[var].name.clone())));

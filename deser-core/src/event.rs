@@ -192,7 +192,7 @@ impl<'a> Atom<'a> {
     /// ```
     pub fn unexpected_error(&self, expectation: &str) -> Error {
         Error::new(
-            ErrorKind::Unexpected,
+            ErrorKind::InvalidType,
             format!("unexpected {}, expected {}", self.name(), expectation),
         )
     }

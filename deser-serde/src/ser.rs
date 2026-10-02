@@ -489,7 +489,7 @@ impl Serialize for Events {
 
 #[cold]
 fn malformed() -> deser_core::Error {
-    deser_core::Error::new(ErrorKind::Unexpected, "malformed serde value")
+    deser_core::Error::new(ErrorKind::InvalidState, "malformed serde value")
 }
 
 /// Returns the number of events of the value the events start with.

@@ -202,7 +202,7 @@ fn test_sequences() {
 
     assert_err::<VecDeque<u32>>(
         string("x"),
-        ErrorKind::Unexpected,
+        ErrorKind::InvalidType,
         "unexpected string, expected VecDeque",
     );
 }
@@ -311,7 +311,7 @@ fn test_result() {
             1u64.into(),
             Event::MapEnd,
         ],
-        ErrorKind::Unexpected,
+        ErrorKind::UnknownVariant,
         "unknown variant `Nope` of Result, expected `Ok` or `Err`",
     );
     assert_err::<Result<u32, u32>>(
@@ -323,15 +323,15 @@ fn test_result() {
             1u64.into(),
             Event::MapEnd,
         ],
-        ErrorKind::Unexpected,
+        ErrorKind::InvalidType,
         "expected a single entry",
     );
     assert_err::<Result<u32, u32>>(
         vec![Event::map_start(), Event::MapEnd],
-        ErrorKind::Unexpected,
+        ErrorKind::InvalidType,
         "expected an entry with Ok or Err",
     );
-    assert_err::<Result<u32, u32>>(vec![1u64.into()], ErrorKind::Unexpected, "expected Result");
+    assert_err::<Result<u32, u32>>(vec![1u64.into()], ErrorKind::InvalidType, "expected Result");
 }
 
 #[test]
@@ -353,12 +353,12 @@ fn test_net() {
 
     assert_err::<IpAddr>(
         string("nope"),
-        ErrorKind::Unexpected,
+        ErrorKind::InvalidValue,
         "invalid IP address: invalid IP address syntax",
     );
     assert_err::<SocketAddr>(
         vec![1u64.into()],
-        ErrorKind::Unexpected,
+        ErrorKind::InvalidType,
         "unexpected unsigned integer, expected socket address",
     );
 }
@@ -378,7 +378,7 @@ fn test_paths() {
 
         let value = Path::new(OsStr::from_bytes(b"\xff"));
         let err = serialize(&value).unwrap_err();
-        assert_eq!(err.kind(), ErrorKind::Unexpected);
+        assert_eq!(err.kind(), ErrorKind::InvalidValue);
         assert!(err.to_string().contains("invalid UTF-8"));
     }
 }
@@ -431,7 +431,7 @@ fn test_c_strings() {
         deserialize::<CString>(ints(&[104, 105])).unwrap(),
         c"hi".to_owned()
     );
-    assert_err::<CString>(bytes(b"h\0i"), ErrorKind::Unexpected, "nul byte");
+    assert_err::<CString>(bytes(b"h\0i"), ErrorKind::InvalidValue, "nul byte");
 }
 
 #[test]
@@ -500,7 +500,7 @@ fn test_os_strings() {
     assert_eq!(value, "a/b");
     let value: Box<OsStr> = OsStr::new("x").into();
     assert_eq!(&*roundtrip(&value, string("x")), "x");
-    assert_err::<OsString>(vec![1u64.into()], ErrorKind::Unexpected, "expected string");
+    assert_err::<OsString>(vec![1u64.into()], ErrorKind::InvalidType, "expected string");
 }
 
 #[test]
@@ -556,7 +556,7 @@ fn test_ranges() {
     );
     assert_err::<RangeInclusive<u32>>(
         fields(&[("start", 1), ("start", 2), ("end", 3)]),
-        ErrorKind::Unexpected,
+        ErrorKind::DuplicateKey,
         "duplicate field `start`",
     );
 }
@@ -579,17 +579,17 @@ fn test_bound() {
     );
     assert_err::<Bound<u32>>(
         string("Nope"),
-        ErrorKind::Unexpected,
+        ErrorKind::UnknownVariant,
         "unknown variant `Nope` of Bound, expected one of `Unbounded`, `Included`, `Excluded`",
     );
     assert_err::<Bound<u32>>(
         fields(&[("Included", 1), ("Excluded", 2)]),
-        ErrorKind::Unexpected,
+        ErrorKind::InvalidType,
         "expected a map with a single key for Bound",
     );
     assert_err::<Bound<u32>>(
         fields(&[]),
-        ErrorKind::Unexpected,
+        ErrorKind::InvalidType,
         "expected a map with a single key for Bound",
     );
 }

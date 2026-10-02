@@ -20,7 +20,7 @@ pub enum Enum {
 
 fn assert_syntax_error<T: DeserializeOwned + std::fmt::Debug>(s: &str, offset: usize) {
     let err = de::<T>(s).unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Unexpected, "{}: {}", s, err);
+    assert_eq!(err.kind(), ErrorKind::Syntax, "{}: {}", s, err);
     let msg = err.to_string();
     assert!(msg.contains("syntax error: "), "{}: {}", s, msg);
     assert_eq!(err.offset(), Some(offset), "{}: {}", s, msg);
@@ -483,7 +483,7 @@ fn value_error_offsets() {
     assert_eq!(err.offset(), Some(3));
     assert_eq!(
         err.to_string(),
-        "Unexpected: unexpected bool, expected u32 at offset 3"
+        "InvalidType: unexpected bool, expected u32 at offset 3"
     );
 
     // tagged items report the item after the tags

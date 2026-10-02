@@ -41,7 +41,7 @@ use crate::report::ReportHandle;
 /// assert_eq!(signup.email.unchecked_value().unwrap(), "nope");
 /// assert_eq!(
 ///     signup.email.error().unwrap().to_string(),
-///     "Unexpected: invalid value: must be an email address at offset 10"
+///     "InvalidValue: invalid value: must be an email address at offset 10"
 /// );
 /// assert_eq!(signup.age.value(), None);
 /// ```
@@ -143,7 +143,7 @@ impl<T, V> Validated<T, V> {
         match (self.value, self.error) {
             (Some(value), None) => Ok(value),
             (_, Some(err)) => Err(err),
-            (None, None) => Err(Error::new(ErrorKind::Unexpected, "missing value")),
+            (None, None) => Err(Error::new(ErrorKind::InvalidState, "missing value")),
         }
     }
 }

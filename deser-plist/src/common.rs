@@ -81,7 +81,7 @@ impl<'i> Out<'i> for Copying<'_, '_, '_> {
 
 #[cold]
 pub(crate) fn syntax_error(offset: usize, msg: &str) -> Error {
-    Error::new(ErrorKind::Unexpected, format!("syntax error: {}", msg)).with_offset(offset)
+    Error::new(ErrorKind::Syntax, format!("syntax error: {}", msg)).with_offset(offset)
 }
 
 #[cold]

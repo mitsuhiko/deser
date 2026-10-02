@@ -7,7 +7,7 @@ use core::ptr::NonNull;
 use crate::State;
 use crate::arena::ArenaBox;
 use crate::de::{Deserialize, OwnedSink, Sink, SinkHandle, is_null_atom};
-use crate::error::{Error, ErrorKind};
+use crate::error::Error;
 use crate::event::Atom;
 
 /// Forwards all calls of a sink to an owned sink.
@@ -150,7 +150,7 @@ pub(crate) fn replace_handle_with<'a, 'de, T: Send + 'a>(
 /// fn check(range: &Range) -> Result<(), Error> {
 ///     if range.min > range.max {
 ///         return Err(Error::new(
-///             ErrorKind::Unexpected,
+///             ErrorKind::InvalidValue,
 ///             "min is larger than max",
 ///         ));
 ///     }
@@ -588,7 +588,7 @@ where
 
     fn seq(&mut self, state: &mut State) -> Result<(), Error> {
         match self.element.get_mut().seq(state) {
-            Err(err) if err.kind() == ErrorKind::Unexpected => {
+            Err(err) if err.kind().is_rejection() => {
                 // the element that rejected the sequence is not a value
                 // (the slots of optionals are set when they are created)
                 self.element = OwnedSink::null(state);

@@ -35,7 +35,7 @@ impl Error {
             Repr::Deser(err) => err,
             Repr::Missing => deser_core::Error::new(ErrorKind::MissingField, "missing value"),
             Repr::Cancelled => {
-                deser_core::Error::new(ErrorKind::Unexpected, "serde value was aborted")
+                deser_core::Error::new(ErrorKind::InvalidState, "serde value was aborted")
             }
         }
     }
@@ -72,7 +72,7 @@ impl std::error::Error for Error {}
 impl serde::de::Error for Error {
     #[cold]
     fn custom<T: fmt::Display>(msg: T) -> Error {
-        Error::new(ErrorKind::Unexpected, msg.to_string())
+        Error::new(ErrorKind::Custom, msg.to_string())
     }
 
     #[cold]
@@ -95,6 +95,6 @@ impl serde::de::Error for Error {
 impl serde::ser::Error for Error {
     #[cold]
     fn custom<T: fmt::Display>(msg: T) -> Error {
-        Error::new(ErrorKind::Unexpected, msg.to_string())
+        Error::new(ErrorKind::Custom, msg.to_string())
     }
 }

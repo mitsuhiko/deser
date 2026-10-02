@@ -400,7 +400,7 @@ fn str_from_utf8(bytes: &[u8]) -> Result<&str, Error> {
         }
     }
     std::str::from_utf8(bytes).map_err(|err| {
-        Error::new(ErrorKind::Unexpected, "invalid UTF-8").with_offset(err.valid_up_to())
+        Error::new(ErrorKind::Syntax, "invalid UTF-8").with_offset(err.valid_up_to())
     })
 }
 

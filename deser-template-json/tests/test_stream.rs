@@ -45,7 +45,7 @@ fn test_default_is_strict() {
             dialect::from_str::<Recording>(input)
                 .unwrap_err()
                 .to_string(),
-            format!("Unexpected: garbage after input at line {column}")
+            format!("Syntax: garbage after input at line {column}")
         );
         // the deserializer checks it too
         assert!(
@@ -95,9 +95,9 @@ fn test_newline() {
         stream::<u32>(&NEWLINE, "1 2\n").unwrap_err(),
         if DIALECT.hjson {
             // a string without quotes
-            "Unexpected: unexpected string, expected u32 at line 1 column 1"
+            "InvalidType: unexpected string, expected u32 at line 1 column 1"
         } else {
-            "Unexpected: expected end of line after value at line 1 column 3"
+            "Syntax: expected end of line after value at line 1 column 3"
         }
     );
     assert_eq!(
@@ -133,9 +133,9 @@ fn test_newline_recover() {
     assert_eq!(
         errors,
         [
-            "Unexpected: unexpected string, expected u32 at line 2 column 8",
+            "InvalidType: unexpected string, expected u32 at line 2 column 8",
             "EndOfFile: unexpected end of file at line 3 column 19",
-            "Unexpected: expected end of line after value at line 5 column 24",
+            "Syntax: expected end of line after value at line 5 column 24",
         ]
     );
 }
@@ -162,7 +162,7 @@ fn test_stop() {
     assert_eq!(de.offset(), 3);
     assert_eq!(
         de.end().unwrap_err().to_string(),
-        "Unexpected: garbage after input at line 1 column 5"
+        "Syntax: garbage after input at line 1 column 5"
     );
     assert_eq!(STOP.from_str::<u32>("1 trash").unwrap(), 1);
     assert_eq!(STOP.from_slice::<u32>(b"1 \xff").unwrap(), 1);
@@ -182,12 +182,12 @@ fn test_stop() {
     assert_eq!(de.deserialize::<u32>().unwrap(), 1);
     assert_eq!(
         de.deserialize::<u32>().unwrap_err().to_string(),
-        "Unexpected: unexpected string, expected u32 at line 1 column 3"
+        "InvalidType: unexpected string, expected u32 at line 1 column 3"
     );
     assert!(de.is_end());
     assert_eq!(
         de.deserialize::<u32>().unwrap_err().to_string(),
-        "Unexpected: cannot continue after an error"
+        "InvalidState: cannot continue after an error"
     );
 }
 
@@ -200,7 +200,7 @@ fn test_stop_hjson() {
     assert_eq!(de.offset(), 3);
     assert_eq!(
         de.end().unwrap_err().to_string(),
-        "Unexpected: garbage after input at line 1 column 5"
+        "Syntax: garbage after input at line 1 column 5"
     );
     assert_eq!(STOP.from_str::<u32>("1 # c\ntrash").unwrap(), 1);
     assert_eq!(STOP.from_slice::<u32>(b"1\n\xff").unwrap(), 1);
@@ -221,12 +221,12 @@ fn test_stop_hjson() {
     assert_eq!(de.deserialize::<u32>().unwrap(), 1);
     assert_eq!(
         de.deserialize::<u32>().unwrap_err().to_string(),
-        "Unexpected: unexpected string, expected u32 at line 2 column 1"
+        "InvalidType: unexpected string, expected u32 at line 2 column 1"
     );
     assert!(de.is_end());
     assert_eq!(
         de.deserialize::<u32>().unwrap_err().to_string(),
-        "Unexpected: cannot continue after an error"
+        "InvalidState: cannot continue after an error"
     );
 }
 

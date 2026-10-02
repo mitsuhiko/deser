@@ -28,7 +28,7 @@ let json = r#"{"port": 0, "name": "web", "admins": []}"#;
 let err = deser_json::from_str::<Server>(json).unwrap_err();
 assert_eq!(
     err.to_string(),
-    "Unexpected: invalid value: must not be zero at line 1 column 10"
+    "InvalidValue: invalid value: must not be zero at line 1 column 10"
 );
 ```
 

@@ -36,7 +36,7 @@ three responses and exits. No manual interaction is needed.
 ```
 Number(3)
 Text("HELLO")
-Error("Unexpected: unknown variant `nope` of Request, expected `add` or
+Error("UnknownVariant: unknown variant `nope` of Request, expected `add` or
   `upper` at line 3 column 18")
 ```
 

@@ -106,7 +106,7 @@ fn trailing_whitespace(input: &[u8], offset: usize, eof: bool) -> Result<Progres
         // an incomplete comment is scanned again with more input
         (pos, false) if !eof => Ok(Progress::NeedMore { consumed: pos }),
         (pos, _) => {
-            Err(Error::new(ErrorKind::Unexpected, "garbage after input").with_offset(offset + pos))
+            Err(Error::new(ErrorKind::Syntax, "garbage after input").with_offset(offset + pos))
         }
     }
 }
@@ -372,7 +372,7 @@ impl StreamDeserializer {
         }
         if state.failed {
             return Err(Error::new(
-                ErrorKind::Unexpected,
+                ErrorKind::InvalidState,
                 "cannot continue after an error",
             ));
         }

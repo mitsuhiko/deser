@@ -106,7 +106,8 @@ system looks like that is allowed to start over:
 * **Ready for async.**  An ongoing deserialization is `Send` and can be fed
   while the input arrives.
 * **Errors point at the problem** with line, column and the path to the
-  value, also inside buffered values.
+  value, also inside buffered values.  Their category tells malformed input
+  apart from input that does not fit your types (HTTP 400 vs. 422).
 * **Layers** sit between the format and your types and can track paths,
   enforce limits, rename keys or reject input.
 * **Safe defaults for untrusted input:** duplicate keys are an error by
@@ -164,7 +165,7 @@ let input = r#"{"host": "::1", "port": 0}"#;
 let err = deser_json::from_str::<Listener>(input).unwrap_err();
 assert_eq!(
     err.to_string(),
-    "Unexpected: invalid value: must not be zero at line 1 column 25"
+    "InvalidValue: invalid value: must not be zero at line 1 column 25"
 );
 ```
 

@@ -39,7 +39,7 @@ mod sync;
 mod text;
 
 pub use self::bytes_format::BytesFormat;
-pub use self::error::{Error, ErrorAttachment, ErrorContext, ErrorKind};
+pub use self::error::{Error, ErrorAttachment, ErrorCategory, ErrorContext, ErrorKind};
 pub use self::event::{Atom, Bytes, ContainerShape, Event, Implicit, ImplicitValue, Order};
 pub use self::extensions::EventData;
 pub use self::position::Position;

@@ -33,7 +33,7 @@ null values).
 ## What you should see
 
 ```
-skipped: Unexpected: invalid value "many", expected u32
+skipped: InvalidValue: invalid value "many", expected u32
   at line 4 column 30 (path: copies)
 ```
 

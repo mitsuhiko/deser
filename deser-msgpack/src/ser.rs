@@ -265,7 +265,7 @@ impl Writer {
     #[inline(always)]
     fn end(&mut self) -> Result<(), Error> {
         let Some(parent) = self.stack.pop() else {
-            return Err(Error::new(ErrorKind::Unexpected, "unexpected end"));
+            return Err(Error::new(ErrorKind::InvalidState, "unexpected end"));
         };
         let frame = core::mem::replace(&mut self.frame, parent);
         if frame.remaining == 0 && !self.canonical {
@@ -283,7 +283,7 @@ impl Writer {
         let unknown = frame.info & UNKNOWN_LEN != 0;
         if !unknown && frame.remaining != 0 {
             return Err(Error::new(
-                ErrorKind::Unexpected,
+                ErrorKind::InvalidState,
                 "number of items does not match the length of the container",
             ));
         }
@@ -294,7 +294,7 @@ impl Writer {
         };
         if frame.is_map() {
             if !items.is_multiple_of(2) {
-                return Err(Error::new(ErrorKind::Unexpected, "map without value"));
+                return Err(Error::new(ErrorKind::InvalidState, "map without value"));
             }
             if self.canonical {
                 let map = self.maps.pop().unwrap();
@@ -384,7 +384,7 @@ impl Writer {
             .windows(2)
             .any(|pair| out[pair[0].0..pair[0].1] == out[pair[1].0..pair[1].1])
         {
-            return Err(Error::new(ErrorKind::Unexpected, "duplicate map key"));
+            return Err(Error::new(ErrorKind::DuplicateKey, "duplicate map key"));
         }
         let mut body = Vec::with_capacity(body_end - body_start);
         for (start, _, end) in entries {

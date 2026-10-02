@@ -42,13 +42,13 @@ use crate::{Validator, Violation};
 /// let err = deser_json::from_str::<Server>(json).unwrap_err();
 /// assert_eq!(
 ///     err.to_string(),
-///     "Unexpected: invalid value: must not be zero at line 1 column 10"
+///     "InvalidValue: invalid value: must not be zero at line 1 column 10"
 /// );
 /// let json = r#"{"port": 1, "admins": ["x"]}"#;
 /// let err = deser_json::from_str::<Server>(json).unwrap_err();
 /// assert_eq!(
 ///     err.to_string(),
-///     "Unexpected: invalid value: must be an email address \
+///     "InvalidValue: invalid value: must be an email address \
 ///      at line 1 column 24"
 /// );
 /// ```
@@ -82,7 +82,7 @@ use crate::{Validator, Violation};
 /// let err = deser_json::from_str::<PortRange>(json).unwrap_err();
 /// assert_eq!(
 ///     err.to_string(),
-///     "Unexpected: invalid value: min is larger than max at line 1 column 1"
+///     "InvalidValue: invalid value: min is larger than max at line 1 column 1"
 /// );
 /// ```
 ///

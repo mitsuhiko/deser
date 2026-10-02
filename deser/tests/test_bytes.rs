@@ -79,7 +79,7 @@ impl BytesEncoding for Dotted {
         s.split('.')
             .map(|x| {
                 x.parse()
-                    .map_err(|_| Error::new(ErrorKind::Unexpected, "invalid byte"))
+                    .map_err(|_| Error::new(ErrorKind::InvalidValue, "invalid byte"))
             })
             .collect()
     }
@@ -113,7 +113,7 @@ fn test_bytes_from_strings() {
     assert_eq!(value, [1, 255]);
 
     let err = deserialize::<Vec<u8>>(vec!["A".into()]).unwrap_err();
-    assert_eq!(err.to_string(), "Unexpected: invalid base64 string");
+    assert_eq!(err.to_string(), "InvalidValue: invalid base64 string");
     let err = deserialize::<[u8; 3]>(vec!["Af8=".into()]).unwrap_err();
     assert_eq!(err.kind(), ErrorKind::WrongLength);
 
@@ -285,13 +285,13 @@ fn test_adapters_deserialize() {
     assert_eq!(deserialize::<Blob>(events).unwrap(), blob());
 
     let err = deserialize::<As<[u8; 2], Dotted>>(vec!["x".into()]).unwrap_err();
-    assert_eq!(err.to_string(), "Unexpected: invalid byte");
+    assert_eq!(err.to_string(), "InvalidValue: invalid byte");
     let err = deserialize::<As<[u8; 2], Dotted>>(vec!["1".into()]).unwrap_err();
     assert_eq!(err.kind(), ErrorKind::WrongLength);
     let err = deserialize::<As<Vec<u8>, Dotted>>(vec![1u64.into()]).unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: unexpected unsigned integer, expected bytes or dotted string"
+        "InvalidType: unexpected unsigned integer, expected bytes or dotted string"
     );
 }
 

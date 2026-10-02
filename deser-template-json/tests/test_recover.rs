@@ -152,11 +152,11 @@ fn test_recover_atoms_and_containers() {
         items,
         Items(vec![
             ok(1),
-            err("Unexpected: unexpected string, expected u32 at offset 4"),
-            err("Unexpected: unexpected sequence, expected u32 at offset 9"),
-            err("Unexpected: unexpected map, expected u32 at offset 19"),
+            err("InvalidType: unexpected string, expected u32 at offset 4"),
+            err("InvalidType: unexpected sequence, expected u32 at offset 9"),
+            err("InvalidType: unexpected map, expected u32 at offset 19"),
             ok(5),
-            err("Unexpected: unexpected bool, expected u32 at offset 39"),
+            err("InvalidType: unexpected bool, expected u32 at offset 39"),
         ])
     );
 }
@@ -170,7 +170,7 @@ fn test_recover_nested() {
         items,
         Items(vec![
             ok(vec![vec![1]]),
-            err("Unexpected: unexpected string, expected u32 at offset 13"),
+            err("InvalidType: unexpected string, expected u32 at offset 13"),
             ok(vec![vec![5]]),
         ])
     );
@@ -185,12 +185,12 @@ fn test_recover_nested_boundaries() {
         Items(vec![
             ok(Items(vec![
                 ok(1),
-                err("Unexpected: unexpected string, expected u32 at offset 5"),
+                err("InvalidType: unexpected string, expected u32 at offset 5"),
                 ok(2),
             ])),
-            err("Unexpected: unexpected string, expected sequence at offset 14"),
+            err("InvalidType: unexpected string, expected sequence at offset 14"),
             ok(Items(vec![err(
-                "Unexpected: unexpected sequence, expected u32 at offset 20"
+                "InvalidType: unexpected sequence, expected u32 at offset 20"
             )])),
             ok(Items(vec![ok(4)])),
         ])
@@ -221,8 +221,8 @@ fn test_recover_struct_errors() {
         Items(vec![
             ok(Point { x: 1, y: 2 }),
             err("MissingField: missing field `y` at offset 51"),
-            err("Unexpected: unexpected sequence, expected u32 at offset 72"),
-            err("Unexpected: unknown field `z`, expected `x` or `y` at offset 99"),
+            err("InvalidType: unexpected sequence, expected u32 at offset 72"),
+            err("UnknownField: unknown field `z`, expected `x` or `y` at offset 99"),
             ok(Point { x: 3, y: 4 }),
         ])
     );
@@ -238,9 +238,9 @@ fn test_recover_keys() {
         entries,
         Entries(vec![
             ok((1, 1)),
-            err(r#"Unexpected: invalid value "x", expected u32 at offset 9"#),
-            err("Unexpected: unexpected map, expected u32 at offset 22"),
-            err(r#"Unexpected: invalid value "y", expected u32 at offset 34"#),
+            err(r#"InvalidValue: invalid value "x", expected u32 at offset 9"#),
+            err("InvalidType: unexpected map, expected u32 at offset 22"),
+            err(r#"InvalidValue: invalid value "y", expected u32 at offset 34"#),
             ok((4, 4)),
         ])
     );
@@ -253,12 +253,12 @@ fn test_unrecovered_errors() {
     let err = dialect::from_str::<Vec<Vec<u32>>>(r#"[[1], [2, "x"]]"#).unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: unexpected string, expected u32 at line 1 column 11"
+        "InvalidType: unexpected string, expected u32 at line 1 column 11"
     );
     let err = dialect::from_str::<Items<u32>>(r#"{"a": 1}"#).unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: unexpected map, expected sequence at line 1 column 1"
+        "InvalidType: unexpected map, expected sequence at line 1 column 1"
     );
 }
 
@@ -267,7 +267,7 @@ fn test_syntax_errors_are_not_recovered() {
     let err = dialect::from_str::<Items<Vec<u32>>>(r#"[[1, "x", , 2]]"#).unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: unexpected comma at line 1 column 11"
+        "Syntax: unexpected comma at line 1 column 11"
     );
 }
 
@@ -282,7 +282,7 @@ fn test_layer_errors_are_not_recovered() {
         .unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: recursion limit exceeded at line 1 column 13"
+        "LimitExceeded: recursion limit exceeded at line 1 column 13"
     );
 }
 
@@ -431,7 +431,7 @@ fn test_adapters_do_not_hide_syntax_errors() {
     let err = dialect::from_str::<Lenient>(r#"{"point": {"x": [1, }, "after": 1}"#).unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: expected a value at line 1 column 21"
+        "Syntax: expected a value at line 1 column 21"
     );
 }
 
@@ -443,6 +443,6 @@ fn test_default_on_error_with_limits() {
         .unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: recursion limit exceeded at line 1 column 13"
+        "LimitExceeded: recursion limit exceeded at line 1 column 13"
     );
 }

@@ -494,7 +494,7 @@ impl<'a, F: RawFormat> Raw<'a, F> {
         let bytes = bytes.into();
         let info = F::info();
         if info.is_text() && core::str::from_utf8(&bytes).is_err() {
-            return Err(Error::new(ErrorKind::Unexpected, "invalid utf-8"));
+            return Err(Error::new(ErrorKind::Syntax, "invalid utf-8"));
         }
         {
             let mut driver = DeserializeDriver::from_fn(|_| SinkHandle::null());
@@ -510,7 +510,7 @@ impl<'a, F: RawFormat> Raw<'a, F> {
         let bytes = (info.encode)(SerializeRef::new(&value))?;
         if info.is_text() && core::str::from_utf8(&bytes).is_err() {
             return Err(Error::new(
-                ErrorKind::Unexpected,
+                ErrorKind::InvalidState,
                 "the encoding of a text format is not utf-8",
             ));
         }

@@ -139,7 +139,7 @@ fn test_timestamp() {
             .unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: unexpected local date-time, expected offset date-time"
+        "InvalidType: unexpected local date-time, expected offset date-time"
     );
 }
 

@@ -133,7 +133,7 @@ where
 /// .unwrap_err();
 /// assert_eq!(
 ///     err.to_string(),
-///     "Unexpected: recursion limit exceeded at line 1 column 3"
+///     "LimitExceeded: recursion limit exceeded at line 1 column 3"
 /// );
 /// ```
 pub fn transcode_with<'de, D, S, DF, SF>(

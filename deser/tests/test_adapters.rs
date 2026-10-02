@@ -162,7 +162,7 @@ fn test_display_from_str() {
     .unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: unexpected unsigned integer, expected string"
+        "InvalidType: unexpected unsigned integer, expected string"
     );
     let err = deserialize::<Server>(vec![
         Event::map_start(),
@@ -173,7 +173,7 @@ fn test_display_from_str() {
     .unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: invalid value: invalid IP address syntax"
+        "InvalidValue: invalid value: invalid IP address syntax"
     );
 }
 
@@ -330,7 +330,7 @@ fn test_conversions() {
         Event::MapEnd,
     ])
     .unwrap_err();
-    assert_eq!(err.to_string(), "Unexpected: invalid value: out of range");
+    assert_eq!(err.to_string(), "InvalidValue: invalid value: out of range");
 
     let value = Conversions {
         color: Rgb(1, 2, 3),
@@ -340,7 +340,7 @@ fn test_conversions() {
     let err = SerializeDriver::new(&value)
         .drive(|_, _| Ok(()))
         .unwrap_err();
-    assert_eq!(err.to_string(), "Unexpected: invalid value: bad percent");
+    assert_eq!(err.to_string(), "InvalidValue: invalid value: bad percent");
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -517,7 +517,7 @@ impl<'de> Deserialize<'de, Vec<u8>> for Hex {
                     .step_by(2)
                     .map(|i| u8::from_str_radix(&s[i..i + 2], 16))
                     .collect::<Result<Vec<_>, _>>()
-                    .map_err(|_| Error::new(ErrorKind::Unexpected, "invalid hex"))?;
+                    .map_err(|_| Error::new(ErrorKind::InvalidValue, "invalid hex"))?;
                 slot.set(bytes);
                 Ok(())
             }

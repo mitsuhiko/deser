@@ -426,12 +426,12 @@ fn test_errors() {
         [("APP_SERVER__PORT", "http"), ("APP_SERVER__HOST", "x")],
     )
     .unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Unexpected);
+    assert_eq!(err.kind(), ErrorKind::InvalidValue);
     assert_eq!(env_var(&err), Some("APP_SERVER__PORT"));
     assert_eq!(err.offset(), None);
     assert_eq!(
         err.to_string(),
-        "Unexpected: invalid value \"http\", expected u16 (environment variable APP_SERVER__PORT)"
+        "InvalidValue: invalid value \"http\", expected u16 (environment variable APP_SERVER__PORT)"
     );
 
     // missing fields do not come from a variable

@@ -271,7 +271,7 @@ fn simple_values() {
     // Two-byte encodings of values below 32 are not well-formed.
     for x in 0u8..32 {
         let err = deser_cbor::from_slice::<Value>(&[0xf8, x]).unwrap_err();
-        assert_eq!(err.kind(), deser::ErrorKind::Unexpected, "f8{:02x}", x);
+        assert_eq!(err.kind(), deser::ErrorKind::Syntax, "f8{:02x}", x);
         assert!(err.to_string().contains("offset 0"), "{}", err);
     }
 }

@@ -87,7 +87,7 @@ impl TextWriter {
     /// Ends the property list once the value was written.
     pub(crate) fn finish(&mut self) -> Result<(), Error> {
         if !self.done || !self.stack.is_empty() || self.pending.is_some() {
-            return Err(Error::new(ErrorKind::Unexpected, "incomplete value"));
+            return Err(Error::new(ErrorKind::InvalidState, "incomplete value"));
         }
         if self.xml {
             self.out.push_str(write_xml::FOOTER);
@@ -106,7 +106,7 @@ impl TextWriter {
         match self.stack.last_mut() {
             None => {
                 if self.done {
-                    return Err(Error::new(ErrorKind::Unexpected, "unexpected event"));
+                    return Err(Error::new(ErrorKind::InvalidState, "unexpected event"));
                 }
                 match item(event)? {
                     Item::Null => Err(Error::new(
@@ -219,9 +219,9 @@ impl TextWriter {
             Some(Open::Array) => false,
             Some(Open::Dict(None)) => true,
             Some(Open::Dict(Some(_))) => {
-                return Err(Error::new(ErrorKind::Unexpected, "map without value"));
+                return Err(Error::new(ErrorKind::InvalidState, "map without value"));
             }
-            None => return Err(Error::new(ErrorKind::Unexpected, "unexpected end")),
+            None => return Err(Error::new(ErrorKind::InvalidState, "unexpected end")),
         };
         indent(&mut self.out, self.stack.len());
         self.out.push_str(match (self.xml, is_map) {
@@ -259,7 +259,7 @@ fn item(event: Event<'_>) -> Result<Item, Error> {
         Event::MapStart(_) => Item::Start(true),
         Event::SeqStart(_) => Item::Start(false),
         Event::MapEnd | Event::SeqEnd => {
-            return Err(Error::new(ErrorKind::Unexpected, "unexpected end event"));
+            return Err(Error::new(ErrorKind::InvalidState, "unexpected end event"));
         }
     })
 }

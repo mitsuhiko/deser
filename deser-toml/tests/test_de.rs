@@ -138,14 +138,15 @@ fn test_integer_range() {
     let value: BTreeMap<String, u64> = from_str("a = 0xffff_ffff_ffff_ffff").unwrap();
     assert_eq!(value["a"], u64::MAX);
 
-    // integers that cannot be represented are an error
+    // integers that cannot be represented are an error, TOML documents
+    // with them are invalid
     for invalid in [
         "18446744073709551616",
         "-9223372036854775809",
         "0x1_0000_0000_0000_0000",
     ] {
         let err = from_str::<Value>(&format!("a = {}", invalid)).unwrap_err();
-        assert_eq!(err.kind(), ErrorKind::OutOfRange);
+        assert_eq!(err.kind(), ErrorKind::Syntax);
     }
 }
 
@@ -181,7 +182,7 @@ fn test_floats() {
 
     // floats that overflow are not silently turned into infinity
     let err = from_str::<Value>("a = 1e400").unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::OutOfRange);
+    assert_eq!(err.kind(), ErrorKind::Syntax);
 }
 
 #[test]
@@ -762,15 +763,15 @@ fn test_invalid_utf8() {
 fn test_error_locations() {
     assert_eq!(
         fails("a = 1\nb = 2\nb = 3"),
-        "Unexpected: key `b` is already defined at line 3 column 1"
+        "Syntax: key `b` is already defined at line 3 column 1"
     );
     assert_eq!(
         fails("a = \"ä\\q\""),
-        "Unexpected: invalid escape sequence at line 1 column 7"
+        "Syntax: invalid escape sequence at line 1 column 7"
     );
     assert_eq!(
         fails("[a]\nb = 1 c"),
-        "Unexpected: unexpected 'c', expected end of line at line 2 column 7"
+        "Syntax: unexpected 'c', expected end of line at line 2 column 7"
     );
     assert_eq!(
         fails("a = [1, 2"),
@@ -778,11 +779,11 @@ fn test_error_locations() {
     );
     assert_eq!(
         fails("[a.b.c]\n[a]\nb.c.d = 1"),
-        "Unexpected: cannot add keys to table `c` which is defined elsewhere at line 3 column 3"
+        "Syntax: cannot add keys to table `c` which is defined elsewhere at line 3 column 3"
     );
     assert_eq!(
         fails("a = 0x-1"),
-        "Unexpected: invalid number at line 1 column 5"
+        "Syntax: invalid number at line 1 column 5"
     );
 }
 

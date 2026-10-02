@@ -83,7 +83,7 @@ fn test_number_errors() {
     assert_eq!(err.kind(), ErrorKind::OutOfRange);
 
     let err = deserialize::<u8>(vec![lexical("abc")]).unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Unexpected);
+    assert_eq!(err.kind(), ErrorKind::InvalidValue);
     assert_eq!(err.message(), "invalid value \"abc\", expected u8");
 
     let err = deserialize::<u32>(vec![lexical("")]).unwrap_err();
@@ -252,7 +252,7 @@ fn test_enums() {
         Order::Desc
     );
     let err = deserialize::<Order>(vec![lexical("up")]).unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Unexpected);
+    assert_eq!(err.kind(), ErrorKind::UnknownVariant);
 
     assert_eq!(
         deserialize::<Filter>(lexical_map(&[("Limit", "10")])).unwrap(),

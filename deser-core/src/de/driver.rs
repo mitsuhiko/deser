@@ -918,10 +918,7 @@ impl<'de> DriverCore<'de> {
             match sink.map(&mut self.state) {
                 Ok(()) => Container::Map(true, shape.is_multimap()),
                 // a map for a sink that wants its content
-                Err(err)
-                    if err.kind() == ErrorKind::Unexpected
-                        && ContentKey::of(&self.state).is_some() =>
-                {
+                Err(err) if err.kind().is_rejection() && ContentKey::of(&self.state).is_some() => {
                     Container::Content(true, false, false)
                 }
                 Err(err) => return Err(err),
@@ -962,12 +959,13 @@ impl<'de> DriverCore<'de> {
             self.state.is_map_key = false;
             rv = sink
                 .atom(Atom::Lexical(Text::borrowed("")), &mut self.state)
-                .map_err(|err| match err.kind() {
-                    // it's rejected as the map it is
-                    ErrorKind::Unexpected => {
+                .map_err(|err| {
+                    if err.kind().is_rejection() {
+                        // it's rejected as the map it is
                         super::default_container(&mut sink, "map", &self.state).unwrap_err()
+                    } else {
+                        err
                     }
-                    _ => err,
                 });
         }
         let rv = rv.and_then(|()| sink.finish(&mut self.state));
@@ -1041,7 +1039,7 @@ fn content_atom(
     }
     if core::mem::replace(found, true) {
         return Err(Error::new(
-            ErrorKind::Unexpected,
+            ErrorKind::InvalidType,
             "unexpected map with more than one content, expected a single value",
         ));
     }
@@ -1051,7 +1049,7 @@ fn content_atom(
 #[cold]
 fn content_container_error(is_key: bool) -> Error {
     Error::new(
-        ErrorKind::Unexpected,
+        ErrorKind::InvalidType,
         if is_key {
             "unexpected map with a key that is not a single value, expected a single value"
         } else {

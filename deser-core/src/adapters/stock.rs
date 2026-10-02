@@ -178,7 +178,7 @@ where
                     Ok(())
                 }
                 Err(err) => Err(Error::new(
-                    ErrorKind::Unexpected,
+                    ErrorKind::InvalidValue,
                     format!("invalid value: {}", err),
                 )),
             },

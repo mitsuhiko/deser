@@ -48,8 +48,8 @@ with layers:
   "api-tokens":"[redacted]","settings":{"dark-mode":true}}
 
 deserialization errors:
-Unexpected: too many items at line 5 column 49 (path: api_tokens[5])
-Unexpected: unexpected string, expected bool at line 6 column 35
+LimitExceeded: too many items at line 5 column 49 (path: api_tokens[5])
+InvalidType: unexpected string, expected bool at line 6 column 35
   (path: settings.dark_mode)
 ```
 

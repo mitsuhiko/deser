@@ -114,7 +114,7 @@ impl MapEmitter for MapIter<'_> {
         match self.value.take() {
             Some(value) => Ok(SerializeHandle::to(value)),
             None => Err(Error::new(
-                ErrorKind::Unexpected,
+                ErrorKind::InvalidState,
                 "next_value called before next_key",
             )),
         }

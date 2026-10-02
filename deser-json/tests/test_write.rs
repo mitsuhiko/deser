@@ -219,7 +219,7 @@ fn test_partial_errors() {
 
     impl deser::Serialize for Fail {
         fn serialize<'a>(_value: &'a Self, _state: &mut State) -> Result<Emit<'a>, Error> {
-            Err(Error::new(ErrorKind::Unexpected, "fail"))
+            Err(Error::new(ErrorKind::Custom, "fail"))
         }
     }
 

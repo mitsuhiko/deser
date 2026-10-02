@@ -198,7 +198,7 @@ pub trait StreamDeserializer {
     ) -> Result<Progress, Error> {
         let _ = (input, offset, eof, driver);
         Err(Error::new(
-            ErrorKind::Unexpected,
+            ErrorKind::InvalidState,
             "the deserializer cannot deserialize while the input arrives",
         ))
     }

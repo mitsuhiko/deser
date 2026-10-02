@@ -350,11 +350,11 @@ fn test_conversions() {
     assert_eq!(seq.len(), 2);
     assert_eq!(
         from_value::<Map>(&value!([1])).unwrap_err().to_string(),
-        "Unexpected: unexpected sequence, expected map"
+        "InvalidType: unexpected sequence, expected map"
     );
     assert_eq!(
         from_value::<Seq>(&value!("x")).unwrap_err().to_string(),
-        "Unexpected: unexpected string, expected sequence"
+        "InvalidType: unexpected string, expected sequence"
     );
 
     // values as fields
@@ -381,7 +381,7 @@ fn test_duplicate_keys() {
     let err = deser_json::from_str::<Value>(r#"{"a": 1, "b": 2, "a": 3}"#).unwrap_err();
     assert_eq!(
         err.to_string(),
-        r#"Unexpected: duplicate map key "a" at line 1 column 23"#
+        r#"DuplicateKey: duplicate map key "a" at line 1 column 23"#
     );
 
     // the policy of the deserialization decides
@@ -508,7 +508,7 @@ fn test_serializer() {
 
     impl Serialize for Failing {
         fn serialize<'a>(_value: &'a Self, _state: &mut State) -> Result<Emit<'a>, Error> {
-            Err(Error::new(ErrorKind::Unexpected, "failed"))
+            Err(Error::new(ErrorKind::Custom, "failed"))
         }
     }
 

@@ -124,7 +124,7 @@ fn test_error_path() {
 
     impl Serialize for Fails {
         fn serialize<'a>(_value: &'a Self, _state: &mut State) -> Result<Emit<'a>, Error> {
-            Err(Error::new(ErrorKind::Unexpected, "cannot serialize"))
+            Err(Error::new(ErrorKind::Custom, "cannot serialize"))
         }
     }
 
@@ -134,8 +134,5 @@ fn test_error_path() {
     driver.push_layer(PathLayer::new());
     let err = driver.drive(|_, _| Ok(())).unwrap_err();
     assert_eq!(err.attachment::<Path>().unwrap().to_string(), "items[1]");
-    assert_eq!(
-        err.to_string(),
-        "Unexpected: cannot serialize (path: items[1])"
-    );
+    assert_eq!(err.to_string(), "Custom: cannot serialize (path: items[1])");
 }

@@ -75,7 +75,7 @@ fn test_kept_errors() {
     assert_eq!(signup.email.value(), None);
     assert_eq!(
         error(signup.email.error()),
-        "Unexpected: invalid value: must be an email address at line 3 column 14 (path: email)"
+        "InvalidValue: invalid value: must be an email address at line 3 column 14 (path: email)"
     );
     assert_eq!(
         signup
@@ -92,14 +92,14 @@ fn test_kept_errors() {
     assert_eq!(signup.age.unchecked_value(), None);
     assert_eq!(
         error(signup.age.error()),
-        "Unexpected: unexpected sequence, expected u8 at line 4 column 12 (path: age)"
+        "InvalidType: unexpected sequence, expected u8 at line 4 column 12 (path: age)"
     );
 
     // errors deep inside the value, the rest of it was skipped
     assert!(signup.address.unchecked_value().is_none());
     assert_eq!(
         error(signup.address.error()),
-        "Unexpected: unexpected map, expected u32 at line 5 column 45 (path: address.zip)"
+        "InvalidType: unexpected map, expected u32 at line 5 column 45 (path: address.zip)"
     );
 
     let violation = signup
@@ -125,7 +125,7 @@ fn test_checked_fails() {
     let err = with_paths::<Signup>(&VALID.replace("\"jane\"", "\"\"")).unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: invalid value: must not be empty at line 2 column 13 (path: name)"
+        "InvalidValue: invalid value: must not be empty at line 2 column 13 (path: name)"
     );
     // the error of a checked value in a validated value is kept
     let signup: Signup = deser_json::from_str(&VALID.replace("12345", "12")).unwrap();
@@ -383,7 +383,7 @@ fn test_check_container() {
         .unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: invalid value: min is larger than max at line 1 column 17 (path: connections)"
+        "InvalidValue: invalid value: min is larger than max at line 1 column 17 (path: connections)"
     );
     assert_eq!(
         err.attachment::<Violation>().unwrap().code(),
@@ -416,6 +416,6 @@ fn test_check_container_update() {
         .unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: invalid value: min is larger than max at line 1 column 17 (path: connections)"
+        "InvalidValue: invalid value: min is larger than max at line 1 column 17 (path: connections)"
     );
 }

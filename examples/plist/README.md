@@ -55,7 +55,7 @@ as XML:
 followed by the strings, the window in OpenStep format and:
 
 ```
-error: Unexpected: invalid value "tall", expected u32 at line 3 column 14
+error: InvalidValue: invalid value "tall", expected u32 at line 3 column 14
 ```
 
 ## How to read it

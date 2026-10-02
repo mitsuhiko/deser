@@ -417,7 +417,7 @@ fn test_serializer() {
     let err = serializer.serialize(&Point { x: 3, y: 4 }).unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: an XML document holds a single root element"
+        "InvalidState: an XML document holds a single root element"
     );
     assert_eq!(serializer.finish(), r#"<point x="1"><y>2</y></point>"#);
 

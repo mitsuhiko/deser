@@ -312,7 +312,7 @@ impl Serializer {
         }
         if self.written {
             return Err(Error::new(
-                ErrorKind::Unexpected,
+                ErrorKind::InvalidState,
                 "a property list holds a single value",
             ));
         }
@@ -487,7 +487,7 @@ impl ser::EventSink for Builder {
 impl Builder {
     fn finish(self) -> Result<Tree, Error> {
         if self.nodes.is_empty() || !self.stack.is_empty() {
-            return Err(Error::new(ErrorKind::Unexpected, "incomplete value"));
+            return Err(Error::new(ErrorKind::InvalidState, "incomplete value"));
         }
         Ok(Tree { nodes: self.nodes })
     }
@@ -495,7 +495,7 @@ impl Builder {
     fn event(&mut self, event: Event) -> Result<(), Error> {
         let Some(open) = self.stack.last_mut() else {
             if !self.nodes.is_empty() {
-                return Err(Error::new(ErrorKind::Unexpected, "unexpected event"));
+                return Err(Error::new(ErrorKind::InvalidState, "unexpected event"));
             }
             return match self.value(event)? {
                 Some(_) => Ok(()),
@@ -572,9 +572,9 @@ impl Builder {
             Some(Open::Array(id, items)) => self.nodes[id] = Node::Array(items),
             Some(Open::Dict(id, entries, None)) => self.nodes[id] = Node::Dict(entries),
             Some(Open::Dict(_, _, Some(_))) => {
-                return Err(Error::new(ErrorKind::Unexpected, "map without value"));
+                return Err(Error::new(ErrorKind::InvalidState, "map without value"));
             }
-            None => return Err(Error::new(ErrorKind::Unexpected, "unexpected end")),
+            None => return Err(Error::new(ErrorKind::InvalidState, "unexpected end")),
         }
         Ok(())
     }
@@ -597,7 +597,7 @@ impl Builder {
                 Node::Array(Vec::new())
             }
             Event::MapEnd | Event::SeqEnd => {
-                return Err(Error::new(ErrorKind::Unexpected, "unexpected end event"));
+                return Err(Error::new(ErrorKind::InvalidState, "unexpected end event"));
             }
         };
         self.nodes.push(node);

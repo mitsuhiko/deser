@@ -34,7 +34,7 @@ impl StreamDeserializer for Lines {
             });
         }
         if input.first() == Some(&b'!') {
-            return Err(Error::new(ErrorKind::Unexpected, "bang").with_offset(0));
+            return Err(Error::new(ErrorKind::Syntax, "bang").with_offset(0));
         }
         match input[*scanned..].iter().position(|&b| b == b'\n') {
             Some(index) => {
@@ -202,7 +202,7 @@ fn test_frame_errors_are_fatal() {
     let err = reader.read::<u64>().unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: cannot continue after an error"
+        "InvalidState: cannot continue after an error"
     );
 }
 
@@ -217,7 +217,7 @@ fn test_from_reader() {
     let err = deser::io::from_reader::<u64, _, _>(&b"1\n\n2\n"[..], Lines::default()).unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: unexpected value after the end at line 3 column 1"
+        "Syntax: unexpected value after the end at line 3 column 1"
     );
 }
 
@@ -325,7 +325,7 @@ fn test_reader_is_a_deserializer() {
     let mut reader = Reader::new(&b"hello\n"[..], Lines::default());
     assert!(!reader.is_end().unwrap());
     let err = reader.deserialize::<&str>().unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Unexpected, "{err}");
+    assert_eq!(err.kind(), ErrorKind::UnsupportedType, "{err}");
     let mut reader = Reader::new(&b"hello\n"[..], Lines::default());
     assert_eq!(reader.deserialize::<String>().unwrap(), "hello");
     assert!(reader.is_end().unwrap());
@@ -426,7 +426,7 @@ impl Serializer for ColumnsOut {
         })?;
         match state {
             Some(expected) if *expected != names => {
-                return Err(Error::new(ErrorKind::Unexpected, "different columns"));
+                return Err(Error::new(ErrorKind::Syntax, "different columns"));
             }
             Some(_) => {}
             None => {

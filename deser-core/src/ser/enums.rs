@@ -389,7 +389,7 @@ impl<'a> StructEmitter for TaggedNewtypeEmitter<'a> {
             // the tag would be given twice (for instance by an internally
             // tagged enum with the same tag) and most parsers use the last.
             Some((name, _)) if name == tag => Err(Error::new(
-                ErrorKind::Unexpected,
+                ErrorKind::InvalidValue,
                 format!(
                     "the content of the variant has a field `{}` like the tag",
                     tag

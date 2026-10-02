@@ -641,7 +641,7 @@ fn derive_struct(input: &syn::DeriveInput, fields: &syn::FieldsNamed) -> syn::Re
             quote! {
                 match #name {
                     __deser::__derive::Some(val) => val,
-                    __deser::__derive::None => return __deser::__derive::Err(__deser::Error::new(__deser::ErrorKind::Unexpected, #error))
+                    __deser::__derive::None => return __deser::__derive::Err(__deser::Error::new(__deser::ErrorKind::InvalidState, #error))
                 }
             }
         } else if container_attrs.default().is_some() {

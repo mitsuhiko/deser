@@ -96,7 +96,7 @@ impl Serialize for Path {
         match this.to_str() {
             Some(value) => Ok(Emit::Atom(Atom::Str(Text::borrowed(value)))),
             None => Err(Error::new(
-                ErrorKind::Unexpected,
+                ErrorKind::InvalidValue,
                 "path contains invalid UTF-8 characters",
             )),
         }
@@ -151,7 +151,7 @@ impl Serialize for OsStr {
         match this.to_str() {
             Some(value) => Ok(Emit::Atom(Atom::Str(Text::borrowed(value)))),
             None => Err(Error::new(
-                ErrorKind::Unexpected,
+                ErrorKind::InvalidValue,
                 "OS string contains invalid UTF-8 characters",
             )),
         }

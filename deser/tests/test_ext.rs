@@ -102,7 +102,7 @@ fn test_unknown_extension_uses_fallback() {
 
     // and still fails for incompatible types
     let err = deserialize::<String>(events).unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Unexpected);
+    assert_eq!(err.kind(), ErrorKind::InvalidType);
 }
 
 #[test]

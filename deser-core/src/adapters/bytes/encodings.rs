@@ -7,7 +7,7 @@ use alloc::vec::Vec;
 
 #[cold]
 fn invalid() -> Error {
-    Error::new(ErrorKind::Unexpected, "invalid base64 string")
+    Error::new(ErrorKind::InvalidValue, "invalid base64 string")
 }
 
 const STANDARD: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";

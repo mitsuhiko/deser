@@ -119,7 +119,10 @@ impl SerializerConfig {
         };
         driver.drive(|event, state| builder.event(event, state))?;
         if !builder.done {
-            return Err(Error::new(ErrorKind::Unexpected, "no value was serialized"));
+            return Err(Error::new(
+                ErrorKind::InvalidState,
+                "no value was serialized",
+            ));
         }
         let mut writer = Writer {
             doc: &builder.doc,
@@ -218,7 +221,7 @@ impl ser::Serializer for Serializer {
     fn drive(&mut self, driver: &mut SerializeDriver<'_>) -> Result<(), Error> {
         if self.written > 0 {
             return Err(Error::new(
-                ErrorKind::Unexpected,
+                ErrorKind::InvalidState,
                 "a TOML document holds a single value",
             ));
         }
@@ -327,7 +330,7 @@ impl Builder {
     fn event(&mut self, event: Event, state: &State) -> Result<(), Error> {
         let Some(frame) = self.stack.last_mut() else {
             if self.done {
-                return Err(Error::new(ErrorKind::Unexpected, "unexpected event"));
+                return Err(Error::new(ErrorKind::InvalidState, "unexpected event"));
             }
             return match event {
                 Event::MapStart(_) => {
@@ -373,7 +376,7 @@ impl Builder {
                 match self.doc.insert_new(id, entry) {
                     Ok(()) => Ok(()),
                     Err(entry) => Err(Error::new(
-                        ErrorKind::Unexpected,
+                        ErrorKind::DuplicateKey,
                         format!("duplicate key `{}`", entry.key),
                     )),
                 }
@@ -426,7 +429,7 @@ impl Builder {
                 Ok(Converted::Value(Value::Array(id)))
             }
             Event::MapEnd | Event::SeqEnd => {
-                Err(Error::new(ErrorKind::Unexpected, "unexpected end event"))
+                Err(Error::new(ErrorKind::InvalidState, "unexpected end event"))
             }
         }
     }
@@ -476,7 +479,7 @@ fn convert_atom(atom: Atom, bytes: BytesFormat) -> Result<Converted, Error> {
 fn convert_ext(ext: &ExtValue, bytes: BytesFormat) -> Result<Converted, Error> {
     if let Some(value) = ext.downcast_ref::<Datetime>() {
         if !value.is_valid() {
-            return Err(Error::new(ErrorKind::Unexpected, "invalid datetime"));
+            return Err(Error::new(ErrorKind::InvalidValue, "invalid datetime"));
         }
         return Ok(Converted::Value(Value::Datetime(*value)));
     }

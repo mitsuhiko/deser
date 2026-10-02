@@ -63,7 +63,7 @@ impl DuplicateKeys {
         match self {
             DuplicateKeys::Last => Ok(true),
             DuplicateKeys::First => Ok(false),
-            DuplicateKeys::Error => Err(Error::new(ErrorKind::Unexpected, what())),
+            DuplicateKeys::Error => Err(Error::new(ErrorKind::DuplicateKey, what())),
         }
     }
 }

@@ -42,7 +42,7 @@ impl<'de> Source<'de> for Single<'de> {
 
 #[cold]
 pub(crate) fn unexpected_end() -> Error {
-    Error::new(ErrorKind::EndOfFile, "unexpected end of value")
+    Error::new(ErrorKind::InvalidState, "unexpected end of value")
 }
 
 #[cold]
@@ -55,7 +55,7 @@ fn unexpected_event(event: &Event, expecting: &str) -> Error {
         Event::SeqEnd => "end of sequence",
     };
     Error::new(
-        ErrorKind::Unexpected,
+        ErrorKind::InvalidType,
         format!("unexpected {}, expected {}", got, expecting),
     )
 }
@@ -142,7 +142,7 @@ fn parse_lexical<T: deser_core::de::DeserializeOwned>(
         sink.atom(Atom::Lexical(Text::borrowed(value)), &mut state)?;
         sink.finish(&mut state)?;
     }
-    out.ok_or_else(|| Error::new(ErrorKind::Unexpected, "lexical value was not parsed"))
+    out.ok_or_else(|| Error::new(ErrorKind::InvalidState, "lexical value was not parsed"))
 }
 
 /// Deserializes a value from a [`Source`].

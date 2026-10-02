@@ -54,7 +54,7 @@ pub(crate) trait Bridge: Sized + Send {
 /// Creates a conversion error.
 #[cold]
 pub(crate) fn invalid(msg: impl Into<Cow<'static, str>>) -> Error {
-    Error::new(ErrorKind::Unexpected, msg)
+    Error::new(ErrorKind::InvalidValue, msg)
 }
 
 /// Creates an out of range error.

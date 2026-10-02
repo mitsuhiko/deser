@@ -1047,13 +1047,13 @@ impl RecordWriter<'_> {
                 Some(column) if order[column].is_none() => order[column] = Some(index),
                 Some(_) => {
                     return Err(Error::new(
-                        ErrorKind::Unexpected,
+                        ErrorKind::DuplicateKey,
                         format!("duplicate field `{}`", key),
                     ));
                 }
                 None => {
                     return Err(Error::new(
-                        ErrorKind::Unexpected,
+                        ErrorKind::UnknownField,
                         format!("field `{}` is not a column", key),
                     ));
                 }
@@ -1076,7 +1076,7 @@ impl RecordWriter<'_> {
     fn check_len(&mut self, len: usize) -> Result<(), Error> {
         match self.len {
             Some(expected) if expected != len && !self.encoder.config.flexible => Err(Error::new(
-                ErrorKind::Unexpected,
+                ErrorKind::WrongLength,
                 format!("record has {} fields, expected {}", len, expected),
             )),
             Some(_) => Ok(()),
@@ -1096,7 +1096,7 @@ impl RecordWriter<'_> {
                 Some(quote) => self.out.extend_from_slice(&[quote, quote]),
                 None => {
                     return Err(Error::new(
-                        ErrorKind::Unexpected,
+                        ErrorKind::InvalidValue,
                         "a record with a single empty field needs quotes",
                     ));
                 }
@@ -1222,7 +1222,7 @@ impl FieldEncoder<'_> {
             Some(quote) if config.quote_style != QuoteStyle::Never => quote,
             _ => {
                 return Err(Error::new(
-                    ErrorKind::Unexpected,
+                    ErrorKind::InvalidValue,
                     format!(
                         "field {:?} needs to be quoted",
                         String::from_utf8_lossy(bytes)
@@ -1262,7 +1262,7 @@ impl FieldEncoder<'_> {
                 Some(escape) => out.extend_from_slice(&[escape, self.escaped(byte)]),
                 None => {
                     return Err(Error::new(
-                        ErrorKind::Unexpected,
+                        ErrorKind::InvalidValue,
                         "quotes in quoted fields need to be doubled or escaped",
                     ));
                 }

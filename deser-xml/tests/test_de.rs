@@ -490,7 +490,7 @@ fn test_limits() {
     assert!(parse(2).is_ok());
     assert_eq!(
         parse(1).unwrap_err().to_string(),
-        "Unexpected: recursion limit exceeded at line 1 column 4"
+        "LimitExceeded: recursion limit exceeded at line 1 column 4"
     );
 }
 

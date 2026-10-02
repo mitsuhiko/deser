@@ -248,7 +248,7 @@ impl<'a> Deserializer<'a> {
             Err(err) => Deserializer {
                 input: "",
                 error: Some(
-                    Error::new(ErrorKind::Unexpected, "input is not valid UTF-8")
+                    Error::new(ErrorKind::Syntax, "input is not valid UTF-8")
                         .with_offset(err.valid_up_to()),
                 ),
                 config: config.clone(),
@@ -391,7 +391,7 @@ impl<'a> Tree<'a> {
             }
             params += 1;
             if params > config.max_params {
-                return Err(Error::new(ErrorKind::Unexpected, "too many parameters")
+                return Err(Error::new(ErrorKind::LimitExceeded, "too many parameters")
                     .with_offset(pair_start));
             }
             let (raw_key, raw_value, value_start) = match pair.find('=') {
@@ -402,7 +402,7 @@ impl<'a> Tree<'a> {
             let key = match decode(raw_key) {
                 Decoded::Text(key) => key,
                 Decoded::Bytes(_) => {
-                    return Err(Error::new(ErrorKind::Unexpected, "key is not valid UTF-8")
+                    return Err(Error::new(ErrorKind::Syntax, "key is not valid UTF-8")
                         .with_offset(key_range.0));
                 }
             };
@@ -412,7 +412,7 @@ impl<'a> Tree<'a> {
             let first = split_key(&key, config.nesting, &mut segments);
             if segments.len() > config.max_depth {
                 return Err(
-                    Error::new(ErrorKind::Unexpected, "key is nested too deeply")
+                    Error::new(ErrorKind::LimitExceeded, "key is nested too deeply")
                         .with_offset(key_range.0),
                 );
             }
@@ -491,7 +491,7 @@ impl<'a> Tree<'a> {
         }
         if pushes && (names || indexes) {
             return Err(Error::new(
-                ErrorKind::Unexpected,
+                ErrorKind::Syntax,
                 "`[]` cannot be combined with other nested keys",
             )
             .with_offset(node.key_range.0));
@@ -594,7 +594,7 @@ impl<'a> Tree<'a> {
                         DuplicateKeys::First => &values[0],
                         DuplicateKeys::Error => {
                             return Err(Error::new(
-                                ErrorKind::Unexpected,
+                                ErrorKind::Syntax,
                                 "index given more than once",
                             )
                             .with_offset(values[1].1.0));
@@ -622,11 +622,10 @@ impl<'a> Tree<'a> {
                     });
                 }
                 (_, false) => {
-                    return Err(Error::new(
-                        ErrorKind::Unexpected,
-                        "key has a value and nested keys",
-                    )
-                    .with_offset(node.key_range.0));
+                    return Err(
+                        Error::new(ErrorKind::Syntax, "key has a value and nested keys")
+                            .with_offset(node.key_range.0),
+                    );
                 }
             }
         }

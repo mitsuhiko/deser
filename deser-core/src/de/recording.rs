@@ -1073,7 +1073,7 @@ impl<'a, 'de> RecordedValue<'a, 'de> {
             Some(first) => (&first.event, &first.snapshot),
             None => {
                 return Err(Error::new(
-                    ErrorKind::Unexpected,
+                    ErrorKind::InvalidState,
                     "cannot serialize an empty recording",
                 ));
             }
@@ -1105,7 +1105,7 @@ impl<'a, 'de> RecordedValue<'a, 'de> {
                 state,
             ),
             Event::MapEnd | Event::SeqEnd => {
-                return Err(Error::new(ErrorKind::Unexpected, "malformed recording"));
+                return Err(Error::new(ErrorKind::InvalidState, "malformed recording"));
             }
         })
     }
@@ -1170,7 +1170,7 @@ impl MapEmitter for RecordedEmitter<'_, '_> {
 
     fn next_value(&mut self, _state: &mut State) -> Result<SerializeHandle<'_>, Error> {
         RecordedEmitter::next_value(self)
-            .ok_or_else(|| Error::new(ErrorKind::Unexpected, "malformed recording"))
+            .ok_or_else(|| Error::new(ErrorKind::InvalidState, "malformed recording"))
     }
 }
 

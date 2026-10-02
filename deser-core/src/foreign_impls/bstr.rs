@@ -222,7 +222,7 @@ impl<'de: 'a, 'a> Deserialize<'de> for &'a BStr {
     fn deserialize_atom(slot: &mut Slot<Self>, atom: Atom, state: &mut State) -> Result<(), Error> {
         match atom {
             Atom::Str(_) | Atom::Lexical(_) | Atom::Bytes(_) => Err(Error::new(
-                ErrorKind::Unexpected,
+                ErrorKind::UnsupportedType,
                 "unexpected owned byte string, expected a borrowed byte string (the data \
                  format or the type buffering the value does not support borrowing)",
             )),

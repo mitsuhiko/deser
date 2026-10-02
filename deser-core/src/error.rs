@@ -10,16 +10,119 @@ use core::fmt;
 use crate::{Position, State};
 
 /// Describes the kind of error.
+///
+/// The kind determines the [`ErrorCategory`] of an error (see
+/// [`Error::category`]): the formats fail with [`Syntax`](Self::Syntax),
+/// [`EndOfFile`](Self::EndOfFile) and [`LimitExceeded`](Self::LimitExceeded)
+/// if the input is not well-formed, the values with the kinds of the
+/// [`Data`](ErrorCategory::Data) category if it is well-formed but does
+/// not fit them.
+///
+/// More kinds may be added in the future.
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
+#[non_exhaustive]
 pub enum ErrorKind {
-    UnsupportedType,
-    Unexpected,
-    MissingField,
-    OutOfRange,
-    WrongLength,
+    /// The input is not well-formed.
+    ///
+    /// This covers what the grammar of the format rejects (including data
+    /// after the end of the input and input that is not validly encoded)
+    /// and documents that are invalid in the format (like an unknown
+    /// alias in YAML or rows of different lengths in CSV).
+    Syntax,
+    /// The input ended before the value was complete or is empty.
     EndOfFile,
+    /// A limit was exceeded (see [`Limits`](crate::de::Limits)), like the
+    /// depth of nesting or the length of the input.
+    LimitExceeded,
+    /// A value has a type that is not expected (like a string where a
+    /// number is expected).
+    InvalidType,
+    /// A value has the type that is expected but is invalid (like text
+    /// that is not a number where a number is expected, or a value that a
+    /// validator rejects).
+    InvalidValue,
+    /// A number is out of the range of the type it's converted to.
+    OutOfRange,
+    /// A sequence or bytes have a length that is not expected.
+    WrongLength,
+    /// A field (or the tag of an enum) is missing.
+    MissingField,
+    /// A field is not known (see `#[deser(deny_unknown_fields)]`).
+    UnknownField,
+    /// A variant of an enum is not known, or no variant of an untagged
+    /// enum matches.
+    UnknownVariant,
+    /// A key is given more than once (see
+    /// [`DuplicateKeys`](crate::de::DuplicateKeys)).
+    DuplicateKey,
+    /// A type or value cannot be represented: the format does not support
+    /// it, or the type cannot be deserialized from what the format
+    /// provides (like a `&str` from a string that is not borrowed).
+    UnsupportedType,
+    /// An API is used in a way that is not supported, for instance a
+    /// stream that failed is used again or a serializer receives events
+    /// that do not form a value.
+    InvalidState,
     /// Reading or writing failed (see `deser::io`).  The IO error is
     /// the [`source`](std::error::Error::source) of the error.
+    Io,
+    /// An error which has none of the other kinds.
+    ///
+    /// The category of these errors depends on where they come from (see
+    /// [`Error::category`]).
+    Custom,
+}
+
+impl ErrorKind {
+    /// Returns `true` if a value rejects what it's given.
+    ///
+    /// The fallbacks which try another representation of a value if it's
+    /// rejected (like the text of a number) check this.  These are the
+    /// kinds of the errors of values, apart from numbers that are out of
+    /// range and missing fields.
+    #[inline]
+    pub(crate) fn is_rejection(self) -> bool {
+        matches!(
+            self,
+            ErrorKind::InvalidType
+                | ErrorKind::InvalidValue
+                | ErrorKind::UnknownField
+                | ErrorKind::UnknownVariant
+                | ErrorKind::DuplicateKey
+                | ErrorKind::Custom
+        )
+    }
+}
+
+/// Describes the category of an error, see [`Error::category`].
+///
+/// The categories tell apart whether the input was not well-formed or did
+/// not fit the values it was deserialized into.  For instance an HTTP
+/// server would answer requests that fail with errors of the
+/// [`Syntax`](Self::Syntax) and [`Eof`](Self::Eof) categories with
+/// `400 Bad Request` and the ones of the [`Data`](Self::Data) category
+/// with `422 Unprocessable Entity`.
+///
+/// More categories may be added in the future.
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
+#[non_exhaustive]
+pub enum ErrorCategory {
+    /// The input is not well-formed ([`ErrorKind::Syntax`]).
+    Syntax,
+    /// The input ended early ([`ErrorKind::EndOfFile`]).
+    Eof,
+    /// The input is well-formed but does not fit the values, or a value
+    /// cannot be serialized.
+    Data,
+    /// A limit was exceeded ([`ErrorKind::LimitExceeded`]).
+    Limit,
+    /// A type or value cannot be represented
+    /// ([`ErrorKind::UnsupportedType`]).
+    Unsupported,
+    /// An API was used in a way that is not supported
+    /// ([`ErrorKind::InvalidState`]).
+    Usage,
+    /// Reading or writing failed ([`ErrorKind::Io`]).
     Io,
 }
 
@@ -48,13 +151,13 @@ pub enum ErrorKind {
 ///     }
 /// }
 ///
-/// let err = Error::new(ErrorKind::Unexpected, "unexpected string")
+/// let err = Error::new(ErrorKind::InvalidType, "unexpected string")
 ///     .with_position(12, 2, 5)
 ///     .with_attachment(FileName("config.json".into()));
 /// assert_eq!(err.attachment::<FileName>().unwrap().0, "config.json");
 /// assert_eq!(
 ///     err.to_string(),
-///     "Unexpected: unexpected string at line 2 column 5 in config.json"
+///     "InvalidType: unexpected string at line 2 column 5 in config.json"
 /// );
 /// ```
 pub trait ErrorAttachment: Any + fmt::Debug + Send + Sync {
@@ -97,11 +200,11 @@ static RAW_REQUEST: &str = "raw value requested outside of a deserialization";
 /// ```
 /// use deser::{Error, ErrorKind};
 ///
-/// let err = Error::new(ErrorKind::Unexpected, "unexpected string")
+/// let err = Error::new(ErrorKind::InvalidType, "unexpected string")
 ///     .with_position(12, 2, 5);
 /// assert_eq!(
 ///     err.to_string(),
-///     "Unexpected: unexpected string at line 2 column 5"
+///     "InvalidType: unexpected string at line 2 column 5"
 /// );
 /// ```
 ///
@@ -131,7 +234,7 @@ static RAW_REQUEST: &str = "raw value requested outside of a deserialization";
 /// let err = Error::from_errors([
 ///     Error::new(ErrorKind::MissingField, "missing field `a`")
 ///         .with_offset(0),
-///     Error::new(ErrorKind::Unexpected, "unexpected string")
+///     Error::new(ErrorKind::InvalidType, "unexpected string")
 ///         .with_offset(9),
 /// ])
 /// .unwrap()
@@ -146,7 +249,7 @@ static RAW_REQUEST: &str = "raw value requested outside of a deserialization";
 /// assert_eq!(
 ///     format!("{:#}", err),
 ///     "MissingField: missing field `a` at line 1 column 1\n\
-///      Unexpected: unexpected string at line 2 column 8"
+///      InvalidType: unexpected string at line 2 column 8"
 /// );
 /// ```
 pub struct Error {
@@ -226,7 +329,7 @@ impl Error {
     #[cold]
     pub fn in_progress() -> Error {
         Error::new(
-            ErrorKind::Unexpected,
+            ErrorKind::InvalidState,
             "a value was only partially written, the stream cannot continue",
         )
     }
@@ -292,7 +395,7 @@ impl Error {
     pub(crate) fn map_each(mut self, mut f: impl FnMut(Error) -> Error) -> Error {
         if let ErrorInner::Multiple(ref mut errors) = *self.inner {
             for err in errors.iter_mut() {
-                let taken = core::mem::replace(err, Error::new(ErrorKind::Unexpected, ""));
+                let taken = core::mem::replace(err, Error::new(ErrorKind::Custom, ""));
                 *err = f(taken);
             }
             self
@@ -326,7 +429,7 @@ impl Error {
     /// value (see [`is_raw_request`](Self::is_raw_request)).
     #[cold]
     pub(crate) fn raw_request() -> Error {
-        Error::new(ErrorKind::Unexpected, RAW_REQUEST)
+        Error::new(ErrorKind::InvalidState, RAW_REQUEST)
     }
 
     /// Returns `true` if this requests the next value as raw value.
@@ -352,6 +455,54 @@ impl Error {
     /// Returns the kind of the error.
     pub fn kind(&self) -> ErrorKind {
         self.data().kind
+    }
+
+    /// Returns the category of the error.
+    ///
+    /// The category follows from the [`kind`](Self::kind).  The exception
+    /// are errors of the kind [`Custom`](ErrorKind::Custom): they are in
+    /// the [`Data`](ErrorCategory::Data) category if a value failed with them
+    /// while it was deserialized or serialized (the driver attached the
+    /// context of the event to them, see [`Error`]), and in the
+    /// [`Syntax`](ErrorCategory::Syntax) category otherwise (the format
+    /// failed with them).
+    ///
+    /// For an error that holds multiple errors this is the category of
+    /// the first one.
+    ///
+    /// ```
+    /// use deser::{Error, ErrorCategory, ErrorKind};
+    ///
+    /// let err = Error::new(ErrorKind::Syntax, "expected a comma");
+    /// assert_eq!(err.category(), ErrorCategory::Syntax);
+    /// let err = Error::new(ErrorKind::InvalidType, "unexpected string");
+    /// assert_eq!(err.category(), ErrorCategory::Data);
+    /// ```
+    pub fn category(&self) -> ErrorCategory {
+        let data = self.data();
+        match data.kind {
+            ErrorKind::Syntax => ErrorCategory::Syntax,
+            ErrorKind::EndOfFile => ErrorCategory::Eof,
+            ErrorKind::LimitExceeded => ErrorCategory::Limit,
+            ErrorKind::InvalidType
+            | ErrorKind::InvalidValue
+            | ErrorKind::OutOfRange
+            | ErrorKind::WrongLength
+            | ErrorKind::MissingField
+            | ErrorKind::UnknownField
+            | ErrorKind::UnknownVariant
+            | ErrorKind::DuplicateKey => ErrorCategory::Data,
+            ErrorKind::UnsupportedType => ErrorCategory::Unsupported,
+            ErrorKind::InvalidState => ErrorCategory::Usage,
+            ErrorKind::Io => ErrorCategory::Io,
+            ErrorKind::Custom => {
+                if data.has_context {
+                    ErrorCategory::Data
+                } else {
+                    ErrorCategory::Syntax
+                }
+            }
+        }
     }
 
     /// Returns the message of the error (without context).
@@ -387,7 +538,7 @@ impl Error {
     /// ```
     /// use deser::{Error, ErrorKind};
     ///
-    /// let err = Error::new(ErrorKind::Unexpected, "bad value")
+    /// let err = Error::new(ErrorKind::InvalidValue, "bad value")
     ///     .with_offset(7)
     ///     .resolve_position(b"[1,\n  x]");
     /// assert_eq!((err.line(), err.column()), (Some(2), Some(4)));
@@ -590,7 +741,7 @@ pub(crate) fn discarded_error(kind: ErrorKind) -> Error {
 /// Creates the error for a value that failed to convert or validate.
 #[cold]
 pub(crate) fn conversion_error<E: fmt::Display>(err: E) -> Error {
-    Error::new(ErrorKind::Unexpected, format!("invalid value: {}", err))
+    Error::new(ErrorKind::InvalidValue, format!("invalid value: {}", err))
 }
 
 /// Creates the error for an unknown variant.
@@ -608,7 +759,7 @@ pub fn unknown_variant(tag: Option<&str>, type_name: &str, names: &[&str]) -> Er
     msg.push_str(" of ");
     msg.push_str(type_name);
     push_expected(&mut msg, names, "variants");
-    Error::new(ErrorKind::Unexpected, msg)
+    Error::new(ErrorKind::UnknownVariant, msg)
 }
 
 /// Appends the expected names to an error message.

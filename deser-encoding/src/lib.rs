@@ -69,7 +69,7 @@ use deser_core::{Error, ErrorKind};
 fn decode(encoding: &Encoding, name: &str, s: &str) -> Result<Vec<u8>, Error> {
     encoding.decode(s.as_bytes()).map_err(|err| {
         Error::new(
-            ErrorKind::Unexpected,
+            ErrorKind::InvalidValue,
             format!("invalid {} string: {}", name, err),
         )
     })
@@ -220,7 +220,7 @@ mod tests {
         }
         assert_eq!(
             Hex::decode("zz").unwrap_err().to_string(),
-            "Unexpected: invalid hex string: invalid symbol at 0"
+            "InvalidValue: invalid hex string: invalid symbol at 0"
         );
     }
 
@@ -245,7 +245,7 @@ mod tests {
         assert!(Base32NoPad::decode("MZXW6===").is_err());
         assert_eq!(
             Base32::decode("x").unwrap_err().to_string(),
-            "Unexpected: invalid base32 string: invalid length at 0"
+            "InvalidValue: invalid base32 string: invalid length at 0"
         );
     }
 

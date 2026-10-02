@@ -338,7 +338,7 @@ fn test_explicit_tags() {
     let err = from_str::<Value>("!!int abc").unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: invalid !!int value at line 1 column 1"
+        "Syntax: invalid !!int value at line 1 column 1"
     );
     assert!(from_str::<Value>("!!map [1]").is_err());
     assert!(from_str::<Value>("!!str [1]").is_err());
@@ -457,13 +457,13 @@ again: *s
     assert_eq!(de.deserialize::<u32>().unwrap(), 1);
     assert_eq!(
         de.deserialize::<u32>().unwrap_err().to_string(),
-        "Unexpected: unknown anchor `a` at line 2 column 5"
+        "Syntax: unknown anchor `a` at line 2 column 5"
     );
 
     let err = from_str::<Value>("&a [*a]").unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: recursive alias at line 1 column 5"
+        "Syntax: recursive alias at line 1 column 5"
     );
 }
 
@@ -485,7 +485,7 @@ fn test_alias_limit() {
     let err = from_str::<Value>(&input).unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: aliases expand to too many events"
+        "LimitExceeded: aliases expand to too many events"
     );
 
     let input = "a: &a [1, 2]\nb: [*a, *a]";
@@ -511,7 +511,7 @@ fn test_max_depth() {
     let err = parse(3).unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: recursion limit exceeded at line 1 column 4"
+        "LimitExceeded: recursion limit exceeded at line 1 column 4"
     );
 
     // nesting does not use the stack
@@ -575,7 +575,7 @@ fn test_documents() {
     let err = from_str::<u32>("--- 1\n--- 2\n").unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: expected a single document, found more"
+        "Syntax: expected a single document, found more"
     );
 }
 
@@ -619,7 +619,7 @@ fn test_syntax_errors() {
     let err = from_str::<Value>("a: b: c").unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: syntax error: mapping values are not allowed in this context at line 1 column 5"
+        "Syntax: syntax error: mapping values are not allowed in this context at line 1 column 5"
     );
     let err = from_str::<Value>("[1, 2").unwrap_err();
     assert!(err.to_string().contains("syntax error"), "{}", err);
@@ -665,7 +665,7 @@ fn test_versions() {
 fn test_from_slice() {
     assert_eq!(from_slice::<Vec<u32>>(b"[1, 2]").unwrap(), [1, 2]);
     let err = from_slice::<Value>(b"a: \xff").unwrap_err();
-    assert_eq!(err.to_string(), "Unexpected: invalid UTF-8 at offset 3");
+    assert_eq!(err.to_string(), "Syntax: invalid UTF-8 at offset 3");
     // a byte order mark is skipped
     assert_eq!(from_slice::<u32>(b"\xef\xbb\xbf42").unwrap(), 42);
 }
@@ -833,17 +833,17 @@ fn test_merge_key_errors() {
     let err = from_str::<Value>("<<: 1").unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: the value of a merge key must be a mapping or a sequence of mappings at line 1 column 5"
+        "Syntax: the value of a merge key must be a mapping or a sequence of mappings at line 1 column 5"
     );
     let err = from_str::<Value>("<<: [{a: 1}, [1]]").unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: merge keys can only merge mappings or sequences of mappings at line 1 column 14"
+        "Syntax: merge keys can only merge mappings or sequences of mappings at line 1 column 14"
     );
     let err = from_str::<Value>("- &a 1\n- <<: *a").unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: merge keys can only merge mappings or sequences of mappings at line 1 column 3"
+        "Syntax: merge keys can only merge mappings or sequences of mappings at line 1 column 3"
     );
 
     // merges count towards the alias limit
@@ -858,7 +858,7 @@ fn test_merge_key_errors() {
     let err = from_str::<Value>(&input).unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: aliases expand to too many events"
+        "LimitExceeded: aliases expand to too many events"
     );
 }
 
@@ -896,7 +896,7 @@ fn test_error_locations() {
     let err = from_str::<Vec<Server>>("- host: a\n  port: 1\n- host: b\n  port: x\n").unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: unexpected string, expected u16 at line 4 column 9"
+        "InvalidType: unexpected string, expected u16 at line 4 column 9"
     );
 
     // values produced by aliases report the anchored node
@@ -910,7 +910,7 @@ fn test_error_locations() {
         .unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: too many items at line 1 column 11"
+        "LimitExceeded: too many items at line 1 column 11"
     );
 }
 

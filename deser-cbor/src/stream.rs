@@ -230,7 +230,7 @@ impl StreamDeserializer {
         }
         if state.partial_failed {
             return Err(Error::new(
-                ErrorKind::Unexpected,
+                ErrorKind::InvalidState,
                 "cannot continue after an error",
             ));
         }
@@ -271,7 +271,7 @@ impl de::StreamDeserializer for StreamDeserializer {
         let state = &mut self.state;
         if state.failed {
             return Err(Error::new(
-                ErrorKind::Unexpected,
+                ErrorKind::InvalidState,
                 "cannot continue after an item that is not well-formed",
             ));
         }

@@ -90,7 +90,7 @@ fn test_layers() {
     .unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: too many items at line 1 column 14"
+        "LimitExceeded: too many items at line 1 column 14"
     );
 
     let mut de = deser_json::Deserializer::from_str(r#"{"a": {"b": 1}}"#);

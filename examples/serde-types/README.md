@@ -39,7 +39,7 @@ After that, the manifest as pretty JSON and as YAML (John has no `email`,
 because serde's `skip_serializing_if` is honored), and:
 
 ```
-error: Unexpected: unexpected end of input while parsing minor version
+error: Custom: unexpected end of input while parsing minor version
   number at line 3 column 11 (path: version)
 error: MissingField: missing field `name` at line 4 column 59
   (path: authors[1])

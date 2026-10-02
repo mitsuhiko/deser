@@ -634,7 +634,7 @@ fn drive_events<T: Serialize + ?Sized>(
     }
     driver.drive(|event, _| {
         if Some(events.len()) == abort {
-            return Err(Error::new(deser::ErrorKind::Unexpected, "aborted"));
+            return Err(Error::new(deser::ErrorKind::Custom, "aborted"));
         }
         events.push(event.to_static());
         Ok(())

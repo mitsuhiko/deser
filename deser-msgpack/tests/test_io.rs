@@ -196,7 +196,7 @@ fn test_feeding_with_limits() {
     let err = reader.read_with::<Recording, _>(limits).unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: recursion limit exceeded at offset 2"
+        "LimitExceeded: recursion limit exceeded at offset 2"
     );
     // the item is skipped, the layer is added for every item
     assert_eq!(

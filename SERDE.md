@@ -551,7 +551,9 @@ Serde's `de::Error` trait only knows how to create errors, the kind of
 error is lost and there is no way to carry structured information.
 Deser's errors have a kind, a source location, a source error and typed
 attachments (the path of `deser-path` is one), which wrapping layers and
-applications can inspect.
+applications can inspect.  The kind determines a category which tells
+input that is not well-formed apart from input that does not fit the
+values in every format, like `serde_json::Error::classify` does for JSON.
 
 **Related issues:**
 

@@ -271,7 +271,7 @@ impl Emitter {
     /// Finishes the document, the output is complete afterwards.
     pub(crate) fn finish(&mut self) -> Result<(), Error> {
         if !self.done || !self.stack.is_empty() || self.pending.is_some() {
-            return Err(Error::new(ErrorKind::Unexpected, "incomplete document"));
+            return Err(Error::new(ErrorKind::InvalidState, "incomplete document"));
         }
         if !self.line_done {
             self.out.push('\n');
@@ -442,7 +442,7 @@ impl Emitter {
                     self.out.push(if is_map { '}' } else { ']' });
                 }
             }
-            _ => return Err(Error::new(ErrorKind::Unexpected, "unexpected end event")),
+            _ => return Err(Error::new(ErrorKind::InvalidState, "unexpected end event")),
         }
         self.complete();
         Ok(())
@@ -530,7 +530,7 @@ impl Emitter {
         let Some(frame) = self.stack.last_mut() else {
             if self.done {
                 return Err(Error::new(
-                    ErrorKind::Unexpected,
+                    ErrorKind::InvalidState,
                     "a document can only contain one value",
                 ));
             }

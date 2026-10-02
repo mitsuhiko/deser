@@ -190,8 +190,8 @@ impl PrettyWriter {
     fn end(&mut self, is_map: bool) -> Result<(), Error> {
         match self.stack.last() {
             Some(frame) if frame.is_map == is_map && (!is_map || self.is_key) => {}
-            _ if is_map => return Err(Error::new(ErrorKind::Unexpected, "unexpected map end")),
-            _ => return Err(Error::new(ErrorKind::Unexpected, "unexpected array end")),
+            _ if is_map => return Err(Error::new(ErrorKind::InvalidState, "unexpected map end")),
+            _ => return Err(Error::new(ErrorKind::InvalidState, "unexpected array end")),
         }
         // the closing bracket has to fit too
         if let Some(width) = self.inline_width

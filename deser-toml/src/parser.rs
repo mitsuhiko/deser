@@ -154,7 +154,7 @@ impl<'a> Parser<'a> {
 
     #[cold]
     fn error(&self, pos: usize, msg: &str) -> Error {
-        error_at(self.input, pos, ErrorKind::Unexpected, msg)
+        error_at(self.input, pos, ErrorKind::Syntax, msg)
     }
 
     /// Creates an error for the byte at the current position.
@@ -1008,7 +1008,7 @@ fn parse_simple_number(token: &str) -> Option<Value<'static>> {
 
 /// Parses an integer or float token.
 fn parse_number(token: &str) -> Result<Value<'static>, NumberError> {
-    const INVALID: NumberError = (ErrorKind::Unexpected, "invalid number");
+    const INVALID: NumberError = (ErrorKind::Syntax, "invalid number");
 
     let (negative, unsigned) = match token.as_bytes().first() {
         Some(b'-') => (true, &token[1..]),
@@ -1038,7 +1038,7 @@ fn parse_number(token: &str) -> Result<Value<'static>, NumberError> {
     if radix != 10 {
         if has_sign {
             return Err((
-                ErrorKind::Unexpected,
+                ErrorKind::Syntax,
                 "signs are not permitted for hexadecimal, octal and binary integers",
             ));
         }
@@ -1048,7 +1048,7 @@ fn parse_number(token: &str) -> Result<Value<'static>, NumberError> {
         }
         return match u64::from_str_radix(&strip_underscores(digits), radix) {
             Ok(value) => Ok(int_value(false, value)),
-            Err(_) => Err((ErrorKind::OutOfRange, "integer out of range")),
+            Err(_) => Err((ErrorKind::Syntax, "integer out of range")),
         };
     }
 
@@ -1059,7 +1059,7 @@ fn parse_number(token: &str) -> Result<Value<'static>, NumberError> {
         return Err(INVALID);
     }
     if int_part.len() > 1 && int_part.starts_with('0') {
-        return Err((ErrorKind::Unexpected, "leading zeros are not permitted"));
+        return Err((ErrorKind::Syntax, "leading zeros are not permitted"));
     }
 
     if int_end == unsigned.len() {
@@ -1070,10 +1070,10 @@ fn parse_number(token: &str) -> Result<Value<'static>, NumberError> {
                 } else if value <= i64::MIN.unsigned_abs() {
                     Ok(int_value(true, value))
                 } else {
-                    Err((ErrorKind::OutOfRange, "integer out of range"))
+                    Err((ErrorKind::Syntax, "integer out of range"))
                 }
             }
-            Err(_) => Err((ErrorKind::OutOfRange, "integer out of range")),
+            Err(_) => Err((ErrorKind::Syntax, "integer out of range")),
         };
     }
 
@@ -1100,7 +1100,7 @@ fn parse_number(token: &str) -> Result<Value<'static>, NumberError> {
     // the exponent for the float parser.
     let value: f64 = strip_underscores(token).parse().map_err(|_| INVALID)?;
     if value.is_infinite() {
-        return Err((ErrorKind::OutOfRange, "float out of range"));
+        return Err((ErrorKind::Syntax, "float out of range"));
     }
     Ok(Value::Float(value))
 }

@@ -31,7 +31,7 @@ use crate::error::{Error, ErrorKind};
 ///         driver.emit(Event::seq_start())?;
 ///         for item in self.0.split(',') {
 ///             let value: u64 = item.trim().parse().map_err(|_| {
-///                 Error::new(deser::ErrorKind::Unexpected, "invalid number")
+///                 Error::new(deser::ErrorKind::Syntax, "invalid number")
 ///             })?;
 ///             driver.emit(value)?;
 ///         }
@@ -45,7 +45,7 @@ use crate::error::{Error, ErrorKind};
 /// let rv = Numbers("1, 2, 3").deserialize_with::<Vec<u32>, _>(|driver| {
 ///     driver.push_layer(Limits::new().max_items(2));
 /// });
-/// assert_eq!(rv.unwrap_err().to_string(), "Unexpected: too many items");
+/// assert_eq!(rv.unwrap_err().to_string(), "LimitExceeded: too many items");
 /// ```
 pub trait Deserializer<'de> {
     /// Parses the input and feeds the events of a value into the driver.
@@ -130,7 +130,7 @@ pub trait Deserializer<'de> {
 ///             let value: u64 = item
 ///                 .trim()
 ///                 .parse()
-///                 .map_err(|_| Error::new(ErrorKind::Unexpected, "invalid number"))?;
+///                 .map_err(|_| Error::new(ErrorKind::Syntax, "invalid number"))?;
 ///             driver.emit(value)?;
 ///         }
 ///         driver.emit(Event::SeqEnd)

@@ -51,7 +51,7 @@ pub(crate) use self::encodings::decode_base64;
 ///         s.split('.')
 ///             .map(|x| {
 ///                 x.parse().map_err(|_| {
-///                     Error::new(ErrorKind::Unexpected, "invalid byte")
+///                     Error::new(ErrorKind::InvalidValue, "invalid byte")
 ///                 })
 ///             })
 ///             .collect()

@@ -437,7 +437,7 @@ impl StreamState {
         }
         if input.starts_with(b"\xff\xfe") || input.starts_with(b"\xfe\xff") {
             return Err(Error::new(
-                ErrorKind::Unexpected,
+                ErrorKind::Syntax,
                 "input is UTF-16, only UTF-8 is supported",
             )
             .with_offset(0));
@@ -490,7 +490,7 @@ impl StreamState {
     /// Takes the names of the columns from the record that was scanned.
     fn read_names(&mut self, record: &[u8]) -> Result<(), Error> {
         if let Some((offset, msg)) = self.scanner.error {
-            return Err(Error::new(ErrorKind::Unexpected, msg).with_offset(offset));
+            return Err(Error::new(ErrorKind::Syntax, msg).with_offset(offset));
         }
         let dialect = self.dialect.as_ref().unwrap();
         let mut names = Vec::with_capacity(self.scanner.fields.len());
@@ -505,7 +505,7 @@ impl StreamState {
             match core::str::from_utf8(text) {
                 Ok(name) => names.push(name.to_string()),
                 Err(_) => {
-                    return Err(Error::new(ErrorKind::Unexpected, "name is not valid UTF-8")
+                    return Err(Error::new(ErrorKind::Syntax, "name is not valid UTF-8")
                         .with_offset(field.span_start));
                 }
             }
@@ -541,7 +541,7 @@ impl StreamState {
             .as_ref()
             .expect("records are emitted after the start");
         if let Some((offset, msg)) = scanner.error {
-            return Err(Error::new(ErrorKind::Unexpected, msg).with_offset(base + offset));
+            return Err(Error::new(ErrorKind::Syntax, msg).with_offset(base + offset));
         }
         if config.bytes != BytesFormat::BASE64 {
             config.bytes.set(driver.state_mut());
@@ -561,7 +561,7 @@ impl StreamState {
         };
         if fields.len() != expected && !config.flexible {
             return Err(Error::new(
-                ErrorKind::Unexpected,
+                ErrorKind::Syntax,
                 format!(
                     "record has {} field{}, expected {}",
                     fields.len(),

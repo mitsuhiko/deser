@@ -167,7 +167,7 @@ impl<D: StreamDeserializer> InputBuffer<D> {
             return Err(failed_error());
         }
         if self.partial {
-            return Err(Error::new(ErrorKind::Unexpected, "a value is being fed"));
+            return Err(Error::new(ErrorKind::InvalidState, "a value is being fed"));
         }
         if self.done {
             return Ok(Status::End);
@@ -602,7 +602,7 @@ impl<D: StreamDeserializer> InputBuffer<D> {
         let (start, _, _) = self.ready.expect("no value is ready");
         let mut position = self.position;
         position.advance(&self.data[self.start..self.start + start]);
-        Error::new(ErrorKind::Unexpected, "unexpected value after the end")
+        Error::new(ErrorKind::Syntax, "unexpected value after the end")
             .with_position(0, 1, 1)
             .shift_position(position)
     }
@@ -610,5 +610,5 @@ impl<D: StreamDeserializer> InputBuffer<D> {
 
 #[cold]
 fn failed_error() -> Error {
-    Error::new(ErrorKind::Unexpected, "cannot continue after an error")
+    Error::new(ErrorKind::InvalidState, "cannot continue after an error")
 }

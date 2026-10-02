@@ -274,7 +274,7 @@ impl Dialect {
 
 #[cold]
 fn config_error<M: Into<alloc::borrow::Cow<'static, str>>>(msg: M) -> Error {
-    Error::new(ErrorKind::Unexpected, msg)
+    Error::new(ErrorKind::InvalidState, msg)
 }
 
 /// A field of a record.  The positions are relative to the record.
@@ -627,7 +627,7 @@ impl Scanner {
         if !eof {
             if pos > options.max_record_len {
                 return Err(Error::new(
-                    ErrorKind::Unexpected,
+                    ErrorKind::LimitExceeded,
                     format!(
                         "record is longer than the maximum of {} bytes",
                         options.max_record_len

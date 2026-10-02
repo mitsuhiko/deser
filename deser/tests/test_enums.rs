@@ -118,7 +118,7 @@ fn test_externally_tagged() {
     let err = deserialize::<External>(vec!["Nope".into()]).unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: unknown variant `Nope` of External, expected one of `Unit`, `Newtype`, `Tuple`, `Struct`"
+        "UnknownVariant: unknown variant `Nope` of External, expected one of `Unit`, `Newtype`, `Tuple`, `Struct`"
     );
     let err = deserialize::<External>(vec![
         Event::map_start(),
@@ -131,7 +131,7 @@ fn test_externally_tagged() {
     .unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: expected a map with a single key for External"
+        "InvalidType: expected a map with a single key for External"
     );
     assert!(deserialize::<External>(vec![Event::map_start(), Event::MapEnd]).is_err());
 }
@@ -393,7 +393,7 @@ fn test_untagged() {
     let err = deserialize::<Untagged>(vec![true.into()]).unwrap_err();
     assert_eq!(
         err.to_string(),
-        "Unexpected: data did not match any variant of Untagged"
+        "UnknownVariant: data did not match any variant of Untagged"
     );
 }
 

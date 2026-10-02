@@ -151,7 +151,7 @@ impl<R: Read, D: StreamDeserializer> Reader<R, D> {
     fn ensure_idle(&self) -> Result<(), Error> {
         match self.pending {
             Some(_) => Err(Error::new(
-                ErrorKind::Unexpected,
+                ErrorKind::InvalidState,
                 "a value is being read with read_next",
             )),
             None => Ok(()),
@@ -307,7 +307,7 @@ impl<R: Read, D: StreamDeserializer> Reader<R, D> {
                 Err(pending) => {
                     self.pending = Some(pending);
                     return Err(Error::new(
-                        ErrorKind::Unexpected,
+                        ErrorKind::InvalidState,
                         "a value of another type is being read",
                     ));
                 }
