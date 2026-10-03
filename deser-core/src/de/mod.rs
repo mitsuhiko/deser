@@ -1445,9 +1445,8 @@ pub trait Sink<'de>: Send + AsDynSink<'de> {
     /// that was started last in this container failed with an error, either
     /// because its sink (or a sink nested in it) returned the error or
     /// because this sink returned it while handling the item (for instance
-    /// from [`next_value`](Self::next_value) or
-    /// [`__private_value_atom`](Self::__private_value_atom)).  Errors of
-    /// this sink's own [`map`](Self::map), [`seq`](Self::seq) and
+    /// from [`next_value`](Self::next_value) or [`atom`](Self::atom)).
+    /// Errors of this sink's own [`map`](Self::map), [`seq`](Self::seq) and
     /// [`finish`](Self::finish) are errors of this sink's value and go to
     /// the container this sink is an item of.
     ///

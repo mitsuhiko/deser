@@ -233,6 +233,8 @@ macro_rules! encoding_adapter {
                     Ok($crate::ser::Emit::Atom($crate::Atom::Str($crate::Text::owned(rv))))
                 }
 
+                // rustdoc shows the hidden method in blanket impls
+                #[doc(hidden)]
                 #[inline]
                 fn __private_begin<'a>(
                     value: &'a $ty,

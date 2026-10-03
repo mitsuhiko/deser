@@ -202,9 +202,9 @@ fn same_format(a: &'static RawFormatInfo, b: &'static RawFormatInfo) -> bool {
 /// This is a well-known borrowing extension (see [`ext`](crate::ext)) which
 /// carries the encoding of a value between formats and [`Raw`] values:
 ///
-/// * formats emit it for values that are requested as raw values (see
-///   [`Deserialize::__private_raw`]).  They validate the value and pass on
-///   its input instead of its events.
+/// * formats emit it for values that are requested as raw values (the
+///   values of [`Raw`] types).  They validate the value and pass on its
+///   input instead of its events.
 /// * [`Raw`] values emit it when they are serialized and the serializer
 ///   writes the format as it is (see [`State::declare_raw_format`]).
 ///

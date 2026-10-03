@@ -1136,8 +1136,8 @@
 //!   and `Sync`), it cannot have generic parameters and it needs to be dyn
 //!   compatible.
 //! * Every implementation of the trait needs `#[deser::variant]`, the
-//!   attribute implements a hidden method of the trait (`__deser_variant`)
-//!   which is missing otherwise.  Implementations cannot be generic, the
+//!   attribute implements a hidden method of the trait which is missing
+//!   otherwise.  Implementations cannot be generic, the
 //!   types need to implement [`Serialize`](crate::Serialize) and
 //!   [`Deserialize`](crate::Deserialize) without borrowing (they are
 //!   `'static`).
