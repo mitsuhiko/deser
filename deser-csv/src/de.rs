@@ -97,8 +97,8 @@ impl DeserializerConfig {
     /// The values of the context are the defaults of the extension values
     /// of the state (see [`Context`](deser_core::Context)), for instance
     /// the variants of open enums.  The deserializers and readers created
-    /// with the configuration start with this context (their `set_context`
-    /// replaces it).  A context set on the driver takes precedence.
+    /// with the configuration use this context.  A context set
+    /// on the driver takes precedence.
     pub fn set_context(&mut self, context: deser_core::Context) {
         self.context = context;
     }
@@ -287,7 +287,10 @@ impl DeserializerConfig {
         s: &'de str,
         driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error> {
-        de::Deserializer::drive(&mut Deserializer::from_str_with_config(s, self), driver)
+        de::Deserializer::drive(
+            &mut Deserializer::from_str_with_config(s, self.clone()),
+            driver,
+        )
     }
 
     /// Deserializes the records of a byte slice.
@@ -305,7 +308,7 @@ impl DeserializerConfig {
         driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error> {
         de::Deserializer::drive(
-            &mut Deserializer::from_slice_with_config(bytes, self),
+            &mut Deserializer::from_slice_with_config(bytes, self.clone()),
             driver,
         )
     }
@@ -860,11 +863,11 @@ impl<'a> Deserializer<'a> {
     /// Creates a new deserializer for a string.
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(input: &'a str) -> Deserializer<'a> {
-        Deserializer::from_str_with_config(input, &DeserializerConfig::new())
+        Deserializer::from_str_with_config(input, DeserializerConfig::new())
     }
 
     /// Creates a new deserializer for a string with the given configuration.
-    pub fn from_str_with_config(input: &'a str, config: &DeserializerConfig) -> Deserializer<'a> {
+    pub fn from_str_with_config(input: &'a str, config: DeserializerConfig) -> Deserializer<'a> {
         Deserializer::new(input.as_bytes(), true, config)
     }
 
@@ -872,24 +875,21 @@ impl<'a> Deserializer<'a> {
     ///
     /// Fields which are not UTF-8 are passed on as bytes.
     pub fn from_slice(input: &'a [u8]) -> Deserializer<'a> {
-        Deserializer::from_slice_with_config(input, &DeserializerConfig::new())
+        Deserializer::from_slice_with_config(input, DeserializerConfig::new())
     }
 
     /// Creates a new deserializer for a byte slice with the given
     /// configuration.
-    pub fn from_slice_with_config(
-        input: &'a [u8],
-        config: &DeserializerConfig,
-    ) -> Deserializer<'a> {
+    pub fn from_slice_with_config(input: &'a [u8], config: DeserializerConfig) -> Deserializer<'a> {
         Deserializer::new(input, false, config)
     }
 
-    fn new(input: &'a [u8], utf8: bool, config: &DeserializerConfig) -> Deserializer<'a> {
+    fn new(input: &'a [u8], utf8: bool, config: DeserializerConfig) -> Deserializer<'a> {
         Deserializer {
             input,
             utf8,
             pos: 0,
-            config: config.clone(),
+            config,
             state: StreamState::default(),
             failed: false,
             source: None,
@@ -1092,23 +1092,6 @@ impl<'a> Deserializer<'a> {
             next = self.next_record()?;
         }
         driver.emit(Event::SeqEnd)
-    }
-
-    /// Sets the context the values are deserialized in.
-    ///
-    /// This replaces the context of the configuration (see
-    /// [`DeserializerConfig::set_context`]).  The values of the context
-    /// are the defaults of the extension values of the state (see
-    /// [`Context`](deser_core::Context)).  A context set on the driver
-    /// (for instance in the setup callback of `deserialize_with`) takes
-    /// precedence.
-    pub fn set_context(&mut self, context: deser_core::Context) {
-        self.config.context = context;
-    }
-
-    /// Returns the context the values are deserialized in.
-    pub fn context(&self) -> &deser_core::Context {
-        &self.config.context
     }
 }
 

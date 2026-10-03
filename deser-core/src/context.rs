@@ -20,8 +20,7 @@ type Entry = (TypeKey, Arc<dyn DebugAny>);
 /// once and given to every serialization or deserialization that uses it:
 /// the deserializer and serializer configurations of the formats hold one
 /// (for instance `deser_json::DeserializerConfig::builder().context(context)`),
-/// and the deserializers, serializers, drivers, readers and writers have
-/// `set_context` methods:
+/// and the drivers, readers and writers have `set_context` methods:
 ///
 /// ```
 /// use deser::de::{DeserializeDriver, DuplicateKeys};

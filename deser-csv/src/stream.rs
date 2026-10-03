@@ -56,13 +56,13 @@ impl Default for StreamDeserializer {
 impl StreamDeserializer {
     /// Creates a stream deserializer.
     pub fn new() -> StreamDeserializer {
-        StreamDeserializer::with_config(&DeserializerConfig::new())
+        StreamDeserializer::with_config(DeserializerConfig::new())
     }
 
     /// Creates a stream deserializer with the given configuration.
-    pub fn with_config(config: &DeserializerConfig) -> StreamDeserializer {
+    pub fn with_config(config: DeserializerConfig) -> StreamDeserializer {
         StreamDeserializer {
-            config: config.clone(),
+            config,
             state: StreamState::default(),
         }
     }
@@ -84,19 +84,19 @@ impl StreamDeserializer {
     ///     age: u32,
     /// }
     ///
-    /// let de = StreamDeserializer::with_headers(&DeserializerConfig::new(), ["name", "age"]);
+    /// let de = StreamDeserializer::with_headers(DeserializerConfig::new(), ["name", "age"]);
     /// let mut reader = Reader::new(&b"jane,42\n"[..], de);
     /// let row: Row = reader.read().unwrap().unwrap();
     /// assert_eq!((row.name.as_str(), row.age), ("jane", 42));
     /// # }
     /// ```
-    pub fn with_headers<I, S>(config: &DeserializerConfig, names: I) -> StreamDeserializer
+    pub fn with_headers<I, S>(config: DeserializerConfig, names: I) -> StreamDeserializer
     where
         I: IntoIterator<Item = S>,
         S: Into<String>,
     {
         StreamDeserializer {
-            config: config.clone(),
+            config,
             state: StreamState::with_headers(names.into_iter().map(Into::into).collect()),
         }
     }
@@ -150,7 +150,7 @@ impl DeserializerConfig {
     ///
     /// Every value is a record, see [`StreamDeserializer`].
     pub fn reader<R: Read>(&self, reader: R) -> deser_core::io::Reader<R, StreamDeserializer> {
-        deser_core::io::Reader::new(reader, StreamDeserializer::with_config(self))
+        deser_core::io::Reader::new(reader, StreamDeserializer::with_config(self.clone()))
     }
 
     /// Deserializes the records of a reader.

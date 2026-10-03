@@ -116,9 +116,11 @@ fn setup(driver: &mut DeserializeDriver<'_, '_>, warnings: &IgnoredFields) {
 /// Applies a TOML file to the configuration.
 fn apply_file(config: &mut Config, source: &str, warnings: &IgnoredFields) -> Result<(), Error> {
     // the source is needed for the locations of the warnings
-    let mut de = deser_toml::Deserializer::from_str(source);
-    de.set_context(Context::with(TrackLocations(true)));
-    de.update_with(config, |driver| setup(driver, warnings))
+    let toml = deser_toml::DeserializerConfig::builder()
+        .context(Context::with(TrackLocations(true)))
+        .build();
+    deser_toml::Deserializer::from_str_with_config(source, toml)
+        .update_with(config, |driver| setup(driver, warnings))
 }
 
 /// Applies environment variables (`SHOP_SERVER__PORT`) to the
@@ -143,7 +145,7 @@ fn apply_overrides(config: &mut Config, overrides: &[&str]) -> Result<(), Error>
         .nesting(Nesting::Dots)
         .build();
     let warnings = IgnoredFields::new();
-    deser_urlencoded::Deserializer::from_str_with_config(&query, &urlencoded)
+    deser_urlencoded::Deserializer::from_str_with_config(&query, urlencoded)
         .update_with(config, |driver| setup(driver, &warnings))?;
     // there are no files to fix, unknown overrides are errors
     match warnings.take().into_iter().next() {

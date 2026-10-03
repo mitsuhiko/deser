@@ -25,8 +25,8 @@ struct Request {
 
 async fn serve(socket: TcpStream) -> Result<(), deser::Error> {
     let (input, output) = socket.into_split();
-    let mut requests = Reader::new(input, StreamDeserializer::with_config(&READ_LINES));
-    let mut responses = Writer::new(output, Serializer::with_config(&WRITE_LINES));
+    let mut requests = Reader::new(input, StreamDeserializer::with_config(READ_LINES));
+    let mut responses = Writer::new(output, Serializer::with_config(WRITE_LINES));
     while let Some(request) = requests.read::<Request>().await? {
         responses.write(&request.id).await?;
     }

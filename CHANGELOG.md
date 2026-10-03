@@ -37,12 +37,12 @@ All notable changes to deser are documented here.
   serializations and deserializations from the outside, created once and
   shared.  Its values are the defaults of the extension values of the
   `State` (`State::get` returns the value of the state or the one of the
-  context).  The deserializers and serializers of the formats, the drivers,
-  `io::Reader`, `io::Writer`, `stream::InputBuffer` and the readers,
-  writers and codec of `deser-tokio` have `set_context` and `context`.
-  The deserializer and serializer configurations of all formats hold a
-  context as well (`set_context` and `context` on the configurations and
-  `context` on their builders), so `config.from_str(...)`,
+  context).  The drivers, `io::Reader`, `io::Writer`,
+  `stream::InputBuffer`, the readers, writers and codec of `deser-tokio`
+  and the deserializer and serializer of `deser-value` have `set_context`
+  and `context`.  The deserializer and serializer configurations of all
+  formats hold a context (`set_context` and `context` on the
+  configurations and `context` on their builders), so `config.from_str(...)`,
   `config.to_string(...)` and the deserializers, serializers, readers and
   writers created from a configuration use it.  CBOR and MessagePack
   gained a `DeserializerConfigBuilder` and TOML a `SerializerConfigBuilder`
@@ -54,6 +54,11 @@ All notable changes to deser are documented here.
   `DeserializeDriver::set_default_context` and
   `SerializeDriver::set_default_context`).  Contexts are equal if they
   share their values.
+- **Breaking:** the deserializers, serializers and stream deserializers
+  of the formats take their configuration by value instead of by
+  reference (`Deserializer::from_str_with_config(input, config)`,
+  `Serializer::with_config(config)`, `StreamDeserializer::with_config(config)`
+  and the other constructors that take a configuration).
 - **Breaking:** configuration given from the outside moved into the
   context.  The `bytes` options of the deserializer and serializer
   configurations of the formats (JSON, JSONC, JSON5, Hjson, TOML, YAML,

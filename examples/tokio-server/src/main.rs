@@ -36,8 +36,8 @@ const WRITE_LINES: SerializerConfig = SerializerConfig::builder()
 
 async fn handle(socket: TcpStream) -> Result<(), deser::Error> {
     let (input, output) = socket.into_split();
-    let mut requests = Reader::new(input, StreamDeserializer::with_config(&READ_LINES));
-    let mut responses = Writer::new(output, Serializer::with_config(&WRITE_LINES));
+    let mut requests = Reader::new(input, StreamDeserializer::with_config(READ_LINES));
+    let mut responses = Writer::new(output, Serializer::with_config(WRITE_LINES));
     loop {
         let response = match requests.read::<Request>().await {
             Ok(Some(Request::Add { a, b })) => Response::Number(a + b),
@@ -67,8 +67,8 @@ async fn main() -> Result<(), deser::Error> {
     });
 
     let codec = Codec::<_, _, Response>::new(
-        StreamDeserializer::with_config(&READ_LINES),
-        Serializer::with_config(&WRITE_LINES),
+        StreamDeserializer::with_config(READ_LINES),
+        Serializer::with_config(WRITE_LINES),
     );
     let mut client = Framed::new(TcpStream::connect(addr).await?, codec);
     client.send(Request::Add { a: 1, b: 2 }).await?;

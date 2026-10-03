@@ -86,7 +86,7 @@ fn test_spans() {
 
     let doc: Doc = tracked(
         "{\n  // a\n  \"a\": /* one */ 1,\n  \"b\": [true, /**/ false,],\n}",
-        &STRICT,
+        STRICT,
     )
     .deserialize()
     .unwrap();
@@ -101,7 +101,7 @@ fn test_values_separated_by_comments() {
     let config = DeserializerConfig::builder()
         .trailing(Trailing::Stop)
         .build();
-    let mut de = Deserializer::from_str_with_config("1 /* a */ 2 // b\n 3 // end", &config);
+    let mut de = Deserializer::from_str_with_config("1 /* a */ 2 // b\n 3 // end", config);
     let values = de.iter::<u32>().collect::<Result<Vec<_>, _>>().unwrap();
     assert_eq!(values, [1, 2, 3]);
     assert!(de.is_end());
@@ -110,7 +110,7 @@ fn test_values_separated_by_comments() {
     let config = DeserializerConfig::builder()
         .trailing(Trailing::Newline)
         .build();
-    let mut de = Deserializer::from_str_with_config("// header\n1 // one\n\n// x\n2\n", &config);
+    let mut de = Deserializer::from_str_with_config("// header\n1 // one\n\n// x\n2\n", config);
     let values = de.iter::<u32>().collect::<Result<Vec<_>, _>>().unwrap();
     assert_eq!(values, [1, 2]);
 

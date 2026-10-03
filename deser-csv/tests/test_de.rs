@@ -642,9 +642,12 @@ fn test_locations() {
         age: Spanned<u32>,
     }
 
-    let mut de = Deserializer::from_str("name,age\njane,42\n\"jo\nhn\",23\n");
-    de.set_context(Context::with(TrackLocations(true)));
-    let rows: Vec<Row> = de.deserialize().unwrap();
+    let config = DeserializerConfig::builder()
+        .context(Context::with(TrackLocations(true)))
+        .build();
+    let rows: Vec<Row> = config
+        .from_str("name,age\njane,42\n\"jo\nhn\",23\n")
+        .unwrap();
     assert_eq!(rows[0].age.span.unwrap().to_string(), "2:6-2:8");
     assert_eq!(rows[1].name.span.unwrap().to_string(), "3:1-4:4");
     assert_eq!(rows[1].age.span.unwrap().to_string(), "4:5-4:7");
@@ -661,7 +664,7 @@ fn test_maps_and_sequences() {
     // records can be deserialized one at a time into different types
     let mut de = Deserializer::from_str_with_config(
         "1,2\na,b,c\n",
-        &NO_HEADERS.into_builder().flexible(true).build(),
+        NO_HEADERS.into_builder().flexible(true).build(),
     );
     assert_eq!(de.deserialize_record::<[u32; 2]>().unwrap(), Some([1, 2]));
     assert_eq!(

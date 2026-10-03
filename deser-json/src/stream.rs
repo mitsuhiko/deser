@@ -316,13 +316,13 @@ impl Default for StreamDeserializer {
 impl StreamDeserializer {
     /// Creates a stream deserializer.
     pub fn new() -> StreamDeserializer {
-        StreamDeserializer::with_config(&DeserializerConfig::new())
+        StreamDeserializer::with_config(DeserializerConfig::new())
     }
 
     /// Creates a stream deserializer with the given configuration.
-    pub fn with_config(config: &DeserializerConfig) -> StreamDeserializer {
+    pub fn with_config(config: DeserializerConfig) -> StreamDeserializer {
         StreamDeserializer {
-            config: config.clone(),
+            config,
             state: StreamState::default(),
         }
     }
@@ -503,14 +503,14 @@ impl DeserializerConfig {
     ///
     /// See [`StreamDeserializer`] for how the stream is split into values.
     pub fn reader<R: Read>(&self, reader: R) -> deser_core::io::Reader<R, StreamDeserializer> {
-        deser_core::io::Reader::new(reader, StreamDeserializer::with_config(self))
+        deser_core::io::Reader::new(reader, StreamDeserializer::with_config(self.clone()))
     }
 
     /// Deserializes a value from a reader.
     ///
     /// See [`from_reader`].
     pub fn from_reader<T: DeserializeOwned, R: Read>(&self, reader: R) -> Result<T, Error> {
-        deser_core::io::from_reader(reader, StreamDeserializer::with_config(self))
+        deser_core::io::from_reader(reader, StreamDeserializer::with_config(self.clone()))
     }
 }
 

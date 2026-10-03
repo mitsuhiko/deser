@@ -431,8 +431,8 @@ fn test_config_context() {
         .build();
     let map: HashMap<String, u32> = config.from_slice(INPUT).unwrap();
     assert_eq!(map["a"], 2);
-    let mut de = Deserializer::from_slice_with_config(INPUT, &config);
-    assert_eq!(de.context(), config.context());
+    let mut de = Deserializer::from_slice_with_config(INPUT, config.clone());
+    assert_eq!(de.config().context(), config.context());
     assert_eq!(de.deserialize::<HashMap<String, u32>>().unwrap()["a"], 2);
     #[cfg(feature = "io")]
     {

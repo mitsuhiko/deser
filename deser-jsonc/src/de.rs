@@ -67,8 +67,8 @@ impl DeserializerConfig {
     /// The values of the context are the defaults of the extension values
     /// of the state (see [`Context`](deser_core::Context)), for instance
     /// the variants of open enums.  The deserializers and readers created
-    /// with the configuration start with this context (their `set_context`
-    /// replaces it).  A context set on the driver takes precedence.
+    /// with the configuration use this context.  A context set
+    /// on the driver takes precedence.
     ///
     /// ```
     /// use deser::Context;
@@ -122,7 +122,7 @@ impl DeserializerConfig {
     /// const LINES: DeserializerConfig =
     ///     DeserializerConfig::builder().trailing(Trailing::Newline).build();
     /// let mut de =
-    ///     Deserializer::from_str_with_config("1\n\nnope\n3\n", &LINES);
+    ///     Deserializer::from_str_with_config("1\n\nnope\n3\n", LINES);
     /// let mut values = Vec::new();
     /// while !de.is_end() {
     ///     match de.deserialize::<u32>() {
@@ -193,7 +193,10 @@ impl DeserializerConfig {
         s: &'de str,
         driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error> {
-        de::Deserializer::drive(&mut Deserializer::from_str_with_config(s, self), driver)
+        de::Deserializer::drive(
+            &mut Deserializer::from_str_with_config(s, self.clone()),
+            driver,
+        )
     }
 
     /// Deserializes JSON from the given bytes.
@@ -213,7 +216,7 @@ impl DeserializerConfig {
         driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error> {
         de::Deserializer::drive(
-            &mut Deserializer::from_slice_with_config(bytes, self),
+            &mut Deserializer::from_slice_with_config(bytes, self.clone()),
             driver,
         )
     }
@@ -292,7 +295,7 @@ impl Default for DeserializerConfigBuilder {
 ///
 /// let config = DeserializerConfig::builder().trailing(Trailing::Newline).build();
 /// let mut de =
-///     Deserializer::from_str_with_config("[1, 2]\n[3]\n", &config);
+///     Deserializer::from_str_with_config("[1, 2]\n[3]\n", config);
 /// assert_eq!(de.deserialize::<Vec<u32>>().unwrap(), [1, 2]);
 /// assert_eq!(de.deserialize::<Vec<u32>>().unwrap(), [3]);
 /// assert!(de.is_end());
@@ -319,11 +322,11 @@ impl<'a> Deserializer<'a> {
     /// Creates a new deserializer for a string.
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(input: &'a str) -> Deserializer<'a> {
-        Deserializer::from_str_with_config(input, &DeserializerConfig::new())
+        Deserializer::from_str_with_config(input, DeserializerConfig::new())
     }
 
     /// Creates a new deserializer for a string with the given configuration.
-    pub fn from_str_with_config(input: &'a str, config: &DeserializerConfig) -> Deserializer<'a> {
+    pub fn from_str_with_config(input: &'a str, config: DeserializerConfig) -> Deserializer<'a> {
         Deserializer {
             // the parser works on bytes but relies on the input being valid
             // UTF-8 when it hands out string slices.
@@ -333,7 +336,7 @@ impl<'a> Deserializer<'a> {
             parser: Parser::default(),
             failed: false,
             source: None,
-            config: config.clone(),
+            config,
         }
     }
 
@@ -343,17 +346,14 @@ impl<'a> Deserializer<'a> {
     /// UTF-8 when they are parsed (bytes outside of strings are only ever
     /// accepted if they are ASCII).  Invalid UTF-8 is an error.
     pub fn from_slice(input: &'a [u8]) -> Deserializer<'a> {
-        Deserializer::from_slice_with_config(input, &DeserializerConfig::new())
+        Deserializer::from_slice_with_config(input, DeserializerConfig::new())
     }
 
     /// Creates a new deserializer for a byte slice with the given
     /// configuration.
     ///
     /// See [`from_slice`](Self::from_slice).
-    pub fn from_slice_with_config(
-        input: &'a [u8],
-        config: &DeserializerConfig,
-    ) -> Deserializer<'a> {
+    pub fn from_slice_with_config(input: &'a [u8], config: DeserializerConfig) -> Deserializer<'a> {
         Deserializer {
             input,
             validate_utf8: true,
@@ -361,7 +361,7 @@ impl<'a> Deserializer<'a> {
             parser: Parser::default(),
             failed: false,
             source: None,
-            config: config.clone(),
+            config,
         }
     }
 
@@ -369,7 +369,7 @@ impl<'a> Deserializer<'a> {
     ///
     /// Only whitespace may follow the value in the frame.
     pub(crate) fn from_frame(input: &'a [u8], config: &DeserializerConfig) -> Deserializer<'a> {
-        let mut de = Deserializer::from_slice_with_config(input, config);
+        let mut de = Deserializer::from_slice_with_config(input, config.clone());
         de.config.trailing = Trailing::Strict;
         de
     }
@@ -466,7 +466,7 @@ impl<'a> Deserializer<'a> {
     /// };
     ///
     /// let config = DeserializerConfig::builder().trailing(Trailing::Newline).build();
-    /// let mut de = Deserializer::from_str_with_config("1\n2\n3\n", &config);
+    /// let mut de = Deserializer::from_str_with_config("1\n2\n3\n", config);
     /// let items = de.iter::<u32>().collect::<Result<Vec<_>, _>>().unwrap();
     /// assert_eq!(items, [1, 2, 3]);
     /// ```
@@ -587,23 +587,6 @@ impl<'a> Deserializer<'a> {
             return Err(Error::new(ErrorKind::Syntax, msg));
         }
         Ok(())
-    }
-
-    /// Sets the context the values are deserialized in.
-    ///
-    /// This replaces the context of the configuration (see
-    /// [`DeserializerConfig::set_context`]).  The values of the context
-    /// are the defaults of the extension values of the state (see
-    /// [`Context`](deser_core::Context)).  A context set on the driver
-    /// (for instance in the setup callback of `deserialize_with`) takes
-    /// precedence.
-    pub fn set_context(&mut self, context: deser_core::Context) {
-        self.config.context = context;
-    }
-
-    /// Returns the context the values are deserialized in.
-    pub fn context(&self) -> &deser_core::Context {
-        &self.config.context
     }
 }
 

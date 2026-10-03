@@ -109,13 +109,13 @@ impl Default for StreamDeserializer {
 impl StreamDeserializer {
     /// Creates a stream deserializer.
     pub fn new() -> StreamDeserializer {
-        StreamDeserializer::with_config(&DeserializerConfig::new())
+        StreamDeserializer::with_config(DeserializerConfig::new())
     }
 
     /// Creates a stream deserializer with the given configuration.
-    pub fn with_config(config: &DeserializerConfig) -> StreamDeserializer {
+    pub fn with_config(config: DeserializerConfig) -> StreamDeserializer {
         StreamDeserializer {
-            config: config.clone(),
+            config,
             state: StreamState::default(),
         }
     }
@@ -163,7 +163,7 @@ impl de::StreamDeserializer for StreamDeserializer {
         frame: &'de [u8],
         driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error> {
-        let mut de = Deserializer::from_slice_with_config(frame, &self.config);
+        let mut de = Deserializer::from_slice_with_config(frame, self.config.clone());
         de.drive(driver)?;
         de.end()
     }
@@ -181,7 +181,7 @@ impl DeserializerConfig {
     /// See [`StreamDeserializer`] for how the stream is split into
     /// documents.
     pub fn reader<R: Read>(&self, reader: R) -> deser_core::io::Reader<R, StreamDeserializer> {
-        deser_core::io::Reader::new(reader, StreamDeserializer::with_config(self))
+        deser_core::io::Reader::new(reader, StreamDeserializer::with_config(self.clone()))
     }
 
     /// Deserializes a value from a reader.

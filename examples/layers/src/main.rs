@@ -173,11 +173,13 @@ fn main() {
         "settings": {"dark_mode": "yes", "time_zone": null}
     }"#;
     let parse = |limits: Limits| {
-        let mut de = deser_json::Deserializer::from_str(input);
-        de.set_context(Context::with(limits));
+        let config = deser_json::DeserializerConfig::builder()
+            .context(Context::with(limits))
+            .build();
         // the limits see the events after the layers, so their errors get
         // the path of the event they reject
-        de.deserialize_with::<User, _>(|driver| driver.push_layer(PathLayer::new()))
+        deser_json::Deserializer::from_str_with_config(input, config)
+            .deserialize_with::<User, _>(|driver| driver.push_layer(PathLayer::new()))
     };
     let err = parse(Limits::builder().max_items(5).build()).unwrap_err();
     println!("{}", err);

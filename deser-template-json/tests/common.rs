@@ -16,10 +16,12 @@ pub const STOP: DeserializerConfig = DeserializerConfig::builder()
 
 /// Returns a deserializer that tracks locations.
 #[allow(dead_code)]
-pub fn tracked<'a>(input: &'a str, config: &DeserializerConfig) -> Deserializer<'a> {
-    let mut de = Deserializer::from_str_with_config(input, config);
-    de.set_context(Context::with(TrackLocations(true)));
-    de
+pub fn tracked<'a>(input: &'a str, config: DeserializerConfig) -> Deserializer<'a> {
+    let config = config
+        .into_builder()
+        .context(Context::with(TrackLocations(true)))
+        .build();
+    Deserializer::from_str_with_config(input, config)
 }
 
 /// A reader that returns the input in chunks of a fixed size.
@@ -68,7 +70,7 @@ pub fn events(value: Recording) -> Vec<Event<'static>> {
 
 /// Reads all values of a stream in memory.
 pub fn read_in_memory(config: &DeserializerConfig, input: &str) -> Vec<Vec<Event<'static>>> {
-    let mut de = Deserializer::from_str_with_config(input, config);
+    let mut de = Deserializer::from_str_with_config(input, config.clone());
     let mut rv = Vec::new();
     while !de.is_end() {
         rv.push(events(de.deserialize::<Recording>().unwrap()));

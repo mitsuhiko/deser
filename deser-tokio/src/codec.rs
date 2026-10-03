@@ -30,8 +30,8 @@ use deser_core::stream::{InputBuffer, Status};
 /// let (client, server) = tokio::io::duplex(1024);
 /// let codec = || {
 ///     Codec::<_, _, Vec<u32>>::new(
-///         StreamDeserializer::with_config(&READ_LINES),
-///         Serializer::with_config(&WRITE_LINES),
+///         StreamDeserializer::with_config(READ_LINES),
+///         Serializer::with_config(WRITE_LINES),
 ///     )
 /// };
 /// let mut client = Framed::new(client, codec());

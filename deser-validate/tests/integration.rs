@@ -42,10 +42,16 @@ const INVALID: &str = r#"{
     "nickname": ""
 }"#;
 
+/// A JSON deserializer that tracks locations.
+fn tracked(input: &str) -> deser_json::Deserializer<'_> {
+    let config = deser_json::DeserializerConfig::builder()
+        .context(Context::with(TrackLocations(true)))
+        .build();
+    deser_json::Deserializer::from_str_with_config(input, config)
+}
+
 fn with_paths<'de, T: Deserialize<'de>>(input: &'de str) -> Result<T, deser::Error> {
-    let mut de = deser_json::Deserializer::from_str(input);
-    de.set_context(Context::with(TrackLocations(true)));
-    de.deserialize_with(|driver| driver.push_layer(PathLayer::new()))
+    tracked(input).deserialize_with(|driver| driver.push_layer(PathLayer::new()))
 }
 
 #[test]
@@ -235,9 +241,7 @@ fn test_untagged_variants_do_not_keep_errors() {
 #[test]
 fn test_validation() {
     let validation = Validation::new();
-    let mut de = deser_json::Deserializer::from_str(INVALID);
-    de.set_context(Context::with(TrackLocations(true)));
-    let rv = de.deserialize_with::<Signup, _>(|driver| validation.setup(driver));
+    let rv = tracked(INVALID).deserialize_with::<Signup, _>(|driver| validation.setup(driver));
     let outcome = validation.finish(rv);
     // the value exists, it holds the invalid values
     assert!(!outcome.is_valid());

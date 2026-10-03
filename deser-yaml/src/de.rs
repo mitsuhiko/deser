@@ -78,8 +78,8 @@ impl DeserializerConfig {
     /// The values of the context are the defaults of the extension values
     /// of the state (see [`Context`](deser_core::Context)), for instance
     /// the variants of open enums.  The deserializers and readers created
-    /// with the configuration start with this context (their `set_context`
-    /// replaces it).  A context set on the driver takes precedence.
+    /// with the configuration use this context.  A context set
+    /// on the driver takes precedence.
     pub fn set_context(&mut self, context: deser_core::Context) {
         self.context = context;
     }
@@ -159,7 +159,7 @@ impl DeserializerConfig {
         s: &'de str,
         driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error> {
-        drive_single(Deserializer::from_str_with_config(s, self), driver)
+        drive_single(Deserializer::from_str_with_config(s, self.clone()), driver)
     }
 
     /// Deserializes a value from YAML in a byte slice.
@@ -176,7 +176,10 @@ impl DeserializerConfig {
         bytes: &'de [u8],
         driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error> {
-        drive_single(Deserializer::from_slice_with_config(bytes, self), driver)
+        drive_single(
+            Deserializer::from_slice_with_config(bytes, self.clone()),
+            driver,
+        )
     }
 }
 
@@ -569,11 +572,12 @@ impl<'a> Deserializer<'a> {
     /// Creates a new deserializer for a string.
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(input: &'a str) -> Deserializer<'a> {
-        Deserializer::from_str_with_config(input, &DeserializerConfig::new())
+        Deserializer::from_str_with_config(input, DeserializerConfig::new())
     }
 
     /// Creates a new deserializer for a string with the given configuration.
-    pub fn from_str_with_config(input: &'a str, config: &DeserializerConfig) -> Deserializer<'a> {
+    pub fn from_str_with_config(input: &'a str, config: DeserializerConfig) -> Deserializer<'a> {
+        let track_merges = config.merge_keys && input.contains("<<");
         Deserializer {
             input,
             parser: Parser::new(input),
@@ -581,8 +585,8 @@ impl<'a> Deserializer<'a> {
             started: false,
             pending_error: None,
             failed: false,
-            config: config.clone(),
-            track_merges: config.merge_keys && input.contains("<<"),
+            config,
+            track_merges,
             source: None,
             doc: Document::default(),
         }
@@ -592,17 +596,14 @@ impl<'a> Deserializer<'a> {
     ///
     /// The input must be UTF-8, otherwise deserializing fails.
     pub fn from_slice(input: &'a [u8]) -> Deserializer<'a> {
-        Deserializer::from_slice_with_config(input, &DeserializerConfig::new())
+        Deserializer::from_slice_with_config(input, DeserializerConfig::new())
     }
 
     /// Creates a new deserializer for a byte slice with the given
     /// configuration.
     ///
     /// The input must be UTF-8, otherwise deserializing fails.
-    pub fn from_slice_with_config(
-        input: &'a [u8],
-        config: &DeserializerConfig,
-    ) -> Deserializer<'a> {
+    pub fn from_slice_with_config(input: &'a [u8], config: DeserializerConfig) -> Deserializer<'a> {
         match str_from_utf8(input) {
             Ok(input) => Deserializer::from_str_with_config(input, config),
             Err(err) => {
@@ -1069,23 +1070,6 @@ impl<'a> Deserializer<'a> {
                 _ => stack.push(source),
             }
         }
-    }
-
-    /// Sets the context the values are deserialized in.
-    ///
-    /// This replaces the context of the configuration (see
-    /// [`DeserializerConfig::set_context`]).  The values of the context
-    /// are the defaults of the extension values of the state (see
-    /// [`Context`](deser_core::Context)).  A context set on the driver
-    /// (for instance in the setup callback of `deserialize_with`) takes
-    /// precedence.
-    pub fn set_context(&mut self, context: deser_core::Context) {
-        self.config.context = context;
-    }
-
-    /// Returns the context the values are deserialized in.
-    pub fn context(&self) -> &deser_core::Context {
-        &self.config.context
     }
 }
 

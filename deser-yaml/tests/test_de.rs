@@ -491,7 +491,7 @@ fn test_alias_limit() {
     let input = "a: &a [1, 2]\nb: [*a, *a]";
     let mut de = Deserializer::from_str_with_config(
         input,
-        &DeserializerConfig::builder().alias_limit(8).build(),
+        DeserializerConfig::builder().alias_limit(8).build(),
     );
     assert_eq!(
         de.deserialize::<Value>().unwrap(),
@@ -499,7 +499,7 @@ fn test_alias_limit() {
     );
     let mut de = Deserializer::from_str_with_config(
         input,
-        &DeserializerConfig::builder().alias_limit(7).build(),
+        DeserializerConfig::builder().alias_limit(7).build(),
     );
     assert!(de.deserialize::<Value>().is_err());
 }
@@ -657,7 +657,7 @@ fn test_versions() {
     // the directive overrides the configured version
     let mut de = Deserializer::from_str_with_config(
         "%YAML 1.1\n--- yes\n...\n%YAML 1.2\n--- yes\n--- yes\n",
-        &DeserializerConfig::builder().version(Version::V1_1).build(),
+        DeserializerConfig::builder().version(Version::V1_1).build(),
     );
     assert_eq!(
         de.config().clone(),

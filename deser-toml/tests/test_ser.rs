@@ -477,7 +477,7 @@ fn test_config_context() {
         .context(Context::with(BytesFormat::SEQ))
         .build();
     assert_eq!(config.to_string(&blob).unwrap(), "data = [1, 255]\n");
-    let mut ser = deser_toml::Serializer::with_config(&config);
+    let mut ser = deser_toml::Serializer::with_config(config);
     ser.serialize(&blob).unwrap();
     assert_eq!(ser.finish(), "data = [1, 255]\n");
 }

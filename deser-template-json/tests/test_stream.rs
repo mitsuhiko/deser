@@ -27,7 +27,10 @@ fn stream<'a, T: Deserialize<'a>>(
     config: &DeserializerConfig,
     input: &'a str,
 ) -> Result<Vec<T>, String> {
-    collect(&mut Deserializer::from_str_with_config(input, config))
+    collect(&mut Deserializer::from_str_with_config(
+        input,
+        config.clone(),
+    ))
 }
 
 #[test]
@@ -69,7 +72,7 @@ fn test_default_is_strict() {
 #[test]
 fn test_newline() {
     let input = "{\"id\": 1, \"name\": \"a\"}\n{\"id\": 2, \"name\": \"b\"}\n";
-    let mut de = Deserializer::from_str_with_config(input, &NEWLINE);
+    let mut de = Deserializer::from_str_with_config(input, NEWLINE);
     assert_eq!(
         collect::<Row>(&mut de).unwrap(),
         [
@@ -124,7 +127,7 @@ fn test_newline_recover() {
         "{\"id\": 4, \"name\": \"d\"} x\n", // garbage
         "{\"id\": 5, \"name\": \"e\"}",
     );
-    let mut de = Deserializer::from_str_with_config(input, &NEWLINE);
+    let mut de = Deserializer::from_str_with_config(input, NEWLINE);
     let mut rows = Vec::new();
     let mut errors = Vec::new();
     while !de.is_end() {
@@ -147,7 +150,7 @@ fn test_newline_recover() {
 #[test]
 fn test_newline_from_slice() {
     // invalid UTF-8 only fails its line
-    let mut de = Deserializer::from_slice_with_config(b"\"a\"\n\"\xff\"\n\"c\"\n", &NEWLINE);
+    let mut de = Deserializer::from_slice_with_config(b"\"a\"\n\"\xff\"\n\"c\"\n", NEWLINE);
     assert_eq!(de.deserialize::<String>().unwrap(), "a");
     assert!(de.deserialize::<String>().is_err());
     assert_eq!(de.deserialize::<String>().unwrap(), "c");
@@ -161,7 +164,7 @@ fn test_stop() {
     }
 
     // stops right after the value
-    let mut de = Deserializer::from_str_with_config("[1] trash", &STOP);
+    let mut de = Deserializer::from_str_with_config("[1] trash", STOP);
     assert_eq!(de.deserialize::<Vec<u32>>().unwrap(), [1]);
     assert_eq!(de.offset(), 3);
     assert_eq!(
@@ -182,7 +185,7 @@ fn test_stop() {
     assert_eq!(stream::<bool>(&STOP, "truefalse").unwrap(), [true, false]);
 
     // after an error the stream cannot continue
-    let mut de = Deserializer::from_str_with_config("1 \"x\" 3", &STOP);
+    let mut de = Deserializer::from_str_with_config("1 \"x\" 3", STOP);
     assert_eq!(de.deserialize::<u32>().unwrap(), 1);
     assert_eq!(
         de.deserialize::<u32>().unwrap_err().to_string(),
@@ -199,7 +202,7 @@ fn test_stop() {
 /// so values that follow them start on the next line.
 fn test_stop_hjson() {
     // stops right after the value
-    let mut de = Deserializer::from_str_with_config("[1] trash", &STOP);
+    let mut de = Deserializer::from_str_with_config("[1] trash", STOP);
     assert_eq!(de.deserialize::<Vec<u32>>().unwrap(), [1]);
     assert_eq!(de.offset(), 3);
     assert_eq!(
@@ -221,7 +224,7 @@ fn test_stop_hjson() {
     assert_eq!(stream::<String>(&STOP, "1-2").unwrap(), ["1-2"]);
 
     // after an error the stream cannot continue
-    let mut de = Deserializer::from_str_with_config("1\n\"x\" 3", &STOP);
+    let mut de = Deserializer::from_str_with_config("1\n\"x\" 3", STOP);
     assert_eq!(de.deserialize::<u32>().unwrap(), 1);
     assert_eq!(
         de.deserialize::<u32>().unwrap_err().to_string(),
@@ -238,7 +241,7 @@ fn test_stop_hjson() {
 fn test_empty() {
     for input in ["", "  \n\n \r\n"] {
         for config in [STRICT, NEWLINE, STOP] {
-            let mut de = Deserializer::from_str_with_config(input, &config);
+            let mut de = Deserializer::from_str_with_config(input, config);
             assert!(de.is_end());
             assert_eq!(collect::<u32>(&mut de).unwrap(), Vec::<u32>::new());
             assert_eq!(
@@ -266,7 +269,7 @@ fn test_locations() {
 
     let items = collect::<Spanned<Vec<Spanned<u32>>>>(&mut super::common::tracked(
         "[1]\n\n  [2, 3]\n",
-        &NEWLINE,
+        NEWLINE,
     ))
     .unwrap();
     let spans = items

@@ -132,7 +132,7 @@ fn test_read_borrowed() {
 
 #[test]
 fn test_reader_with_headers() {
-    let de = StreamDeserializer::with_headers(&DeserializerConfig::new(), ["name", "age"]);
+    let de = StreamDeserializer::with_headers(DeserializerConfig::new(), ["name", "age"]);
     let mut reader = Reader::new(&b"jane,42\n"[..], de);
     assert_eq!(reader.read::<Row>().unwrap(), Some(row("jane", 42)));
 
@@ -156,7 +156,7 @@ fn test_writer() {
     assert_eq!(writer.into_inner(), b"name,age\njane,42\n\"john,jr\",23\n");
 
     // appending to a stream with names
-    let ser = Serializer::with_headers(&SerializerConfig::new(), ["age", "name"]);
+    let ser = Serializer::with_headers(SerializerConfig::new(), ["age", "name"]);
     let mut writer = Writer::new(Vec::new(), ser);
     writer.write(&row("jane", 42)).unwrap();
     assert_eq!(writer.into_inner(), b"42,jane\n");

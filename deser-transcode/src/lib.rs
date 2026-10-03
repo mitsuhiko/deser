@@ -57,7 +57,7 @@
 //! let config = DeserializerConfig::builder().trailing(Trailing::Newline).build();
 //! let mut de = deser_json::Deserializer::from_str_with_config(
 //!     "{\"a\": 1}\n{\"a\": 2}\n",
-//!     &config,
+//!     config,
 //! );
 //! let mut ser = deser_yaml::Serializer::new();
 //! let mut transcoder = Transcoder::new();

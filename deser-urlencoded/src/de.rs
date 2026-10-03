@@ -69,8 +69,8 @@ impl DeserializerConfig {
     /// The values of the context are the defaults of the extension values
     /// of the state (see [`Context`](deser_core::Context)), for instance
     /// the variants of open enums.  The deserializers and readers created
-    /// with the configuration start with this context (their `set_context`
-    /// replaces it).  A context set on the driver takes precedence.
+    /// with the configuration use this context.  A context set
+    /// on the driver takes precedence.
     pub fn set_context(&mut self, context: deser_core::Context) {
         self.context = context;
     }
@@ -120,7 +120,10 @@ impl DeserializerConfig {
         s: &'de str,
         driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error> {
-        de::Deserializer::drive(&mut Deserializer::from_str_with_config(s, self), driver)
+        de::Deserializer::drive(
+            &mut Deserializer::from_str_with_config(s, self.clone()),
+            driver,
+        )
     }
 
     /// Deserializes a value from a query string in a byte slice.
@@ -138,7 +141,7 @@ impl DeserializerConfig {
         driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error> {
         de::Deserializer::drive(
-            &mut Deserializer::from_slice_with_config(bytes, self),
+            &mut Deserializer::from_slice_with_config(bytes, self.clone()),
             driver,
         )
     }
@@ -251,15 +254,15 @@ impl<'a> Deserializer<'a> {
     /// Creates a new deserializer for a string.
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(input: &'a str) -> Deserializer<'a> {
-        Deserializer::from_str_with_config(input, &DeserializerConfig::new())
+        Deserializer::from_str_with_config(input, DeserializerConfig::new())
     }
 
     /// Creates a new deserializer for a string with the given configuration.
-    pub fn from_str_with_config(input: &'a str, config: &DeserializerConfig) -> Deserializer<'a> {
+    pub fn from_str_with_config(input: &'a str, config: DeserializerConfig) -> Deserializer<'a> {
         Deserializer {
             input,
             error: None,
-            config: config.clone(),
+            config,
         }
     }
 
@@ -268,15 +271,12 @@ impl<'a> Deserializer<'a> {
     /// The input must be UTF-8 (it's ASCII if it was percent-encoded),
     /// otherwise deserializing fails.
     pub fn from_slice(input: &'a [u8]) -> Deserializer<'a> {
-        Deserializer::from_slice_with_config(input, &DeserializerConfig::new())
+        Deserializer::from_slice_with_config(input, DeserializerConfig::new())
     }
 
     /// Creates a new deserializer for a byte slice with the given
     /// configuration.
-    pub fn from_slice_with_config(
-        input: &'a [u8],
-        config: &DeserializerConfig,
-    ) -> Deserializer<'a> {
+    pub fn from_slice_with_config(input: &'a [u8], config: DeserializerConfig) -> Deserializer<'a> {
         match std::str::from_utf8(input) {
             Ok(input) => Deserializer::from_str_with_config(input, config),
             Err(err) => Deserializer {
@@ -286,7 +286,7 @@ impl<'a> Deserializer<'a> {
                     "input is not valid UTF-8",
                     err.valid_up_to(),
                 )),
-                config: config.clone(),
+                config,
             },
         }
     }
@@ -339,23 +339,6 @@ impl<'a> Deserializer<'a> {
             err.resolve_position(self.input.as_bytes());
             err
         })
-    }
-
-    /// Sets the context the values are deserialized in.
-    ///
-    /// This replaces the context of the configuration (see
-    /// [`DeserializerConfig::set_context`]).  The values of the context
-    /// are the defaults of the extension values of the state (see
-    /// [`Context`](deser_core::Context)).  A context set on the driver
-    /// (for instance in the setup callback of `deserialize_with`) takes
-    /// precedence.
-    pub fn set_context(&mut self, context: deser_core::Context) {
-        self.config.context = context;
-    }
-
-    /// Returns the context the values are deserialized in.
-    pub fn context(&self) -> &deser_core::Context {
-        &self.config.context
     }
 }
 

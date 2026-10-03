@@ -529,7 +529,7 @@ fn test_documents() {
     assert_eq!(DIRECTIVE.to_string(&1).unwrap(), "%YAML 1.2\n---\n1\n");
 
     // directives of later documents follow the end of the previous one
-    let mut serializer = deser_yaml::Serializer::with_config(&DIRECTIVE);
+    let mut serializer = deser_yaml::Serializer::with_config(DIRECTIVE);
     serializer.serialize(&"a").unwrap();
     serializer.serialize(&"b").unwrap();
     let yaml = serializer.finish();

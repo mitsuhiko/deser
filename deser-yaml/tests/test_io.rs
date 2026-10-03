@@ -199,7 +199,7 @@ fn test_partial_writer() {
         for limit in [1, 7, 100, usize::MAX] {
             let mut writer = config.writer(Vec::new());
             writer.set_buffer_limit(limit);
-            let mut expected = deser_yaml::Serializer::with_config(config);
+            let mut expected = deser_yaml::Serializer::with_config(config.clone());
             for value in values {
                 writer.write(&value).unwrap();
                 expected.serialize(&value).unwrap();

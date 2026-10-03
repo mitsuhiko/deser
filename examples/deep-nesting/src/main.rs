@@ -58,8 +58,9 @@ fn main() {
     println!("JSON: {} bytes, CBOR: {} bytes", json.len(), cbor.len());
 
     // untrusted input can be limited
-    let mut de = deser_json::Deserializer::from_str(&json);
-    de.set_context(Context::with(Limits::builder().max_depth(64).build()));
-    let err = de.deserialize::<Tree>().err().unwrap();
+    let config = deser_json::DeserializerConfig::builder()
+        .context(Context::with(Limits::builder().max_depth(64).build()))
+        .build();
+    let err = config.from_str::<Tree>(&json).err().unwrap();
     println!("with limits: {}", err);
 }

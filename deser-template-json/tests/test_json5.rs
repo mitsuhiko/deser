@@ -105,7 +105,7 @@ fn test_non_finite_roundtrip() {
         config.to_string(&values).unwrap(),
         "[\n  -Infinity,\n  NaN\n]"
     );
-    let mut serializer = dialect::Serializer::with_config(&config);
+    let mut serializer = dialect::Serializer::with_config(config);
     serializer.serialize(&f64::NAN).unwrap();
     assert_eq!(serializer.finish(), "NaN");
 }
@@ -145,7 +145,7 @@ fn test_spans() {
         hex: Spanned<u32>,
     }
 
-    let doc: Doc = tracked("{\n  key: 'välue', // c\n  hex: 0xFF,\n}", &STRICT)
+    let doc: Doc = tracked("{\n  key: 'välue', // c\n  hex: 0xFF,\n}", STRICT)
         .deserialize()
         .unwrap();
     let span = |s: Option<deser_location::Span>| format!("{:?}", s.unwrap());

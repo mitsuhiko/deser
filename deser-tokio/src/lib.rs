@@ -31,17 +31,17 @@
 //! # let (client, server) = tokio::io::duplex(1024);
 //! # let client = tokio::spawn(async move {
 //! #     let (input, output) = tokio::io::split(client);
-//! #     let mut requests = Writer::new(output, Serializer::with_config(&WRITE_LINES));
+//! #     let mut requests = Writer::new(output, Serializer::with_config(WRITE_LINES));
 //! #     requests.write(&Request { id: 1, method: "ping".into() }).await.unwrap();
 //! #     requests.shutdown().await.unwrap();
-//! #     let mut responses = Reader::new(input, StreamDeserializer::with_config(&READ_LINES));
+//! #     let mut responses = Reader::new(input, StreamDeserializer::with_config(READ_LINES));
 //! #     assert_eq!(responses.read::<u64>().await.unwrap(), Some(1));
 //! # });
 //! let (input, output) = tokio::io::split(server);
 //!
 //! // JSON Lines in, JSON Lines out
-//! let mut requests = Reader::new(input, StreamDeserializer::with_config(&READ_LINES));
-//! let mut responses = Writer::new(output, Serializer::with_config(&WRITE_LINES));
+//! let mut requests = Reader::new(input, StreamDeserializer::with_config(READ_LINES));
+//! let mut responses = Writer::new(output, Serializer::with_config(WRITE_LINES));
 //! while let Some(request) = requests.read::<Request>().await? {
 //!     responses.write(&request.id).await?;
 //! }

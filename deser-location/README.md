@@ -18,9 +18,10 @@ struct Config {
 }
 
 let input = "name: web\nworkers: 0\n";
-let mut de = deser_yaml::Deserializer::from_str(input);
-de.set_context(Context::with(TrackLocations(true)));
-let config: Config = de.deserialize().unwrap();
+let yaml = deser_yaml::DeserializerConfig::builder()
+    .context(Context::with(TrackLocations(true)))
+    .build();
+let config: Config = yaml.from_str(input).unwrap();
 
 if config.workers.value == 0 {
     let span = config.workers.span.unwrap();

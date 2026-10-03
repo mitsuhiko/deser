@@ -346,12 +346,12 @@ fn test_serializer() {
 
     // values are separated according to `trailing`
     let mut serializer =
-        Serializer::with_config(&SerializerConfig::builder().trailing(Trailing::Stop).build());
+        Serializer::with_config(SerializerConfig::builder().trailing(Trailing::Stop).build());
     serializer.serialize(&1).unwrap();
     serializer.serialize(&2).unwrap();
     assert_eq!(serializer.as_str(), "1\n2");
     let mut serializer = Serializer::with_config(
-        &SerializerConfig::builder()
+        SerializerConfig::builder()
             .trailing(Trailing::Newline)
             .build(),
     );
@@ -481,16 +481,10 @@ fn test_config_context() {
     assert_eq!(json, r#""Af8=""#);
 
     // the serializers created with the configuration have its context
-    let mut ser = Serializer::with_config(&config);
-    assert_eq!(ser.context(), config.context());
+    let mut ser = Serializer::with_config(config.clone());
+    assert_eq!(ser.config().context(), config.context());
     ser.serialize(bytes).unwrap();
     assert_eq!(ser.finish(), "[1,255]");
-
-    // which their `set_context` replaces
-    let mut ser = Serializer::with_config(&config);
-    ser.set_context(Context::new());
-    ser.serialize(bytes).unwrap();
-    assert_eq!(ser.finish(), r#""Af8=""#);
 
     // and so do the writers
     let mut out = Vec::new();

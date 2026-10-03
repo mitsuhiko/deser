@@ -28,7 +28,7 @@ const INPUT: &str = r#"{"event": "login", "user": "jane"}
 "#;
 
 fn main() {
-    let mut de = Deserializer::from_str_with_config(INPUT, &LINES);
+    let mut de = Deserializer::from_str_with_config(INPUT, LINES);
     let mut events = Vec::new();
     let mut errors = Vec::new();
     while !de.is_end() {

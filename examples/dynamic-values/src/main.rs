@@ -153,13 +153,13 @@ fn merge() {
         "{\n  \"server\": {\n    \"host\": \"example.com\",\n    \"port\": \"eighty\"\n  }\n}";
 
     // values remember where they came from
-    let context = Context::with(TrackLocations(true));
-    let mut de = deser_json::Deserializer::from_str(base);
-    de.set_context(context.clone());
-    let mut merged: Value = de.deserialize().unwrap();
-    let mut de = deser_json::Deserializer::from_str(local);
-    de.set_context(context.clone());
-    de.update(&mut merged).unwrap();
+    let config = deser_json::DeserializerConfig::builder()
+        .context(Context::with(TrackLocations(true)))
+        .build();
+    let mut merged: Value = config.from_str(base).unwrap();
+    deser_json::Deserializer::from_str_with_config(local, config)
+        .update(&mut merged)
+        .unwrap();
     // the keys of the file are merged into the map, the values of keys that
     // exist are replaced
     assert_eq!(merged["server"]["host"], "example.com");

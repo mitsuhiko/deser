@@ -41,7 +41,7 @@ async fn test_values_in_small_chunks() {
             tokio::time::sleep(Duration::from_millis(1)).await;
         }
     });
-    let mut reader = Reader::new(server, StreamDeserializer::with_config(&LINES));
+    let mut reader = Reader::new(server, StreamDeserializer::with_config(LINES));
     for id in 0..10 {
         assert_eq!(reader.read::<Message>().await.unwrap(), Some(message(id)));
     }
@@ -75,7 +75,7 @@ async fn test_futures_are_send() {
 #[tokio::test]
 async fn test_read_is_cancellation_safe() {
     let (mut client, server) = duplex(64);
-    let mut reader = Reader::new(server, StreamDeserializer::with_config(&LINES));
+    let mut reader = Reader::new(server, StreamDeserializer::with_config(LINES));
     // half a value arrives, then the read is cancelled
     client.write_all(b"{\"id\": 1, ").await.unwrap();
     tokio::select! {
@@ -92,7 +92,7 @@ async fn test_read_is_cancellation_safe() {
 #[tokio::test]
 async fn test_errors_continue() {
     let input = &b"{\"id\": 1, \"text\": \"message 1\"}\n{\"id\": \"x\"}\n{\"id\": 2, \"text\": \"message 2\"}\n"[..];
-    let mut reader = Reader::new(input, StreamDeserializer::with_config(&LINES));
+    let mut reader = Reader::new(input, StreamDeserializer::with_config(LINES));
     assert_eq!(reader.read::<Message>().await.unwrap(), Some(message(1)));
     let err = reader.read::<Message>().await.unwrap_err();
     assert_eq!(err.line(), Some(2));
@@ -101,7 +101,7 @@ async fn test_errors_continue() {
 
 #[tokio::test]
 async fn test_read_borrowed() {
-    let mut reader = Reader::new(&b"\"hello\"\n"[..], StreamDeserializer::with_config(&LINES));
+    let mut reader = Reader::new(&b"\"hello\"\n"[..], StreamDeserializer::with_config(LINES));
     let value: &str = reader.read_borrowed().await.unwrap().unwrap();
     assert_eq!(value, "hello");
 }
@@ -109,7 +109,7 @@ async fn test_read_borrowed() {
 #[tokio::test]
 async fn test_stream() {
     let input = &b"1\n2\n3\n"[..];
-    let values = Reader::new(input, StreamDeserializer::with_config(&LINES))
+    let values = Reader::new(input, StreamDeserializer::with_config(LINES))
         .into_stream::<u32>()
         .collect::<Vec<_>>()
         .await;
@@ -135,12 +135,10 @@ async fn test_from_reader_and_to_writer() {
             .await
             .unwrap_err();
     assert_eq!(err.kind(), ErrorKind::EndOfFile);
-    let err = deser_tokio::from_reader::<u32, _, _>(
-        &b"1\n2"[..],
-        StreamDeserializer::with_config(&LINES),
-    )
-    .await
-    .unwrap_err();
+    let err =
+        deser_tokio::from_reader::<u32, _, _>(&b"1\n2"[..], StreamDeserializer::with_config(LINES))
+            .await
+            .unwrap_err();
     assert_eq!(err.line(), Some(2));
 }
 
@@ -181,7 +179,7 @@ async fn test_codec_values_at_the_end() {
         .build();
     let values = FramedRead::new(
         &b"1 2 3"[..],
-        Codec::<_, _, u32>::new(StreamDeserializer::with_config(&config), Serializer::new()),
+        Codec::<_, _, u32>::new(StreamDeserializer::with_config(config), Serializer::new()),
     )
     .collect::<Vec<_>>()
     .await;
@@ -196,7 +194,7 @@ const STOP: DeserializerConfig = DeserializerConfig::builder()
 #[tokio::test]
 async fn test_feeding_read_is_cancellation_safe() {
     let (mut client, server) = duplex(64);
-    let mut reader = Reader::new(server, StreamDeserializer::with_config(&STOP));
+    let mut reader = Reader::new(server, StreamDeserializer::with_config(STOP));
     // half a value arrives and is deserialized, then the read is cancelled
     client
         .write_all(b"{\"id\": 1, \"text\": \"mes")
@@ -229,7 +227,7 @@ async fn test_feeding_across_tasks() {
     });
     let reader = tokio::spawn(async move {
         let mut reader =
-            Reader::new(server, StreamDeserializer::with_config(&STOP)).into_stream::<Message>();
+            Reader::new(server, StreamDeserializer::with_config(STOP)).into_stream::<Message>();
         let mut count = 0;
         while let Some(value) = reader.next().await {
             assert_eq!(value.unwrap(), message(count));
@@ -354,7 +352,7 @@ async fn test_large_values_are_written_in_pieces() {
 async fn test_abandoned_value_breaks_the_stream() {
     let messages: Vec<Message> = (0..10_000).map(message).collect();
     let (client, mut server) = duplex(1024);
-    let mut writer = Writer::new(client, Serializer::with_config(&WRITE_LINES));
+    let mut writer = Writer::new(client, Serializer::with_config(WRITE_LINES));
     writer.set_buffer_limit(256);
     // the pipe is full long before the value is written
     let rv = tokio::time::timeout(Duration::from_millis(50), writer.write(&messages)).await;
@@ -369,7 +367,7 @@ async fn test_abandoned_value_breaks_the_stream() {
     assert_eq!(out, b"[{\"id\":0,\"text\"");
 
     // values that fail before anything was written do not break it
-    let mut writer = Writer::new(Vec::new(), Serializer::with_config(&WRITE_LINES));
+    let mut writer = Writer::new(Vec::new(), Serializer::with_config(WRITE_LINES));
     let bad = std::collections::BTreeMap::from([(vec![1], 1)]);
     assert!(writer.write(&bad).await.is_err());
     writer.write(&1).await.unwrap();

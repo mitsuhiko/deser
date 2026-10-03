@@ -158,15 +158,17 @@ fn test_bytes_in_enums() {
 fn test_context_of_deserializer() {
     let config = dialect::DeserializerConfig::builder()
         .trailing(dialect::Trailing::Newline)
+        .context(Context::with(BytesFormat::encoded::<Hex>()))
         .build();
-    let mut de = Deserializer::from_str_with_config("\"01ff\"\n\"dead\"\n", &config);
-    de.set_context(Context::with(BytesFormat::encoded::<Hex>()));
+    let mut de = Deserializer::from_str_with_config("\"01ff\"\n\"dead\"\n", config);
     let values = de.iter::<Vec<u8>>().collect::<Result<Vec<_>, _>>().unwrap();
     assert_eq!(values, [vec![1, 255], vec![0xde, 0xad]]);
 
     // a context set on the driver takes precedence
-    let mut de = Deserializer::from_str("\"AQID\"");
-    de.set_context(Context::with(BytesFormat::encoded::<Hex>()));
+    let config = dialect::DeserializerConfig::builder()
+        .context(Context::with(BytesFormat::encoded::<Hex>()))
+        .build();
+    let mut de = Deserializer::from_str_with_config("\"AQID\"", config);
     let value: Vec<u8> = de
         .deserialize_with(|driver| driver.set_context(Context::with(BytesFormat::BASE64)))
         .unwrap();
@@ -175,9 +177,9 @@ fn test_context_of_deserializer() {
     // and so does the context of a serializer
     let config = dialect::SerializerConfig::builder()
         .trailing(dialect::Trailing::Newline)
+        .context(Context::with(BytesFormat::SEQ))
         .build();
-    let mut ser = Serializer::with_config(&config);
-    ser.set_context(Context::with(BytesFormat::SEQ));
+    let mut ser = Serializer::with_config(config);
     ser.serialize(&b"\x01\x02"[..].to_vec()).unwrap();
     ser.serialize(&b"\x03"[..].to_vec()).unwrap();
     assert_eq!(ser.finish(), "[1,2]\n[3]\n");

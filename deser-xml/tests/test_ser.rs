@@ -473,7 +473,7 @@ fn test_serializer() {
         .root("r")
         .declaration(true)
         .build();
-    let mut serializer = deser_xml::Serializer::with_config(&config);
+    let mut serializer = deser_xml::Serializer::with_config(config);
     serializer.serialize(&BTreeMap::from([("a", 1)])).unwrap();
     assert_eq!(
         serializer.finish(),
@@ -488,7 +488,7 @@ fn test_serializer_trait() {
         ser.serialize_ref(value).unwrap();
     }
     let mut serializer =
-        deser_xml::Serializer::with_config(&SerializerConfig::builder().root("r").build());
+        deser_xml::Serializer::with_config(SerializerConfig::builder().root("r").build());
     write(
         &mut serializer,
         deser::ser::SerializeRef::new(&vec![("a", 1)].into_iter().collect::<BTreeMap<_, _>>()),

@@ -213,7 +213,7 @@ fn test_partial_streams() {
         writer.write(&vec![1, 2, 3]).unwrap();
         writer.write(&"abc").unwrap();
         writer.write(&vec![4]).unwrap();
-        let mut expected = deser_json::Serializer::with_config(&config);
+        let mut expected = deser_json::Serializer::with_config(config);
         expected.serialize(&vec![1, 2, 3]).unwrap();
         expected.serialize(&"abc").unwrap();
         expected.serialize(&vec![4]).unwrap();
@@ -266,7 +266,7 @@ fn test_serializer_in_parts() {
     let config = SerializerConfig::builder()
         .trailing(Trailing::Newline)
         .build();
-    let mut serializer = Serializer::with_config(&config);
+    let mut serializer = Serializer::with_config(config);
     // miri is slow, it checks a smaller value
     let len = if cfg!(miri) { 60 } else { 200 };
     let value: Vec<Vec<u64>> = (0..len).map(|x| (0..x).collect()).collect();
@@ -300,7 +300,7 @@ fn test_serializer_in_parts() {
         .pretty(deser_json::Indent::Spaces(2))
         .inline(deser_json::InlinePolicy::LeafIfFits(20))
         .build();
-    let mut serializer = Serializer::with_config(&config);
+    let mut serializer = Serializer::with_config(config.clone());
     let value = vec![vec![1, 2], (0..20).collect()];
     for _ in 0..2 {
         let mut driver = SerializeDriver::new(&value);
@@ -311,7 +311,7 @@ fn test_serializer_in_parts() {
 
     // continuing a stream
     let config = SerializerConfig::builder().trailing(Trailing::Stop).build();
-    let mut serializer = Serializer::with_written(&config, 1);
+    let mut serializer = Serializer::with_written(config, 1);
     serializer.serialize(&2).unwrap();
     assert_eq!(serializer.finish(), "\n2");
 }

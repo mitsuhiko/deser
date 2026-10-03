@@ -3,9 +3,10 @@ use deser_location::{Span, Spanned};
 
 /// Returns a deserializer that tracks locations.
 fn tracked(input: &str) -> deser_yaml::Deserializer<'_> {
-    let mut de = deser_yaml::Deserializer::from_str(input);
-    de.set_context(Context::with(TrackLocations(true)));
-    de
+    let config = deser_yaml::DeserializerConfig::builder()
+        .context(Context::with(TrackLocations(true)))
+        .build();
+    deser_yaml::Deserializer::from_str_with_config(input, config)
 }
 
 #[derive(Deserialize, Debug)]

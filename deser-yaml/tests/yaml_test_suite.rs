@@ -231,7 +231,7 @@ fn check_roundtrip(case: &Case) -> Outcome {
     };
     for (name, config) in roundtrip_configs() {
         let rv = panic::catch_unwind(|| {
-            let mut serializer = deser_yaml::Serializer::with_config(&config);
+            let mut serializer = deser_yaml::Serializer::with_config(config.clone());
             for doc in &docs {
                 serializer.serialize(doc).map_err(|err| err.to_string())?;
             }

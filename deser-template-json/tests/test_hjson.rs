@@ -222,7 +222,7 @@ fn test_locations() {
         c: Spanned<String>,
     }
 
-    let doc: Doc = tracked("a: 1 # c\nb: two  words  \nc:\n  '''\n  x\n  '''", &STRICT)
+    let doc: Doc = tracked("a: 1 # c\nb: two  words  \nc:\n  '''\n  x\n  '''", STRICT)
         .deserialize()
         .unwrap();
     let span = |span: Option<deser_location::Span>| format!("{:?}", span.unwrap());

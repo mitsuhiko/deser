@@ -223,7 +223,7 @@ fn test_stream_deserializer_without_io() {
     use dialect::StreamDeserializer;
 
     // values are fed in, the deserializer frames or feeds them
-    let mut buffer = InputBuffer::new(StreamDeserializer::with_config(&STOP));
+    let mut buffer = InputBuffer::new(StreamDeserializer::with_config(STOP));
     buffer.extend_from_slice(b"[1]\n[2");
     assert_eq!(buffer.peek().unwrap(), Status::Ready);
     let mut out = None::<Vec<u32>>;
@@ -258,7 +258,7 @@ fn test_feeding_bounds_the_buffer() {
     }
     input.push(']');
 
-    let mut buffer = InputBuffer::new(dialect::StreamDeserializer::with_config(&STRICT));
+    let mut buffer = InputBuffer::new(dialect::StreamDeserializer::with_config(STRICT));
     let mut out = None::<Vec<std::collections::BTreeMap<String, Recording>>>;
     let mut max_buffered = 0;
     {
@@ -487,7 +487,7 @@ mod streamed {
             next: None,
         };
         let json = dialect::to_string(&page).unwrap();
-        let mut buffer = InputBuffer::new(dialect::StreamDeserializer::with_config(&STRICT));
+        let mut buffer = InputBuffer::new(dialect::StreamDeserializer::with_config(STRICT));
         let mut reader = ElementReader::<Page, Item>::new();
         let mut chunks = json.as_bytes().chunks(1024);
         let mut count = 0;

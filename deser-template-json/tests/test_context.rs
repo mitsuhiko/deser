@@ -26,17 +26,12 @@ fn test_config_context() {
     assert_eq!(config.from_slice::<Map>(INPUT.as_bytes()).unwrap()["a"], 2);
 
     // the deserializers created with the configuration have its context
-    let mut de = Deserializer::from_str_with_config(INPUT, &config);
-    assert_eq!(de.context(), config.context());
+    let mut de = Deserializer::from_str_with_config(INPUT, config.clone());
+    assert_eq!(de.config().context(), config.context());
     assert_eq!(de.deserialize::<Map>().unwrap()["a"], 2);
 
-    // which their `set_context` replaces
-    let mut de = Deserializer::from_str_with_config(INPUT, &config);
-    de.set_context(Context::new());
-    assert!(de.deserialize::<Map>().is_err());
-
     // a context on the driver takes precedence
-    let mut de = Deserializer::from_str_with_config(INPUT, &config);
+    let mut de = Deserializer::from_str_with_config(INPUT, config);
     let err = de
         .deserialize_with::<Map, _>(|driver| {
             driver.set_context(Context::with(DuplicateKeys::Error));

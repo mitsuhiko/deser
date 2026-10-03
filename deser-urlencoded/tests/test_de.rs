@@ -466,9 +466,10 @@ fn test_lexical_rules() {
     assert!(from_str::<Query>("debug=yes").unwrap().debug);
 
     // the context overrides the default of the format
-    let mut de = Deserializer::from_str("debug=yes");
-    de.set_context(Context::with(LexicalRules::STRICT));
-    let err = de.deserialize::<Query>().unwrap_err();
+    let config = DeserializerConfig::builder()
+        .context(Context::with(LexicalRules::STRICT))
+        .build();
+    let err = config.from_str::<Query>("debug=yes").unwrap_err();
     assert_eq!(err.kind(), ErrorKind::InvalidValue);
 }
 

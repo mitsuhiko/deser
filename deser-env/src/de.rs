@@ -68,8 +68,8 @@ impl DeserializerConfig {
     /// The values of the context are the defaults of the extension values
     /// of the state (see [`Context`](deser_core::Context)), for instance
     /// the variants of open enums.  The deserializers and readers created
-    /// with the configuration start with this context (their `set_context`
-    /// replaces it).  A context set on the driver takes precedence.
+    /// with the configuration use this context.  A context set
+    /// on the driver takes precedence.
     pub fn set_context(&mut self, context: deser_core::Context) {
         self.context = context;
     }
@@ -108,7 +108,7 @@ impl DeserializerConfig {
     ///
     /// See [`from_env`](crate::from_env).
     pub fn from_env<T: DeserializeOwned>(&self, prefix: &str) -> Result<T, Error> {
-        Deserializer::from_env_with_config(prefix, self).deserialize()
+        Deserializer::from_env_with_config(prefix, self.clone()).deserialize()
     }
 
     /// Deserializes a value from the given variables with a prefix.
@@ -121,7 +121,7 @@ impl DeserializerConfig {
         K: Into<Cow<'a, str>>,
         V: Into<Cow<'a, str>>,
     {
-        Deserializer::from_vars_with_config(prefix, vars, self).deserialize()
+        Deserializer::from_vars_with_config(prefix, vars, self.clone()).deserialize()
     }
 }
 
@@ -243,7 +243,7 @@ pub struct Deserializer<'a> {
 impl Deserializer<'static> {
     /// Creates a deserializer for the environment variables with a prefix.
     pub fn from_env(prefix: &str) -> Deserializer<'static> {
-        Deserializer::from_env_with_config(prefix, &DeserializerConfig::new())
+        Deserializer::from_env_with_config(prefix, DeserializerConfig::new())
     }
 
     /// Creates a deserializer for the environment variables with a prefix
@@ -253,14 +253,11 @@ impl Deserializer<'static> {
     /// they start with the prefix, which is an error.  Values that are not
     /// valid unicode are passed on as bytes on Unix and are an error on
     /// other platforms.
-    pub fn from_env_with_config(
-        prefix: &str,
-        config: &DeserializerConfig,
-    ) -> Deserializer<'static> {
+    pub fn from_env_with_config(prefix: &str, config: DeserializerConfig) -> Deserializer<'static> {
         let mut rv = Deserializer {
             vars: Vec::new(),
             error: None,
-            config: config.clone(),
+            config,
         };
         for (name, value) in std::env::vars_os() {
             let name = match name.into_string() {
@@ -312,7 +309,7 @@ impl<'a> Deserializer<'a> {
         K: Into<Cow<'a, str>>,
         V: Into<Cow<'a, str>>,
     {
-        Deserializer::from_vars_with_config(prefix, vars, &DeserializerConfig::new())
+        Deserializer::from_vars_with_config(prefix, vars, DeserializerConfig::new())
     }
 
     /// Creates a deserializer for the given variables with a prefix and
@@ -320,7 +317,7 @@ impl<'a> Deserializer<'a> {
     pub fn from_vars_with_config<I, K, V>(
         prefix: &str,
         vars: I,
-        config: &DeserializerConfig,
+        config: DeserializerConfig,
     ) -> Deserializer<'a>
     where
         I: IntoIterator<Item = (K, V)>,
@@ -330,7 +327,7 @@ impl<'a> Deserializer<'a> {
         let mut rv = Deserializer {
             vars: Vec::new(),
             error: None,
-            config: config.clone(),
+            config,
         };
         for (name, value) in vars {
             let name = name.into();
@@ -408,23 +405,6 @@ impl<'a> Deserializer<'a> {
         LexicalRules::LENIENT.set_default(state);
         state.add_error_context::<CurrentVar>();
         tree.emit(&self.vars, driver)
-    }
-
-    /// Sets the context the values are deserialized in.
-    ///
-    /// This replaces the context of the configuration (see
-    /// [`DeserializerConfig::set_context`]).  The values of the context
-    /// are the defaults of the extension values of the state (see
-    /// [`Context`](deser_core::Context)).  A context set on the driver
-    /// (for instance in the setup callback of `deserialize_with`) takes
-    /// precedence.
-    pub fn set_context(&mut self, context: deser_core::Context) {
-        self.config.context = context;
-    }
-
-    /// Returns the context the values are deserialized in.
-    pub fn context(&self) -> &deser_core::Context {
-        &self.config.context
     }
 }
 

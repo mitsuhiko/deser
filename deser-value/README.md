@@ -43,9 +43,10 @@ struct Config {
     port: u16,
 }
 
-let mut de = deser_json::Deserializer::from_str("{\n  \"port\": \"80\"\n}");
-de.set_context(Context::with(TrackLocations(true)));
-let value: Value = de.deserialize().unwrap();
+let config = deser_json::DeserializerConfig::builder()
+    .context(Context::with(TrackLocations(true)))
+    .build();
+let value: Value = config.from_str("{\n  \"port\": \"80\"\n}").unwrap();
 let err = from_value::<Config>(&value).unwrap_err();
 assert_eq!((err.line(), err.column()), (Some(2), Some(11)));
 ```

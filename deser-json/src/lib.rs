@@ -127,7 +127,7 @@
 //! use deser_json::{Deserializer, DeserializerConfig, Trailing};
 //!
 //! let config = DeserializerConfig::builder().trailing(Trailing::Newline).build();
-//! let mut de = Deserializer::from_str_with_config("[1, 2]\n[3]\n", &config);
+//! let mut de = Deserializer::from_str_with_config("[1, 2]\n[3]\n", config);
 //! let lines = de.iter::<Vec<u32>>().collect::<Result<Vec<_>, _>>().unwrap();
 //! assert_eq!(lines, [vec![1, 2], vec![3]]);
 //! ```
@@ -142,7 +142,7 @@
 //!
 //! const LINES: SerializerConfig =
 //!     SerializerConfig::builder().trailing(Trailing::Newline).build();
-//! let mut serializer = Serializer::with_config(&LINES);
+//! let mut serializer = Serializer::with_config(LINES);
 //! for value in [vec![1, 2], vec![3]] {
 //!     serializer.serialize(&value).unwrap();
 //! }

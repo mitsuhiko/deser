@@ -97,9 +97,8 @@ impl SerializerConfig {
     /// The values of the context are the defaults of the extension values
     /// of the state (see [`Context`](deser_core::Context)), for instance
     /// the [`BytesFormat`](deser_core::BytesFormat).  The serializers and
-    /// writers created with the configuration start with this context
-    /// (their `set_context` replaces it).  A context set on the driver
-    /// takes precedence.
+    /// writers created with the configuration use this context.  A context set on
+    /// the driver takes precedence.
     pub fn set_context(&mut self, context: deser_core::Context) {
         self.context = context;
     }
@@ -417,13 +416,13 @@ impl std::fmt::Debug for Serializer {
 impl Serializer {
     /// Creates a serializer.
     pub fn new() -> Serializer {
-        Serializer::with_config(&SerializerConfig::new())
+        Serializer::with_config(SerializerConfig::new())
     }
 
     /// Creates a serializer with the given configuration.
-    pub fn with_config(config: &SerializerConfig) -> Serializer {
+    pub fn with_config(config: SerializerConfig) -> Serializer {
         Serializer {
-            config: config.clone(),
+            config,
             out: String::new(),
             separate: false,
             value: None,
@@ -466,23 +465,6 @@ impl Serializer {
     /// Returns the output.
     pub fn finish(self) -> String {
         self.out
-    }
-
-    /// Sets the context the values are serialized in.
-    ///
-    /// This replaces the context of the configuration (see
-    /// [`SerializerConfig::set_context`]).  The values of the context
-    /// are the defaults of the extension values of the state (see
-    /// [`Context`](deser_core::Context)).  A context set on the driver
-    /// (for instance in the setup callback of `serialize_with`) takes
-    /// precedence.
-    pub fn set_context(&mut self, context: deser_core::Context) {
-        self.config.context = context;
-    }
-
-    /// Returns the context the values are serialized in.
-    pub fn context(&self) -> &deser_core::Context {
-        &self.config.context
     }
 }
 
@@ -549,7 +531,7 @@ impl SerializerConfig {
     /// The parameters of more than one value are joined.  The output of
     /// large values is written in parts while they are serialized.
     pub fn writer<W: std::io::Write>(&self, writer: W) -> deser_core::io::Writer<W, Serializer> {
-        deser_core::io::Writer::new(writer, Serializer::with_config(self))
+        deser_core::io::Writer::new(writer, Serializer::with_config(self.clone()))
     }
 
     /// Serializes a value as form data to a writer.

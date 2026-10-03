@@ -355,7 +355,7 @@ fn test_other_extensions() {
 #[test]
 fn test_serializer() {
     let mut serializer =
-        Serializer::with_config(&SerializerConfig::builder().format(Format::Ascii).build());
+        Serializer::with_config(SerializerConfig::builder().format(Format::Ascii).build());
     serializer.serialize(&1u32).unwrap();
     assert!(serializer.serialize(&2u32).is_err());
     assert_eq!(serializer.finish(), b"1\n");

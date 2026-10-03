@@ -4,7 +4,7 @@ use deser::de::Limits;
 use deser::ext::Timestamp;
 use deser::{Context, Deserialize, TrackLocations};
 use deser_location::{Span, Spanned};
-use deser_plist::{Deserializer, Format, Uid};
+use deser_plist::{Deserializer, DeserializerConfig, Format, Uid};
 
 use crate::common::{Value, parse, parse_err};
 
@@ -587,9 +587,10 @@ fn test_locations() {
     }
     let span = |s: Option<Span>| format!("{:?}", s.unwrap());
     let tracked = |input: &'static [u8]| {
-        let mut de = Deserializer::from_slice(input);
-        de.set_context(Context::with(TrackLocations(true)));
-        de
+        let config = DeserializerConfig::builder()
+            .context(Context::with(TrackLocations(true)))
+            .build();
+        Deserializer::from_slice_with_config(input, config)
     };
 
     let doc: Doc = tracked(b"{\n  a = 1;\n  b = (x, \"y\");\n}")
