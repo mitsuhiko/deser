@@ -1,0 +1,18 @@
+[package]
+name = "pickle"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+deser = { path = "../../deser", features = ["derive"] }
+deser-json = { path = "../../deser-json" }
+deser-pickle = { path = "../../deser-pickle" }
+deser-value = { path = "../../deser-value" }
+
+[[bin]]
+name = "pickle"
+path = "src/main.rs"
+test = false
+doc = false

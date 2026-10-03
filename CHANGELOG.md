@@ -267,6 +267,17 @@ All notable changes to deser are documented here.
   deserialize into sequences and maps.  References (`r:` and `R:`) are
   passed through as `Reference` markers and are not resolved.  Tested
   against PHP with inputs from php-src.
+- Added `deser-pickle`: Python's pickle format (protocols 0 to 5 are read,
+  2 to 5 written).  Pickles are run without importing or calling
+  anything: objects are emitted as their state, items or arguments with
+  their class and the form they are created in as event data
+  (`Object<T>`), classes and functions are `Global`s.  Values that are
+  reached more than once are emitted at every place with an id as event
+  data, values that contain themselves are cut with `Reference`s (which
+  are `null` to types that do not know them).  The serializer writes
+  shared values once and refers to them, so cycles survive a round trip
+  through `deser_value::Value`.  Tested against CPython with inputs from
+  its pickle tests.
 - `deser-json`: added `SerializerConfig::non_finite_floats` which writes
   NaN and infinite floats as `NaN`, `Infinity` and `-Infinity` instead of
   `null`.  `deser_json5::to_string` and `deser_json5::to_writer` enable

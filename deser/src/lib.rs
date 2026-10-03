@@ -57,6 +57,8 @@ pub struct Account {
 //!   (XML, binary and OpenStep) serialization and deserialization.
 //! * [`deser-php`](https://docs.rs/deser-php): implements PHP's serialization
 //!   format (`serialize` and `unserialize`).
+//! * [`deser-pickle`](https://docs.rs/deser-pickle): implements Python's pickle
+//!   format (without running code).
 //! * [`deser-csv`](https://docs.rs/deser-csv): implements CSV, TSV and other
 //!   delimited text serialization and deserialization.
 //! * [`deser-env`](https://docs.rs/deser-env): implements reading
@@ -141,7 +143,7 @@ pub struct Account {
 //! and works on targets without an operating system.  Disable the default
 //! features of deser and of the formats (`deser-json`, `deser-jsonc`,
 //! `deser-json5`, `deser-hj`, `deser-cbor`, `deser-msgpack`,
-//! `deser-plist`, `deser-php` and `deser-csv` support this):
+//! `deser-plist`, `deser-php`, `deser-pickle` and `deser-csv` support this):
 //!
 //! ```toml
 //! [dependencies]

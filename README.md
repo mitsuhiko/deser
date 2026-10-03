@@ -12,11 +12,11 @@
 
 Deser is a serialization library for Rust for self describing formats such as
 JSON, YAML, TOML, CBOR, MessagePack, XML, property lists, PHP's `serialize`,
-CSV and query strings.  It takes the user experience of serde, the problems
-that years of running serde in production turned up and the Rust of today, and
-tries to solve them with a different architecture.  If you know serde you will
-feel at home: you derive `Serialize` and `Deserialize`, pick a format crate,
-and most attributes have the names you already know.
+Python's pickle, CSV and query strings.  It takes the user experience of serde,
+the problems that years of running serde in production turned up and the Rust
+of today, and tries to solve them with a different architecture.  If you know
+serde you will feel at home: you derive `Serialize` and `Deserialize`, pick a
+format crate, and most attributes have the names you already know.
 
 ```rust
 use deser::{Serialize, Deserialize};
@@ -66,6 +66,7 @@ The same type works unchanged with every format (CSV as long as it's flat).
   [deser-xml](https://github.com/mitsuhiko/deser/tree/main/deser-xml),
   [deser-plist](https://github.com/mitsuhiko/deser/tree/main/deser-plist) (XML, binary and OpenStep),
   [deser-php](https://github.com/mitsuhiko/deser/tree/main/deser-php) (PHP's `serialize`),
+  [deser-pickle](https://github.com/mitsuhiko/deser/tree/main/deser-pickle) (Python's pickle),
   [deser-csv](https://github.com/mitsuhiko/deser/tree/main/deser-csv) (CSV and TSV),
   [deser-urlencoded](https://github.com/mitsuhiko/deser/tree/main/deser-urlencoded) (query strings and forms),
   [deser-env](https://github.com/mitsuhiko/deser/tree/main/deser-env) (environment variables),

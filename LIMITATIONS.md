@@ -46,8 +46,10 @@ threads.
 
 Only JSON (and JSONC, JSON5 and Hjson), CBOR and MessagePack can be parsed
 while the input arrives, with only incomplete tokens buffered.  The other
-formats split a stream into values (YAML documents, CSV records) and read
-each value completely before it's parsed.  XML documents, TOML documents,
+formats split a stream into values (YAML documents, CSV records, pickles)
+and read each value completely before it's parsed.  Pickles are graphs
+whose values can be shared and contain themselves, they are emitted as
+trees (see the documentation of `deser-pickle`).  XML documents, TOML documents,
 property lists and form data hold a single value and cannot be split, so
 the whole stream is read before it's parsed.
 

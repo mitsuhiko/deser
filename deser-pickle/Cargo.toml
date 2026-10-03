@@ -1,0 +1,35 @@
+[package]
+name = "deser-pickle"
+authors = ["Armin Ronacher <armin.ronacher@active-4.com>"]
+version = "0.9.1"
+edition.workspace = true
+rust-version.workspace = true
+description = "Python pickle format support for deser"
+repository = "https://github.com/mitsuhiko/deser"
+keywords = ["serialization", "deserialization", "pickle", "python"]
+categories = ["encoding", "parser-implementations", "no-std"]
+readme = "README.md"
+license = "Apache-2.0"
+documentation = "https://docs.rs/deser-pickle"
+# the vendored test data is only needed for development
+exclude = ["tests/data"]
+autotests = false
+
+[features]
+default = ["std", "io"]
+# the standard library, without it only `alloc` is needed
+std = ["deser-core/std"]
+# reading and writing values from and to streams (with `deser::io`)
+io = ["std", "deser-core/io"]
+
+[dependencies]
+deser-core = { version = "0.9.1", path = "../deser-core", default-features = false }
+
+[dev-dependencies]
+deser = { version = "0.9.1", path = "../deser", features = ["derive"] }
+deser-json = { path = "../deser-json" }
+deser-value = { path = "../deser-value" }
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

@@ -53,7 +53,7 @@ NO_STD_TARGET := thumbv7em-none-eabihf
 NO_STD_TARGET_64 := aarch64-unknown-none
 # crates that support `no_std` (their `std` feature is off), the no-std
 # example uses the derive
-NO_STD_CRATES := deser deser-core deser-cbor deser-csv deser-json deser-jsonc deser-json5 deser-hj deser-msgpack deser-php deser-plist deser-path deser-debug deser-transcode no-std
+NO_STD_CRATES := deser deser-core deser-cbor deser-csv deser-json deser-jsonc deser-json5 deser-hj deser-msgpack deser-php deser-pickle deser-plist deser-path deser-debug deser-transcode no-std
 # the features of deser-core that work without `std`
 NO_STD_FEATURES := derive,open-enums,arrayvec,bigdecimal,bstr,bytes,chrono,hashbrown,indexmap,jiff,num-bigint,rust_decimal,smallvec,time,uuid
 # the crates with speedups that work without `std`
@@ -87,7 +87,7 @@ miri-test-full:
 
 check:
 	@$(RUN) "check" "cargo check --workspace --all-targets --all-features"
-	@$(RUN) "check:no-default-features" "cargo check -p deser -p deser-core -p deser-json -p deser-jsonc -p deser-json5 -p deser-hj -p deser-cbor -p deser-msgpack -p deser-yaml -p deser-toml -p deser-urlencoded -p deser-csv -p deser-php -p deser-plist -p deser-xml --all-targets --no-default-features"
+	@$(RUN) "check:no-default-features" "cargo check -p deser -p deser-core -p deser-json -p deser-jsonc -p deser-json5 -p deser-hj -p deser-cbor -p deser-msgpack -p deser-yaml -p deser-toml -p deser-urlencoded -p deser-csv -p deser-php -p deser-pickle -p deser-plist -p deser-xml --all-targets --no-default-features"
 
 # builds without the standard library for a target that does not have one
 check-no-std:

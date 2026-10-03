@@ -43,6 +43,10 @@ Getting started:
 * [`php`](php): WordPress options, a cached model object with its
   class, private properties and an enum case and shared objects with
   `deser-php`, and values written for PHP.
+* [`pickle`](pickle): data exchanged with Python through pickles with
+  `deser-pickle`: dataclasses with an enum, shared values and a tree with
+  parent references written by Python, and objects and the tree (with its
+  cycle) handed back to Python.
 * [`env`](env): configuration from environment variables with
   `deser-env`: nested keys, lists, flags, tagged enums and errors that name
   the variable.
