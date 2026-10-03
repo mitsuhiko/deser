@@ -55,6 +55,8 @@ pub struct Account {
 //!   deserialization.
 //! * [`deser-plist`](https://docs.rs/deser-plist): implements property list
 //!   (XML, binary and OpenStep) serialization and deserialization.
+//! * [`deser-php`](https://docs.rs/deser-php): implements PHP's serialization
+//!   format (`serialize` and `unserialize`).
 //! * [`deser-csv`](https://docs.rs/deser-csv): implements CSV, TSV and other
 //!   delimited text serialization and deserialization.
 //! * [`deser-env`](https://docs.rs/deser-env): implements reading
@@ -137,7 +139,7 @@ pub struct Account {
 //! and works on targets without an operating system.  Disable the default
 //! features of deser and of the formats (`deser-json`, `deser-jsonc`,
 //! `deser-json5`, `deser-hj`, `deser-cbor`, `deser-msgpack`,
-//! `deser-plist` and `deser-csv` support this):
+//! `deser-plist`, `deser-php` and `deser-csv` support this):
 //!
 //! ```toml
 //! [dependencies]

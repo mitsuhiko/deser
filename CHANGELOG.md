@@ -260,6 +260,12 @@ All notable changes to deser are documented here.
   Dynamic values of `deser-value` keep the flag (`Seq::is_ambiguous_empty`
   and `Map::is_ambiguous_empty`) and serde types used through
   `deser-serde` receive the kind they ask for.
+- Added `deser-php`: PHP's serialization format (`serialize` and
+  `unserialize`) with classes and property visibility as event data
+  (`Object<T>`), enum cases and custom serialized objects.  Empty arrays
+  deserialize into sequences and maps.  References (`r:` and `R:`) are
+  passed through as `Reference` markers and are not resolved.  Tested
+  against PHP with inputs from php-src.
 - `deser-json`: added `SerializerConfig::non_finite_floats` which writes
   NaN and infinite floats as `NaN`, `Infinity` and `-Infinity` instead of
   `null`.  `deser_json5::to_string` and `deser_json5::to_writer` enable

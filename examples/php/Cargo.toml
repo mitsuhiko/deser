@@ -1,0 +1,16 @@
+[package]
+name = "php"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+deser = { path = "../../deser", features = ["derive"] }
+deser-php = { path = "../../deser-php" }
+
+[[bin]]
+name = "php"
+path = "src/main.rs"
+test = false
+doc = false

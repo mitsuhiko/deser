@@ -40,6 +40,9 @@ Getting started:
 * [`plist`](plist): an `Info.plist`, preferences with dates and data
   in binary and XML, `.strings` files and OpenStep dictionaries with
   `deser-plist`, with the format detected when reading.
+* [`php`](php): WordPress options, a cached model object with its
+  class, private properties and an enum case and shared objects with
+  `deser-php`, and values written for PHP.
 * [`env`](env): configuration from environment variables with
   `deser-env`: nested keys, lists, flags, tagged enums and errors that name
   the variable.
