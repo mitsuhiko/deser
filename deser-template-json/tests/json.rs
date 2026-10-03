@@ -24,6 +24,8 @@ mod common;
 mod test_bytes;
 #[path = "test_collect.rs"]
 mod test_collect;
+#[path = "test_context.rs"]
+mod test_context;
 #[path = "test_de.rs"]
 mod test_de;
 #[path = "test_io.rs"]

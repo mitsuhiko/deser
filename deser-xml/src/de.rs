@@ -22,6 +22,7 @@ pub struct DeserializerConfig {
     pub(crate) names: Names,
     resolve_namespaces: bool,
     track_locations: bool,
+    context: deser_core::Context,
 }
 
 impl Default for DeserializerConfig {
@@ -37,6 +38,7 @@ impl DeserializerConfig {
             names: Names::new(),
             resolve_namespaces: false,
             track_locations: true,
+            context: deser_core::Context::new(),
         }
     }
 
@@ -48,6 +50,22 @@ impl DeserializerConfig {
     /// Returns a builder that starts with this configuration.
     pub const fn into_builder(self) -> DeserializerConfigBuilder {
         DeserializerConfigBuilder { value: self }
+    }
+
+    /// Sets the context the values are deserialized in.
+    ///
+    /// The values of the context are the defaults of the extension values
+    /// of the state (see [`Context`](deser_core::Context)), for instance
+    /// the variants of open enums.  The deserializers and readers created
+    /// with the configuration start with this context (their `set_context`
+    /// replaces it).  A context set on the driver takes precedence.
+    pub fn set_context(&mut self, context: deser_core::Context) {
+        self.context = context;
+    }
+
+    /// Returns the context the values are deserialized in.
+    pub fn context(&self) -> &deser_core::Context {
+        &self.context
     }
 
     /// Sets the prefix of the keys of attributes.
@@ -251,9 +269,22 @@ impl DeserializerConfigBuilder {
         self
     }
 
+    /// Sets the context the values are deserialized in.
+    ///
+    /// See [`DeserializerConfig::set_context`].
+    pub fn context(mut self, context: deser_core::Context) -> DeserializerConfigBuilder {
+        self.value.set_context(context);
+        self
+    }
+
     /// Returns the built [`DeserializerConfig`].
     pub const fn build(self) -> DeserializerConfig {
-        self.value
+        // the value cannot be moved out of the builder in a const fn as the
+        // builder needs dropping (the context has a destructor)
+        // SAFETY: the value is read once and the builder is forgotten
+        let value = unsafe { core::ptr::read(&self.value) };
+        core::mem::forget(self);
+        value
     }
 }
 
@@ -289,8 +320,6 @@ pub struct Deserializer<'a> {
     input: &'a str,
     error: Option<Error>,
     config: DeserializerConfig,
-    // the context the values are deserialized in
-    context: deser_core::Context,
 }
 
 impl<'a> Deserializer<'a> {
@@ -306,7 +335,6 @@ impl<'a> Deserializer<'a> {
             input,
             error: None,
             config: config.clone(),
-            context: deser_core::Context::new(),
         }
     }
 
@@ -333,7 +361,6 @@ impl<'a> Deserializer<'a> {
                     err.valid_up_to(),
                 )),
                 config: config.clone(),
-                context: deser_core::Context::new(),
             },
         }
     }
@@ -396,24 +423,28 @@ impl<'a> Deserializer<'a> {
 
     /// Sets the context the values are deserialized in.
     ///
-    /// The values of the context are the defaults of the extension values
-    /// of the state (see [`Context`](deser_core::Context)).  A context set
-    /// on the driver (for instance in the setup callback of `deserialize_with`)
-    /// takes precedence.
+    /// This replaces the context of the configuration (see
+    /// [`DeserializerConfig::set_context`]).  The values of the context
+    /// are the defaults of the extension values of the state (see
+    /// [`Context`](deser_core::Context)).  A context set on the driver
+    /// (for instance in the setup callback of `deserialize_with`) takes
+    /// precedence.
     pub fn set_context(&mut self, context: deser_core::Context) {
-        self.context = context;
+        self.config.context = context;
     }
 
     /// Returns the context the values are deserialized in.
     pub fn context(&self) -> &deser_core::Context {
-        &self.context
+        &self.config.context
     }
 }
 
 impl<'a> de::Deserializer<'a> for Deserializer<'a> {
     fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
-        if !self.context.is_empty() {
-            driver.state_mut().set_default_context(self.context.clone());
+        if !self.config.context.is_empty() {
+            driver
+                .state_mut()
+                .set_default_context(self.config.context.clone());
         }
         Deserializer::drive(self, driver)
     }

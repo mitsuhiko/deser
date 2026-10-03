@@ -117,6 +117,10 @@ impl StreamDeserializer {
 }
 
 impl de::StreamDeserializer for StreamDeserializer {
+    fn context(&self) -> deser_core::Context {
+        self.config.context().clone()
+    }
+
     fn frame(&mut self, input: &[u8], eof: bool) -> Result<Frame, Error> {
         self.state.frame(&self.config, input, eof)
     }

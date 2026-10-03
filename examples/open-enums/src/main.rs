@@ -7,6 +7,7 @@
 //! JSON with them, runs it and writes it back.  Unknown steps are errors
 //! that list the steps that are registered.
 use deser::{Context, OpenEnums};
+use deser_json::DeserializerConfig;
 use pipeline::{Pipeline, Replace, Step, Trim};
 
 const INPUT: &str = r#"{
@@ -20,15 +21,16 @@ const INPUT: &str = r#"{
 }"#;
 
 fn main() {
-    // the steps this program accepts, created once
+    // the steps this program accepts, registered once in the context of
+    // the configuration that reads pipelines
     let mut steps = OpenEnums::new();
     pipeline::register(&mut steps).unwrap();
     pipeline_extras::register(&mut steps).unwrap();
-    let context = Context::with(steps);
+    let config = DeserializerConfig::builder()
+        .context(Context::with(steps))
+        .build();
 
-    let mut de = deser_json::Deserializer::from_str(INPUT);
-    de.set_context(context.clone());
-    let pipeline: Pipeline = de.deserialize().unwrap();
+    let pipeline: Pipeline = config.from_str(INPUT).unwrap();
     println!("parsed: {:?}", pipeline);
     let output = pipeline.run("  hello world!  ");
     println!("output: {}", output);
@@ -63,10 +65,9 @@ fn main() {
     println!("steps:  {}", deser_json::to_string(&steps).unwrap());
 
     // unknown steps are errors
-    let mut de =
-        deser_json::Deserializer::from_str(r#"{"name": "x", "steps": [{"type": "reverse"}]}"#);
-    de.set_context(context);
-    let err = de.deserialize::<Pipeline>().unwrap_err();
+    let err = config
+        .from_str::<Pipeline>(r#"{"name": "x", "steps": [{"type": "reverse"}]}"#)
+        .unwrap_err();
     println!("error:  {}", err);
     assert!(err.to_string().contains(
         "unknown variant `reverse` of Step, expected one of `repeat`, `replace`, `trim`, `upper`"

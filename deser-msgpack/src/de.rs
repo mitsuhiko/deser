@@ -21,14 +21,41 @@ use crate::parser::{Borrowing, Parser, Progress, syntax_error};
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DeserializerConfig {
-    // there are no options yet
-    _private: (),
+    context: deser_core::Context,
 }
 
 impl DeserializerConfig {
     /// Creates the default configuration.
     pub const fn new() -> DeserializerConfig {
-        DeserializerConfig { _private: () }
+        DeserializerConfig {
+            context: deser_core::Context::new(),
+        }
+    }
+
+    /// Returns a builder for the configuration (see [`DeserializerConfigBuilder`]).
+    pub const fn builder() -> DeserializerConfigBuilder {
+        DeserializerConfigBuilder::new()
+    }
+
+    /// Returns a builder that starts with this configuration.
+    pub const fn into_builder(self) -> DeserializerConfigBuilder {
+        DeserializerConfigBuilder { value: self }
+    }
+
+    /// Sets the context the values are deserialized in.
+    ///
+    /// The values of the context are the defaults of the extension values
+    /// of the state (see [`Context`](deser_core::Context)), for instance
+    /// the variants of open enums.  The deserializers and readers created
+    /// with the configuration start with this context (their `set_context`
+    /// replaces it).  A context set on the driver takes precedence.
+    pub fn set_context(&mut self, context: deser_core::Context) {
+        self.context = context;
+    }
+
+    /// Returns the context the values are deserialized in.
+    pub fn context(&self) -> &deser_core::Context {
+        &self.context
     }
 
     /// Deserializes a value from MessagePack.
@@ -48,6 +75,48 @@ impl DeserializerConfig {
         let mut deserializer = Deserializer::from_slice_with_config(input, self);
         de::Deserializer::drive(&mut deserializer, driver)?;
         deserializer.end()
+    }
+}
+
+/// Builds a [`DeserializerConfig`].
+///
+/// The methods have the names of the setters of [`DeserializerConfig`] (without `set_`).
+#[derive(Debug, Clone)]
+#[must_use]
+pub struct DeserializerConfigBuilder {
+    value: DeserializerConfig,
+}
+
+impl DeserializerConfigBuilder {
+    /// Creates a builder that starts with the default.
+    pub const fn new() -> DeserializerConfigBuilder {
+        DeserializerConfigBuilder {
+            value: DeserializerConfig::new(),
+        }
+    }
+
+    /// Sets the context the values are deserialized in.
+    ///
+    /// See [`DeserializerConfig::set_context`].
+    pub fn context(mut self, context: deser_core::Context) -> DeserializerConfigBuilder {
+        self.value.set_context(context);
+        self
+    }
+
+    /// Returns the built [`DeserializerConfig`].
+    pub const fn build(self) -> DeserializerConfig {
+        // the value cannot be moved out of the builder in a const fn as the
+        // builder needs dropping (the context has a destructor)
+        // SAFETY: the value is read once and the builder is forgotten
+        let value = unsafe { core::ptr::read(&self.value) };
+        core::mem::forget(self);
+        value
+    }
+}
+
+impl Default for DeserializerConfigBuilder {
+    fn default() -> DeserializerConfigBuilder {
+        DeserializerConfigBuilder::new()
     }
 }
 
@@ -73,8 +142,6 @@ pub struct Deserializer<'a> {
     pos: usize,
     config: DeserializerConfig,
     parser: Parser,
-    // the context the values are deserialized in
-    context: deser_core::Context,
 }
 
 impl<'a> Deserializer<'a> {
@@ -94,7 +161,6 @@ impl<'a> Deserializer<'a> {
             pos: 0,
             config: config.clone(),
             parser: Parser::default(),
-            context: deser_core::Context::new(),
         }
     }
 
@@ -195,17 +261,19 @@ impl<'a> Deserializer<'a> {
 
     /// Sets the context the values are deserialized in.
     ///
-    /// The values of the context are the defaults of the extension values
-    /// of the state (see [`Context`](deser_core::Context)).  A context set
-    /// on the driver (for instance in the setup callback of `deserialize_with`)
-    /// takes precedence.
+    /// This replaces the context of the configuration (see
+    /// [`DeserializerConfig::set_context`]).  The values of the context
+    /// are the defaults of the extension values of the state (see
+    /// [`Context`](deser_core::Context)).  A context set on the driver
+    /// (for instance in the setup callback of `deserialize_with`) takes
+    /// precedence.
     pub fn set_context(&mut self, context: deser_core::Context) {
-        self.context = context;
+        self.config.context = context;
     }
 
     /// Returns the context the values are deserialized in.
     pub fn context(&self) -> &deser_core::Context {
-        &self.context
+        &self.config.context
     }
 }
 
@@ -233,8 +301,10 @@ impl<'b, 'a, T: Deserialize<'a>> Iterator for Iter<'b, 'a, T> {
 
 impl<'a> de::Deserializer<'a> for Deserializer<'a> {
     fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
-        if !self.context.is_empty() {
-            driver.state_mut().set_default_context(self.context.clone());
+        if !self.config.context.is_empty() {
+            driver
+                .state_mut()
+                .set_default_context(self.config.context.clone());
         }
         Deserializer::drive(self, driver)
     }

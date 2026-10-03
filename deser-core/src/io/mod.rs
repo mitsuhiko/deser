@@ -148,11 +148,13 @@ impl<R: Read, D: StreamDeserializer> Reader<R, D> {
         }
     }
 
-    /// Fails if a value is being read with [`read_next`](Self::read_next).
     /// Sets the context the values are deserialized in.
     ///
-    /// The values of the context are the defaults of the extension values
-    /// of the state (see [`Context`]).  A context set by the callback of
+    /// This replaces the context of the stream deserializer (see
+    /// [`StreamDeserializer::context`]), which is the one of the
+    /// configuration it was created with.  The values of the context are
+    /// the defaults of the extension values of the state (see
+    /// [`Context`]).  A context set by the callback of
     /// [`read_with`](Self::read_with) takes precedence.
     pub fn set_context(&mut self, context: Context) {
         self.buffer.set_context(context);
@@ -163,6 +165,7 @@ impl<R: Read, D: StreamDeserializer> Reader<R, D> {
         self.buffer.context()
     }
 
+    /// Fails if a value is being read with [`read_next`](Self::read_next).
     fn ensure_idle(&self) -> Result<(), Error> {
         match self.pending {
             Some(_) => Err(Error::new(
@@ -542,8 +545,10 @@ impl<W: Write, S: StreamSerializer> Writer<W, S> {
     /// Sets the context the values are serialized in.
     ///
     /// The values of the context are the defaults of the extension values
-    /// of the state (see [`Context`]).  A context set by the callback of
-    /// [`write_with`](Self::write_with) takes precedence.
+    /// of the state (see [`Context`]).  It takes precedence over the
+    /// context of the serializer (which is the one of the configuration it
+    /// was created with), a context set by the callback of
+    /// [`write_with`](Self::write_with) takes precedence over both.
     pub fn set_context(&mut self, context: Context) {
         self.context = context;
     }

@@ -77,6 +77,8 @@ impl<D: StreamDeserializer, S: StreamSerializer, T> Codec<D, S, T> {
 
     /// Sets the context the values are deserialized and serialized in.
     ///
+    /// This replaces the context of the stream deserializer (see
+    /// [`StreamDeserializer::context`](deser_core::de::StreamDeserializer::context)).
     /// The values of the context are the defaults of the extension values
     /// of the state (see [`Context`](deser_core::Context)).
     pub fn set_context(&mut self, context: deser_core::Context) {

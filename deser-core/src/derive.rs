@@ -1007,7 +1007,9 @@
 //! Serializing needs nothing else, the variants know their names.  To
 //! deserialize, the variants are registered in an
 //! [`OpenEnums`](crate::OpenEnums) registry which is given to the
-//! deserialization in the [`Context`](crate::Context):
+//! deserialization in the [`Context`](crate::Context), typically the one
+//! of the configuration of the format (for instance
+//! `deser_json::DeserializerConfig::builder().context(context)`):
 //!
 //! ```
 //! use deser::de::{DeserializeDriver, DeserializeOwned};
@@ -1060,12 +1062,13 @@
 //! register(&mut variants).unwrap();
 //! let context = Context::with(variants);
 //!
-//! // `{"steps": [{"type": "upper"}]}`, for instance with a JSON
-//! // deserializer:
+//! // `{"steps": [{"type": "upper"}]}`, for instance with the configuration
+//! // of a format which is created once and reads all pipelines:
 //! //
-//! //     let mut de = deser_json::Deserializer::from_str(input);
-//! //     de.set_context(context.clone());
-//! //     let pipeline: Pipeline = de.deserialize()?;
+//! //     let config = deser_json::DeserializerConfig::builder()
+//! //         .context(context.clone())
+//! //         .build();
+//! //     let pipeline: Pipeline = config.from_str(input)?;
 //! let mut out = None::<Pipeline>;
 //! let mut driver = DeserializeDriver::new(&mut out);
 //! driver.set_context(context.clone());

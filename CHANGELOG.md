@@ -39,9 +39,20 @@ All notable changes to deser are documented here.
   `State` (`State::get` returns the value of the state or the one of the
   context).  The deserializers and serializers of the formats, the drivers,
   `io::Reader`, `io::Writer`, `stream::InputBuffer` and the readers,
-  writers and codec of `deser-tokio` have `set_context` and `context`.  A context set on the driver (for instance in the setup
-  callback of `deserialize_with`) takes precedence over the one of the
-  deserializer or serializer (see `State::set_default_context`).
+  writers and codec of `deser-tokio` have `set_context` and `context`.
+  The deserializer and serializer configurations of all formats hold a
+  context as well (`set_context` and `context` on the configurations and
+  `context` on their builders), so `config.from_str(...)`,
+  `config.to_string(...)` and the deserializers, serializers, readers and
+  writers created from a configuration use it.  CBOR and MessagePack
+  gained a `DeserializerConfigBuilder` and TOML a `SerializerConfigBuilder`
+  for this.  Stream deserializers report the
+  context of their configuration (`StreamDeserializer::context`), which
+  the buffers and readers start with.  A context set on the driver (for
+  instance in the setup callback of `deserialize_with`) takes precedence
+  over the one of the deserializer or serializer (see
+  `State::set_default_context`).  Contexts are equal if they share their
+  values.
 - **Breaking:** configuration given from the outside moved into the
   context.  The `bytes` options of the deserializer and serializer
   configurations of the formats (JSON, JSONC, JSON5, Hjson, TOML, YAML,

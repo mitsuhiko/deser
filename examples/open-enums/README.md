@@ -20,9 +20,10 @@ are.  They need the `open-enums` feature of deser.
 - `pipeline-extras` adds two more steps in another crate, one of them
   renamed with an alias for its old name.
 - Both crates provide a `register` function, the program registers the
-  steps it accepts in an `OpenEnums` registry and reads the pipeline in a
-  `Context` with it (`deserialize_in`).  Without the registry the steps
-  cannot be read, writing does not need it.
+  steps it accepts in an `OpenEnums` registry and puts it in the
+  `Context` of a `DeserializerConfig`, which reads the pipelines
+  (`config.from_str`).  Without the registry the steps cannot be read,
+  writing does not need it.
 - Unit structs (`Trim`) are the tag alone.
 
 ## What you should see

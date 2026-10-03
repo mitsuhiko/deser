@@ -414,3 +414,27 @@ fn test_declared_lengths_are_not_trusted() {
     assert!(deser_msgpack::from_slice::<Vec<u64>>(&hex("ddffffffff")).is_err());
     assert!(deser_msgpack::from_slice::<HashMap<String, u64>>(&hex("dfffffffff")).is_err());
 }
+
+#[test]
+fn test_config_context() {
+    use deser::Context;
+    use deser::de::DuplicateKeys;
+    use deser_msgpack::{Deserializer, DeserializerConfig};
+
+    const INPUT: &[u8] = &[0x82, 0xa1, b'a', 0x01, 0xa1, b'a', 0x02];
+    assert!(deser_msgpack::from_slice::<HashMap<String, u32>>(INPUT).is_err());
+
+    let config = DeserializerConfig::builder()
+        .context(Context::with(DuplicateKeys::Last))
+        .build();
+    let map: HashMap<String, u32> = config.from_slice(INPUT).unwrap();
+    assert_eq!(map["a"], 2);
+    let mut de = Deserializer::from_slice_with_config(INPUT, &config);
+    assert_eq!(de.context(), config.context());
+    assert_eq!(de.deserialize::<HashMap<String, u32>>().unwrap()["a"], 2);
+    #[cfg(feature = "io")]
+    {
+        let map: HashMap<String, u32> = config.from_reader(INPUT).unwrap();
+        assert_eq!(map["a"], 2);
+    }
+}

@@ -51,11 +51,10 @@
 //! assert_eq!(deser_json::from_str::<Blob>(&json).unwrap(), blob);
 //!
 //! // all bytes as hex (in the context of the serialization)
-//! let hex = deser::Context::with(BytesFormat::encoded::<Hex>());
-//! let mut ser = deser_json::Serializer::new();
-//! ser.set_context(hex);
-//! ser.serialize(&b"\x01\xff").unwrap();
-//! assert_eq!(ser.finish(), r#""01ff""#);
+//! let hex = deser_json::SerializerConfig::builder()
+//!     .context(deser::Context::with(BytesFormat::encoded::<Hex>()))
+//!     .build();
+//! assert_eq!(hex.to_string(&b"\x01\xff").unwrap(), r#""01ff""#);
 //! ```
 //!
 //! All encodings decode lowercase and uppercase letters.

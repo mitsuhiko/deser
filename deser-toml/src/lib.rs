@@ -121,7 +121,7 @@ pub use self::de::{
 };
 #[cfg(feature = "io")]
 pub use self::ser::to_writer;
-pub use self::ser::{Serializer, SerializerConfig, to_string};
+pub use self::ser::{Serializer, SerializerConfig, SerializerConfigBuilder, to_string};
 pub use self::stream::StreamDeserializer;
 #[cfg(feature = "io")]
 pub use self::stream::from_reader;

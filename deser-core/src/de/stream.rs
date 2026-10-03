@@ -1,3 +1,4 @@
+use crate::Context;
 use crate::de::DeserializeDriver;
 use crate::error::{Error, ErrorKind};
 
@@ -160,6 +161,17 @@ pub trait StreamDeserializer {
         false
     }
 
+    /// Returns the context the values are deserialized in.
+    ///
+    /// This is the context the stream starts with (for instance the one of
+    /// the configuration of the format), the buffer that reads the stream
+    /// takes it when it's created (see
+    /// [`InputBuffer::new`](crate::stream::InputBuffer::new)).  It's empty
+    /// by default.
+    fn context(&self) -> Context {
+        Context::new()
+    }
+
     /// Returns `true` if the deserializer implements
     /// [`drive_partial`](Self::drive_partial).
     ///
@@ -243,6 +255,10 @@ impl<D: StreamDeserializer + ?Sized> StreamDeserializer for &mut D {
 
     fn is_text(&self) -> bool {
         (**self).is_text()
+    }
+
+    fn context(&self) -> Context {
+        (**self).context()
     }
 
     fn supports_partial(&self) -> bool {

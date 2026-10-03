@@ -460,3 +460,24 @@ fn test_inline_tables_roundtrip() {
     let recording: deser::de::Recording = from_str(input).unwrap();
     assert_eq!(to_string(&recording).unwrap(), input);
 }
+
+#[test]
+fn test_config_context() {
+    use deser::{BytesFormat, Context};
+    use deser_toml::SerializerConfig;
+
+    #[derive(Serialize)]
+    struct Blob<'a> {
+        data: &'a [u8; 2],
+    }
+
+    let blob = Blob { data: b"\x01\xff" };
+    assert_eq!(to_string(&blob).unwrap(), "data = \"Af8=\"\n");
+    let config = SerializerConfig::builder()
+        .context(Context::with(BytesFormat::SEQ))
+        .build();
+    assert_eq!(config.to_string(&blob).unwrap(), "data = [1, 255]\n");
+    let mut ser = deser_toml::Serializer::with_config(&config);
+    ser.serialize(&blob).unwrap();
+    assert_eq!(ser.finish(), "data = [1, 255]\n");
+}

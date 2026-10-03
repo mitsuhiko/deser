@@ -33,6 +33,8 @@ mod test_collect;
 #[path = "test_comments.rs"]
 mod test_comments;
 #[cfg(not(miri))]
+#[path = "test_context.rs"]
+mod test_context;
 #[path = "test_de.rs"]
 mod test_de;
 #[path = "test_hjson.rs"]

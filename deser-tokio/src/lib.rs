@@ -137,9 +137,12 @@ impl<R: AsyncRead + Unpin, D: StreamDeserializer> Reader<R, D> {
 
     /// Sets the context the values are deserialized in.
     ///
-    /// The values of the context are the defaults of the extension values
-    /// of the state (see [`Context`](deser_core::Context)).  A context set
-    /// by the callback of [`read_with`](Self::read_with) takes precedence.
+    /// This replaces the context of the stream deserializer (see
+    /// [`StreamDeserializer::context`](deser_core::de::StreamDeserializer::context)),
+    /// which is the one of the configuration it was created with.  The
+    /// values of the context are the defaults of the extension values of
+    /// the state (see [`Context`](deser_core::Context)).  A context set by
+    /// the callback of [`read_with`](Self::read_with) takes precedence.
     pub fn set_context(&mut self, context: deser_core::Context) {
         self.buffer.set_context(context);
     }
@@ -551,8 +554,11 @@ impl<W: AsyncWrite + Unpin, S: StreamSerializer> Writer<W, S> {
     /// Sets the context the values are serialized in.
     ///
     /// The values of the context are the defaults of the extension values
-    /// of the state (see [`Context`](deser_core::Context)).  A context set
-    /// by the callback of [`write_with`](Self::write_with) takes precedence.
+    /// of the state (see [`Context`](deser_core::Context)).  It takes
+    /// precedence over the context of the serializer (which is the one of
+    /// the configuration it was created with), a context set by the
+    /// callback of [`write_with`](Self::write_with) takes precedence over
+    /// both.
     pub fn set_context(&mut self, context: deser_core::Context) {
         self.context = context;
     }

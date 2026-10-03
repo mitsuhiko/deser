@@ -95,9 +95,10 @@
 //! let query: Query = deser_urlencoded::from_str("page=1&page=2").unwrap();
 //! assert_eq!(query.page, 2);
 //!
-//! let mut de = deser_urlencoded::Deserializer::from_str("page=1&page=2");
-//! de.set_context(Context::with(DuplicateKeys::Error));
-//! assert!(de.deserialize::<Query>().is_err());
+//! let strict = deser_urlencoded::DeserializerConfig::builder()
+//!     .context(Context::with(DuplicateKeys::Error))
+//!     .build();
+//! assert!(strict.from_str::<Query>("page=1&page=2").is_err());
 //! ```
 //!
 //! `a[]=1` is always a sequence.  Indexes that start at `0` and have no

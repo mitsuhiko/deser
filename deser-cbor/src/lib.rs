@@ -172,7 +172,7 @@ mod simple;
 mod stream;
 mod tag;
 
-pub use self::de::{Deserializer, DeserializerConfig, Iter, from_slice};
+pub use self::de::{Deserializer, DeserializerConfig, DeserializerConfigBuilder, Iter, from_slice};
 pub use self::raw::{Cbor, RawCbor};
 #[cfg(feature = "io")]
 pub use self::ser::to_writer;

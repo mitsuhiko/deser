@@ -453,3 +453,53 @@ fn record(atom: deser::Atom<'static>) -> deser::de::Recording {
     }
     out.unwrap()
 }
+
+#[test]
+fn test_config_context() {
+    use deser::{BytesFormat, Context};
+    use deser_json::{Serializer, SerializerConfig};
+
+    let bytes = b"\x01\xff";
+    assert_eq!(to_string(bytes).unwrap(), r#""Af8=""#);
+
+    let config = SerializerConfig::builder()
+        .context(Context::with(BytesFormat::SEQ))
+        .build();
+    assert_eq!(config.to_string(bytes).unwrap(), "[1,255]");
+    assert_eq!(config, config.clone());
+
+    // a context on the driver takes precedence
+    let json = config
+        .to_string_with(bytes, |driver| driver.set_context(Context::new()))
+        .unwrap();
+    assert_eq!(json, "[1,255]");
+    let json = config
+        .to_string_with(bytes, |driver| {
+            driver.set_context(Context::with(BytesFormat::BASE64))
+        })
+        .unwrap();
+    assert_eq!(json, r#""Af8=""#);
+
+    // the serializers created with the configuration have its context
+    let mut ser = Serializer::with_config(&config);
+    assert_eq!(ser.context(), config.context());
+    ser.serialize(bytes).unwrap();
+    assert_eq!(ser.finish(), "[1,255]");
+
+    // which their `set_context` replaces
+    let mut ser = Serializer::with_config(&config);
+    ser.set_context(Context::new());
+    ser.serialize(bytes).unwrap();
+    assert_eq!(ser.finish(), r#""Af8=""#);
+
+    // and so do the writers
+    let mut out = Vec::new();
+    config.to_writer(&mut out, bytes).unwrap();
+    assert_eq!(out, b"[1,255]");
+    let mut out = Vec::new();
+    let mut writer = config.writer(&mut out);
+    writer.set_context(Context::with(BytesFormat::BASE64));
+    writer.write(bytes).unwrap();
+    drop(writer);
+    assert_eq!(out, br#""Af8=""#);
+}

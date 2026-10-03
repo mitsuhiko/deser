@@ -62,6 +62,7 @@ pub struct SerializerConfig {
     arrays: ArrayFormat,
     nesting: Nesting,
     space_as_plus: bool,
+    context: deser_core::Context,
 }
 
 impl Default for SerializerConfig {
@@ -77,6 +78,7 @@ impl SerializerConfig {
             arrays: ArrayFormat::Repeat,
             nesting: Nesting::Brackets,
             space_as_plus: true,
+            context: deser_core::Context::new(),
         }
     }
 
@@ -88,6 +90,31 @@ impl SerializerConfig {
     /// Returns a builder that starts with this configuration.
     pub const fn into_builder(self) -> SerializerConfigBuilder {
         SerializerConfigBuilder { value: self }
+    }
+
+    /// Sets the context the values are serialized in.
+    ///
+    /// The values of the context are the defaults of the extension values
+    /// of the state (see [`Context`](deser_core::Context)), for instance
+    /// the [`BytesFormat`](deser_core::BytesFormat).  The serializers and
+    /// writers created with the configuration start with this context
+    /// (their `set_context` replaces it).  A context set on the driver
+    /// takes precedence.
+    pub fn set_context(&mut self, context: deser_core::Context) {
+        self.context = context;
+    }
+
+    /// Returns the context the values are serialized in.
+    pub fn context(&self) -> &deser_core::Context {
+        &self.context
+    }
+
+    /// Gives the context to a driver which has none.
+    #[inline]
+    fn apply_context(&self, driver: &mut SerializeDriver<'_>) {
+        if !self.context.is_empty() {
+            driver.state_mut().set_default_context(self.context.clone());
+        }
     }
 
     /// Sets how sequences are written.
@@ -130,6 +157,7 @@ impl SerializerConfig {
     {
         let mut driver = SerializeDriver::new(&value);
         setup(&mut driver);
+        self.apply_context(&mut driver);
         let mut out = String::new();
         self.serialize_driver(&mut driver, &mut out)?;
         Ok(out)
@@ -142,6 +170,7 @@ impl SerializerConfig {
     /// erases it.
     fn to_string_ref(&self, value: SerializeRef<'_>) -> Result<String, Error> {
         let mut driver = SerializeDriver::from_ref(value);
+        self.apply_context(&mut driver);
         let mut out = String::new();
         self.serialize_driver(&mut driver, &mut out)?;
         Ok(out)
@@ -296,9 +325,22 @@ impl SerializerConfigBuilder {
         self
     }
 
+    /// Sets the context the values are serialized in.
+    ///
+    /// See [`SerializerConfig::set_context`].
+    pub fn context(mut self, context: deser_core::Context) -> SerializerConfigBuilder {
+        self.value.set_context(context);
+        self
+    }
+
     /// Returns the built [`SerializerConfig`].
     pub const fn build(self) -> SerializerConfig {
-        self.value
+        // the value cannot be moved out of the builder in a const fn as the
+        // builder needs dropping (the context has a destructor)
+        // SAFETY: the value is read once and the builder is forgotten
+        let value = unsafe { core::ptr::read(&self.value) };
+        core::mem::forget(self);
+        value
     }
 }
 
@@ -337,8 +379,6 @@ pub struct Serializer {
     value: Option<Box<Writer>>,
     // a value was started with `drive_partial` and is not complete
     in_progress: bool,
-    // the context the values are serialized in
-    context: deser_core::Context,
 }
 
 impl Default for Serializer {
@@ -360,7 +400,6 @@ impl Clone for Serializer {
             separate: self.separate,
             value: None,
             in_progress: self.in_progress,
-            context: self.context.clone(),
         }
     }
 }
@@ -389,7 +428,6 @@ impl Serializer {
             separate: false,
             value: None,
             in_progress: false,
-            context: deser_core::Context::new(),
         }
     }
 
@@ -432,17 +470,19 @@ impl Serializer {
 
     /// Sets the context the values are serialized in.
     ///
-    /// The values of the context are the defaults of the extension values
-    /// of the state (see [`Context`](deser_core::Context)).  A context set
-    /// on the driver (for instance in the setup callback of `serialize_with`)
-    /// takes precedence.
+    /// This replaces the context of the configuration (see
+    /// [`SerializerConfig::set_context`]).  The values of the context
+    /// are the defaults of the extension values of the state (see
+    /// [`Context`](deser_core::Context)).  A context set on the driver
+    /// (for instance in the setup callback of `serialize_with`) takes
+    /// precedence.
     pub fn set_context(&mut self, context: deser_core::Context) {
-        self.context = context;
+        self.config.context = context;
     }
 
     /// Returns the context the values are serialized in.
     pub fn context(&self) -> &deser_core::Context {
-        &self.context
+        &self.config.context
     }
 }
 
@@ -474,8 +514,10 @@ impl ser::StreamSerializer for Serializer {
         driver: &mut SerializeDriver<'_>,
         limit: usize,
     ) -> Result<bool, Error> {
-        if !self.context.is_empty() {
-            driver.state_mut().set_default_context(self.context.clone());
+        if !self.config.context.is_empty() {
+            driver
+                .state_mut()
+                .set_default_context(self.config.context.clone());
         }
         if self.value.is_none() && self.in_progress {
             return Err(Error::in_progress());

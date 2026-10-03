@@ -15,9 +15,11 @@ type Entry = (TypeKey, Arc<dyn DebugAny>);
 /// handled ([`UnknownFields`](crate::de::UnknownFields)), how bytes are
 /// decoded from strings ([`BytesFormat`](crate::BytesFormat)) or data
 /// that types need, such as the variants of open enums.  It's created once
-/// and given to every serialization or deserialization that uses it with
-/// the `set_context` methods of the deserializers and serializers of the
-/// formats, the drivers, readers and writers:
+/// and given to every serialization or deserialization that uses it: the
+/// deserializer and serializer configurations of the formats hold one (for
+/// instance `deser_json::DeserializerConfig::builder().context(context)`),
+/// and the deserializers, serializers, drivers, readers and writers have
+/// `set_context` methods:
 ///
 /// ```
 /// use deser::de::{DeserializeDriver, DuplicateKeys};
@@ -114,6 +116,28 @@ impl Context {
     }
 }
 
+/// Contexts are equal if they share their values (one is a clone of the
+/// other and neither was changed since) or if both are empty.  The values
+/// themselves are not compared, they do not need to implement `PartialEq`.
+impl PartialEq for Context {
+    fn eq(&self, other: &Context) -> bool {
+        match (&self.values, &other.values) {
+            (Some(a), Some(b)) if Arc::ptr_eq(a, b) => true,
+            _ => self.is_empty() && other.is_empty(),
+        }
+    }
+}
+
+impl Eq for Context {}
+
+// The values are shared and only lent out immutably.  As they are `Sync`
+// they can only change through synchronized interior mutability (like
+// mutexes and atomics) which is unwind safe.  Without this the contexts
+// (and the configurations of the formats which hold one) could not be
+// used across `catch_unwind`.
+impl core::panic::UnwindSafe for Context {}
+impl core::panic::RefUnwindSafe for Context {}
+
 impl Debug for Context {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut map = f.debug_map();
@@ -143,4 +167,13 @@ fn test_context() {
     assert_eq!(other.get::<u32>(), Some(&2));
     assert_eq!(other.get::<&str>(), Some(&"x"));
     assert_eq!(format!("{:?}", other), r#"{u32: 2, &str: "x"}"#);
+
+    // contexts are equal if they share their values
+    assert_eq!(context, context.clone());
+    assert_ne!(context, other);
+    assert_ne!(context, Context::with(1u32));
+    assert_eq!(empty, Context::default());
+
+    fn unwind_safe<T: core::panic::UnwindSafe + core::panic::RefUnwindSafe>() {}
+    unwind_safe::<Context>();
 }

@@ -74,9 +74,10 @@ pub struct Account {
 //! ([`DuplicateKeys`](de::DuplicateKeys)) or unknown fields
 //! ([`UnknownFields`](de::UnknownFields)) and whether errors are collected
 //! ([`CollectErrors`](de::CollectErrors)), is held in a [`Context`].  It's
-//! created once and given to the deserializers and serializers of the
-//! formats (and the drivers, readers and writers) with their `set_context`
-//! methods.
+//! created once and given to the deserializer and serializer
+//! configurations of the formats (`builder().context(context)`) or to the
+//! deserializers and serializers (and the drivers, readers and writers)
+//! with their `set_context` methods.
 //!
 //! The data model can be extended with types that are not native to it.  For
 //! more information see [`ext`].

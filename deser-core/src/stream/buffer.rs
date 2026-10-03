@@ -102,7 +102,12 @@ impl<D: StreamDeserializer> InputBuffer<D> {
     /// To continue a stream whose context is known (for instance the
     /// names of the columns of a CSV file), create the stream deserializer
     /// with that context.
+    ///
+    /// The values are deserialized in the context of the deserializer (see
+    /// [`StreamDeserializer::context`]) unless
+    /// [`set_context`](Self::set_context) replaces it.
     pub fn new(deserializer: D) -> InputBuffer<D> {
+        let context = deserializer.context();
         InputBuffer {
             deserializer,
             data: Vec::new(),
@@ -114,15 +119,16 @@ impl<D: StreamDeserializer> InputBuffer<D> {
             done: false,
             failed: false,
             partial: false,
-            context: Context::new(),
+            context,
         }
     }
 
     /// Sets the context the values are deserialized in.
     ///
-    /// The context is given to the drivers the values are deserialized
-    /// with (see [`DeserializeDriver::set_context`]) unless they have a
-    /// context already.
+    /// This replaces the context of the deserializer.  The context is
+    /// given to the drivers the values are deserialized with (see
+    /// [`DeserializeDriver::set_context`]) unless they have a context
+    /// already.
     pub fn set_context(&mut self, context: Context) {
         self.context = context;
     }

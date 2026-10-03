@@ -125,7 +125,7 @@ mod raw;
 mod ser;
 mod stream;
 
-pub use self::de::{Deserializer, DeserializerConfig, Iter, from_slice};
+pub use self::de::{Deserializer, DeserializerConfig, DeserializerConfigBuilder, Iter, from_slice};
 pub use self::ext::Ext;
 pub use self::raw::{Msgpack, RawMsgpack};
 #[cfg(feature = "io")]
