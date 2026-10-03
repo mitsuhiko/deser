@@ -654,7 +654,9 @@ impl<W: Write, S: StreamSerializer> Writer<W, S> {
 
     /// Serializes the value of a driver and writes it.
     fn write_driver(&mut self, driver: &mut SerializeDriver<'_>) -> Result<(), Error> {
-        driver.state_mut().set_default_context(self.context.clone());
+        if !self.context.is_empty() {
+            driver.state_mut().set_default_context(self.context.clone());
+        }
         if self.serializer.in_progress() {
             return Err(Error::in_progress());
         }

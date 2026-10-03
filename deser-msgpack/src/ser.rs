@@ -945,7 +945,9 @@ impl ser::StreamSerializer for Serializer {
         driver: &mut SerializeDriver<'_>,
         limit: usize,
     ) -> Result<bool, Error> {
-        driver.state_mut().set_default_context(self.context.clone());
+        if !self.context.is_empty() {
+            driver.state_mut().set_default_context(self.context.clone());
+        }
         if self.item.is_none() && self.in_progress {
             return Err(Error::in_progress());
         }

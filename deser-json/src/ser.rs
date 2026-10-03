@@ -801,7 +801,9 @@ impl ser::StreamSerializer for Serializer {
         driver: &mut SerializeDriver<'_>,
         limit: usize,
     ) -> Result<bool, Error> {
-        driver.state_mut().set_default_context(self.context.clone());
+        if !self.context.is_empty() {
+            driver.state_mut().set_default_context(self.context.clone());
+        }
         accept_raw(driver);
         let rollback = self.out.len();
         let (mut local, adopt) = match self.value.take() {

@@ -199,7 +199,9 @@ impl Serializer {
 
 impl ser::Serializer for Serializer {
     fn drive(&mut self, driver: &mut SerializeDriver<'_>) -> Result<(), Error> {
-        driver.state_mut().set_default_context(self.context.clone());
+        if !self.context.is_empty() {
+            driver.state_mut().set_default_context(self.context.clone());
+        }
         if self.written > 0 {
             return Err(Error::new(
                 ErrorKind::InvalidState,

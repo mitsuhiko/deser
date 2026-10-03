@@ -435,6 +435,7 @@ impl State {
     /// the driver (for instance in the setup callback of
     /// [`Deserializer::deserialize_with`](crate::de::Deserializer::deserialize_with))
     /// takes precedence.
+    #[inline(never)]
     pub fn set_default_context(&mut self, context: Context) {
         if self.context.is_empty() && !context.is_empty() {
             self.set_context(context);

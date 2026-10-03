@@ -108,6 +108,7 @@ impl Context {
     }
 
     /// Returns `true` if the context holds no values.
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.values.as_ref().is_none_or(|values| values.is_empty())
     }

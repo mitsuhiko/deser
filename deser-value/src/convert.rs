@@ -84,7 +84,9 @@ impl<'a> Deserializer<'a> {
 
 impl<'de> de::Deserializer<'de> for Deserializer<'de> {
     fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'de>) -> Result<(), Error> {
-        driver.state_mut().set_default_context(self.context.clone());
+        if !self.context.is_empty() {
+            driver.state_mut().set_default_context(self.context.clone());
+        }
         let mut source = None;
         drive(self.value, driver, &mut source).map_err(|mut err| {
             if let Some(source) = source {
@@ -407,7 +409,9 @@ impl Serializer {
 
 impl ser::Serializer for Serializer {
     fn drive(&mut self, driver: &mut SerializeDriver<'_>) -> Result<(), Error> {
-        driver.state_mut().set_default_context(self.context.clone());
+        if !self.context.is_empty() {
+            driver.state_mut().set_default_context(self.context.clone());
+        }
         let mut out = None;
         {
             let mut de = DeserializeDriver::new(&mut out);
