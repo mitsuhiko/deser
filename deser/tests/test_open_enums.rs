@@ -25,6 +25,14 @@ fn context() -> Context {
         .register::<dyn Message, Text>()
         .unwrap()
         .register::<dyn Plugin, Other>()
+        .unwrap()
+        .register::<dyn Value, Num>()
+        .unwrap()
+        .register::<dyn Value, Wide>()
+        .unwrap()
+        .register::<dyn Value, Pair>()
+        .unwrap()
+        .register::<dyn Value, Nothing>()
         .unwrap();
     Context::with(variants)
 }
@@ -153,6 +161,20 @@ fn test_external() {
     // unit structs can be given by their name
     let shape: Box<dyn Shape> = deserialize(vec!["Point".into()]).unwrap();
     assert_eq!(format!("{:?}", shape), "Point");
+
+    // but their content is null, not a map
+    let err = deserialize::<Box<dyn Shape>>(vec![
+        Event::map_start(),
+        "Point".into(),
+        Event::map_start(),
+        Event::MapEnd,
+        Event::MapEnd,
+    ])
+    .unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "InvalidType: unexpected map, expected Point"
+    );
 }
 
 #[test]
@@ -497,6 +519,7 @@ impl Describe for Variants {
             VariantRepr::External => "external".to_string(),
             VariantRepr::Internal { tag } => format!("internal {}", tag),
             VariantRepr::Adjacent { tag, content } => format!("adjacent {} {}", tag, content),
+            VariantRepr::Untagged => "untagged".to_string(),
             _ => unreachable!(),
         };
         assert_eq!(variant.kind, VariantKind::Newtype);
@@ -516,12 +539,131 @@ fn test_describe() {
     SerializeRef::new(&action).describe(&mut d);
     let message: &dyn Message = &Ping;
     SerializeRef::new(&message).describe(&mut d);
+    let value: &dyn Value = &Num(1);
+    SerializeRef::new(&value).describe(&mut d);
     assert_eq!(
         d.0,
         [
             "Shape::Circle (external)",
             "Action::sleep (internal type)",
             "Message::1 (adjacent t c)",
+            "Value::Num (untagged)",
         ]
     );
+}
+
+// untagged
+
+#[deser::open_enum(untagged)]
+trait Value: Debug + Send + Sync {}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Num(u32);
+
+#[deser::variant]
+impl Value for Num {}
+
+// has the name of `Num`, which is fine as the names are not used
+#[derive(Debug, Serialize, Deserialize)]
+struct Wide(u64);
+
+#[deser::variant(rename = "Num")]
+impl Value for Wide {}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Pair {
+    a: u32,
+    b: u32,
+}
+
+#[deser::variant]
+impl Value for Pair {}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Nothing;
+
+#[deser::variant]
+impl Value for Nothing {}
+
+#[test]
+fn test_untagged() {
+    // the variants are their content
+    let value: Box<dyn Value> = Box::new(Pair { a: 1, b: 2 });
+    assert_eq!(
+        serialize(&value),
+        vec![
+            Event::MapStart(ContainerShape::with_len(2)),
+            "a".into(),
+            1u64.into(),
+            "b".into(),
+            2u64.into(),
+            Event::MapEnd,
+        ]
+    );
+    let value: Box<dyn Value> = deserialize(serialize(&value)).unwrap();
+    assert_eq!(format!("{:?}", value), "Pair { a: 1, b: 2 }");
+    assert_eq!(serialize(&Num(1) as &dyn Value), vec![1u64.into()]);
+    assert_eq!(serialize(&Nothing as &dyn Value), vec![().into()]);
+
+    // the variants are tried in the order they are registered
+    let value: Box<dyn Value> = deserialize(vec![1u64.into()]).unwrap();
+    assert_eq!(format!("{:?}", value), "Num(1)");
+    let value: Box<dyn Value> = deserialize(vec![(1u64 << 40).into()]).unwrap();
+    assert_eq!(format!("{:?}", value), "Wide(1099511627776)");
+    let mut variants = OpenEnums::new();
+    variants
+        .register::<dyn Value, Wide>()
+        .unwrap()
+        .register::<dyn Value, Num>()
+        .unwrap();
+    let context = Context::with(variants);
+    let value: Box<dyn Value> = deserialize_in(vec![1u64.into()], &context).unwrap();
+    assert_eq!(format!("{:?}", value), "Wide(1)");
+
+    // atoms and containers, also in an `Arc` and in containers
+    let value: Arc<dyn Value> = deserialize(vec![().into()]).unwrap();
+    assert_eq!(format!("{:?}", value), "Nothing");
+    let values: Vec<Box<dyn Value>> = deserialize(vec![
+        Event::seq_start(),
+        1u64.into(),
+        Event::map_start(),
+        "b".into(),
+        2u64.into(),
+        "a".into(),
+        1u64.into(),
+        Event::MapEnd,
+        Event::SeqEnd,
+    ])
+    .unwrap();
+    assert_eq!(format!("{:?}", values), "[Num(1), Pair { a: 1, b: 2 }]");
+
+    // values that no variant accepts
+    let err = deserialize::<Box<dyn Value>>(vec!["x".into()]).unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "UnknownVariant: data did not match any variant of Value"
+    );
+    let err = deserialize::<Box<dyn Value>>(vec![
+        Event::map_start(),
+        "a".into(),
+        1u64.into(),
+        Event::MapEnd,
+    ])
+    .unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "UnknownVariant: data did not match any variant of Value"
+    );
+
+    // without registry
+    let err = deserialize_in::<Box<dyn Value>>(vec![1u64.into()], &Context::new()).unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "Configuration: no variants of Value are registered (register them in a \
+         deser::OpenEnums that is given in the context)"
+    );
+    let err =
+        deserialize_in::<Box<dyn Value>>(vec![Event::map_start(), Event::MapEnd], &Context::new())
+            .unwrap_err();
+    assert_eq!(err.kind(), ErrorKind::Configuration);
 }

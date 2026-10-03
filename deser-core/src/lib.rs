@@ -83,8 +83,18 @@ pub mod derive;
 // # Internal APIs
 //
 // The `#[doc(hidden)]` items (mostly methods named `__private_*`) are not
-// public API, even though other crates of deser use some of them.  Every
-// one is marked with the group it belongs to:
+// public API, even though other crates of deser use some of them.
+//
+// The rule: hidden methods may make things faster, they must not decide
+// how values are represented.  Types implemented by hand cannot implement
+// them, so they would behave differently from derived types.  What changes
+// the representation goes through public API that every type can
+// implement (like `Describe::unit_struct`, which decides if newtype
+// variants of internally tagged enums are the tag alone).  Bytes are a
+// closed exception and raw values and collections are the known
+// violations to resolve (see below).
+//
+// Every hidden method is marked with the group it belongs to:
 //
 // * Internal fast paths exist for performance (or code size) only.  A
 //   type or sink that does not implement them behaves the same, just
@@ -103,7 +113,10 @@ pub mod derive;
 //   `ContainerShape::with_multimap`, `DeserializeDriver::multimap_value`
 //   and `de::missing_multimap_value`), the side
 //   of the types (which types want raw values or collect, used by the
-//   derive and the containers of deser-core) is not.
+//   derive and the containers of deser-core) is not.  These break the
+//   rule above: types implemented by hand cannot be raw values or
+//   collect.  They have to become public API (or be replaced by public
+//   API) before 1.0, new protocols must not be added.
 //
 // Everything the derive refers to is in `__derive` below.
 
@@ -163,13 +176,11 @@ pub mod __derive {
     pub use crate::de::DeserializeArc;
     #[cfg(feature = "open-enums")]
     pub use crate::open_enum::{
-        MakeVariant, OpenEnumInfo, OpenRepr, VariantEntry, VariantValue,
+        OpenEnumInfo, OpenRepr, VariantEntry, VariantValue,
         container_shape as open_enum_container_shape, describe as open_enum_describe,
         deserialize_arc as open_enum_deserialize_arc, deserialize_box as open_enum_deserialize_box,
-        serialize as open_enum_serialize, variant as open_enum_variant,
+        serialize as open_enum_serialize,
     };
     #[cfg(feature = "open-enums")]
     pub use alloc::sync::Arc;
-    #[cfg(feature = "open-enums")]
-    pub use core::any::type_name;
 }

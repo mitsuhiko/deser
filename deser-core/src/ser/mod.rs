@@ -122,6 +122,7 @@ mod serializer;
 mod stream;
 
 pub use self::boxed::Boxed;
+pub(crate) use self::describe::is_unit_struct;
 pub use self::describe::{Describe, Variant, VariantKind, VariantRepr};
 pub use self::emit::Emit;
 pub(crate) use self::handle::{Adapted, Erased, HandleInner};

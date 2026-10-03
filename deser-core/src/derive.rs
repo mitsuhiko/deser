@@ -147,7 +147,8 @@
 //!   other variants are maps with a single key: `{"A": content}`.
 //! * internally tagged (`#[deser(tag = "type")]`): `{"type": "A", ...fields}`.
 //!   Supports unit, struct and newtype variants (the inner value must be a
-//!   struct or map).  Newtype variants of `()` (`A(())`) are unit variants.
+//!   struct or map, or a unit struct which is the tag alone).  Newtype
+//!   variants of `()` (`A(())`) are unit variants.
 //! * adjacently tagged (`#[deser(tag = "t", content = "c")]`):
 //!   `{"t": "A", "c": content}`.
 //! * untagged (`#[deser(untagged)]`): just the content.  The variants are
@@ -1056,17 +1057,19 @@
 //!
 //! The representation is configured on the trait like the one of enums:
 //! without `tag` open enums are externally tagged, with `tag` internally
-//! tagged and with `tag` and `content` adjacently tagged.  Untagged open
-//! enums are not supported.  The variants are serialized like newtype
-//! variants with the type as content, so the types of internally tagged
-//! open enums need to be structs or maps (or unit structs, which are the
-//! tag alone).
+//! tagged, with `tag` and `content` adjacently tagged and with `untagged`
+//! untagged.  The variants are serialized like newtype variants with the
+//! type as content, so the types of internally tagged open enums need to be
+//! structs or maps (or unit structs, which are the tag alone).  The
+//! variants of untagged open enums are tried in the order they are
+//! registered, the first one that accepts the value is used.
 //!
 //! Only the variants that are registered are deserialized, which also
 //! limits what untrusted input can create.  Deserializing an open enum
 //! without registry in the context is an error.  The names of the variants
 //! (including their aliases) are unique: registering a variant with the
-//! name of another one fails.  Both are errors with the kind
+//! name of another one fails (except for untagged open enums, where the
+//! names are only used in descriptions).  Both are errors with the kind
 //! [`ErrorKind::Configuration`](crate::ErrorKind::Configuration).
 //!
 //! The variants are named after their type (the last segment of its path),
@@ -1082,6 +1085,7 @@
 //! | `tag = "..."` | Internally tagged with the tag in this key, see [enums](#enums). |
 //! | `content = "..."` | Adjacently tagged with the content in this key (requires `tag`). |
 //! | `tag_alias = "..."`, `content_alias = "..."` | Other keys of the tag or content which are accepted when deserializing. |
+//! | `untagged` | Untagged, the variants are tried in the order they are registered (cannot be combined with `tag`). |
 //! | `rename_all = "..."` | Names the variants in this style (the names of the types are in `PascalCase`). |
 //! | `alias_all = "..."` | Accepts the names of the variants in this style as well. |
 //! | `deny_unknown_fields` | Rejects keys besides the tag and the content (adjacently tagged open enums only, the variants deny their unknown fields themselves). |

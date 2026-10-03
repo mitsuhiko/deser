@@ -7,7 +7,9 @@
 //! on every implementation (without it the method is missing).
 //!
 //! `#[deser::variant]` also implements `OpenVariant<dyn Trait>` for the type,
-//! which is what the variants are registered with (in `OpenEnums`).
+//! which is what the variants are registered with (in `OpenEnums`).  It
+//! contains the names of the variant and the conversion into the trait
+//! object, deser-core creates the rest from it.
 //!
 //! The names of the variants are given by the trait (`rename_all`), which
 //! `#[deser::variant]` does not know.  The variants contain their name in
@@ -28,6 +30,7 @@ struct OpenEnumArgs {
     rename_all: Option<RenameAll>,
     alias_all: Vec<RenameAll>,
     deny_unknown_fields: bool,
+    untagged: bool,
     crate_path: Option<syn::Path>,
 }
 
@@ -42,6 +45,7 @@ impl OpenEnumArgs {
             rename_all: None,
             alias_all: Vec::new(),
             deny_unknown_fields: false,
+            untagged: false,
             crate_path: None,
         };
         let parser = syn::meta::parser(|meta| {
@@ -85,19 +89,23 @@ impl OpenEnumArgs {
                     })?;
                     set_once(&meta, &name, &mut rv.crate_path, value)
                 }
-                "untagged" => Err(meta.error(
-                    "open enums cannot be untagged, the tag selects the type of the variant",
-                )),
+                "untagged" => set_flag(&meta, &name, &mut rv.untagged),
                 _ => Err(meta.error(format!(
                     "unsupported attribute `{}` on open enums (supported are `tag`, \
-                     `tag_alias`, `content`, `content_alias`, `rename`, `rename_all`, \
-                     `alias_all`, `deny_unknown_fields` and `crate`)",
+                     `tag_alias`, `content`, `content_alias`, `untagged`, `rename`, \
+                     `rename_all`, `alias_all`, `deny_unknown_fields` and `crate`)",
                     name
                 ))),
             }
         });
         syn::parse::Parser::parse2(parser, args)?;
 
+        if rv.untagged && rv.tag.is_some() {
+            return Err(syn::Error::new(
+                Span::call_site(),
+                "untagged cannot be combined with tag",
+            ));
+        }
         if rv.tag.is_none() {
             for (names, attr) in [
                 (&rv.tag_aliases, "tag_alias"),
@@ -219,7 +227,7 @@ pub(crate) fn expand_open_enum(args: TokenStream, input: TokenStream) -> syn::Re
 
     item.items.push(syn::parse_quote! {
         #[doc(hidden)]
-        fn #method(&self) -> #deser::__derive::VariantValue<'_, dyn #ident>;
+        fn #method(&self) -> #deser::__derive::VariantValue<'_>;
     });
 
     let name = match args.rename {
@@ -227,6 +235,7 @@ pub(crate) fn expand_open_enum(args: TokenStream, input: TokenStream) -> syn::Re
         None => Name::Lit(ident_name(ident)),
     };
     let repr = match (&args.tag, &args.content) {
+        (None, _) if args.untagged => quote! { #deser::__derive::OpenRepr::Untagged },
         (None, _) => quote! { #deser::__derive::OpenRepr::External },
         (Some(tag), None) => {
             let tag = enum_key(&deser, tag, &args.tag_aliases);
@@ -271,7 +280,7 @@ pub(crate) fn expand_open_enum(args: TokenStream, input: TokenStream) -> syn::Re
                 };
 
                 #[inline]
-                fn __private_variant(value: &Self) -> #deser::__derive::VariantValue<'_, Self> {
+                fn __private_variant(value: &Self) -> #deser::__derive::VariantValue<'_> {
                     value.#method()
                 }
             }
@@ -484,15 +493,7 @@ pub(crate) fn expand_variant(args: TokenStream, input: TokenStream) -> syn::Resu
     for alias in &args.aliases {
         aliases.push(tag(&deser, alias));
     }
-    // errors about the type (not serializable or deserializable) point to it
     let object = quote! { dyn #trait_path };
-    let boxed = quote! { #deser::__derive::Box<#object> };
-    let make = quote_spanned! { self_ty.span()=>
-        #deser::__derive::open_enum_variant::<#self_ty, #boxed>(
-            |__value| -> #boxed { #deser::__derive::Box::new(__value) },
-            __state,
-        )
-    };
     let variant = quote_spanned! { self_ty.span()=>
         #deser::__derive::VariantValue::new(
             <Self as #deser::OpenVariant<#object>>::ENTRY,
@@ -503,33 +504,27 @@ pub(crate) fn expand_variant(args: TokenStream, input: TokenStream) -> syn::Resu
     item.items.push(syn::parse_quote! {
         #[doc(hidden)]
         #[inline]
-        fn #method(&self) -> #deser::__derive::VariantValue<'_, #object> {
+        fn #method(&self) -> #deser::__derive::VariantValue<'_> {
             #variant
         }
     });
+    // errors about the type (not serializable or deserializable) point to
+    // it (they are the supertraits of `OpenVariant`)
     Ok(quote! {
         #item
 
-        #[doc(hidden)]
-        const _: () = {
-            fn __make<'__a, 'de>(
-                __state: &mut #deser::State,
-                _: #deser::__derive::PhantomData<&'__a &'de ()>,
-            ) -> #deser::__derive::ArenaVariant<'__a, 'de, #boxed> {
-                #make
-            }
+        #[automatically_derived]
+        impl #deser::OpenVariant<#object> for #self_ty {
+            const ENTRY: &'static #deser::__derive::VariantEntry = &#deser::__derive::VariantEntry {
+                styled: &[#(#styled),*],
+                rename: #rename,
+                aliases: &[#(#aliases),*],
+            };
 
-            #[automatically_derived]
-            impl #deser::OpenVariant<#object> for #self_ty {
-                const ENTRY: &'static #deser::__derive::VariantEntry<#object> =
-                    &#deser::__derive::VariantEntry {
-                        styled: &[#(#styled),*],
-                        rename: #rename,
-                        aliases: &[#(#aliases),*],
-                        type_name: #deser::__derive::type_name::<#self_ty>,
-                        make: __make,
-                    };
+            #[inline]
+            fn __private_into_box(self) -> #deser::__derive::Box<#object> {
+                #deser::__derive::Box::new(self)
             }
-        };
+        }
     })
 }

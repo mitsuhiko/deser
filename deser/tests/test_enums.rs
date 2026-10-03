@@ -234,6 +234,263 @@ fn test_internally_tagged() {
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
+struct UnitStruct;
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+struct UnitNewtype(UnitStruct);
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[deser(tag = "type")]
+enum InternalUnitStruct {
+    A(UnitStruct),
+    B(Inner),
+    C(Option<Inner>),
+    D(Option<UnitStruct>),
+    E(Option<u32>),
+    F(Box<UnitStruct>),
+    G(UnitNewtype),
+    H(String),
+}
+
+#[test]
+fn test_internally_tagged_unit_struct() {
+    // newtype variants with unit structs are the tag alone (also behind
+    // pointers)
+    for (value, tag) in [
+        (InternalUnitStruct::A(UnitStruct), "A"),
+        (InternalUnitStruct::F(Box::new(UnitStruct)), "F"),
+    ] {
+        check(
+            value,
+            vec![Event::map_start(), "type".into(), tag.into(), Event::MapEnd],
+        );
+    }
+
+    // other keys are an error of the unit struct
+    let err = deserialize::<InternalUnitStruct>(vec![
+        Event::map_start(),
+        "type".into(),
+        "A".into(),
+        "x".into(),
+        1u64.into(),
+        Event::MapEnd,
+    ])
+    .unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "InvalidType: unexpected map, expected UnitStruct"
+    );
+    // also when they come before the tag
+    let err = deserialize::<InternalUnitStruct>(vec![
+        Event::map_start(),
+        "x".into(),
+        1u64.into(),
+        "type".into(),
+        "A".into(),
+        Event::MapEnd,
+    ])
+    .unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "InvalidType: unexpected map, expected UnitStruct"
+    );
+
+    // variants that accept maps are not given null
+    let err = deserialize::<InternalUnitStruct>(vec![
+        Event::map_start(),
+        "type".into(),
+        "B".into(),
+        Event::MapEnd,
+    ])
+    .unwrap_err();
+    assert_eq!(err.to_string(), "MissingField: missing field `x`");
+
+    // other content is not the tag alone, in neither direction (like with
+    // serde): options and newtypes of unit structs are not unit structs
+    for tag in ["D", "E", "G", "H"] {
+        let err = deserialize::<InternalUnitStruct>(vec![
+            Event::map_start(),
+            "type".into(),
+            tag.into(),
+            Event::MapEnd,
+        ])
+        .unwrap_err();
+        assert!(
+            err.to_string().starts_with("InvalidType: unexpected map"),
+            "{}: {}",
+            tag,
+            err
+        );
+    }
+    for value in [
+        InternalUnitStruct::C(None),
+        InternalUnitStruct::D(None),
+        InternalUnitStruct::D(Some(UnitStruct)),
+        InternalUnitStruct::E(None),
+        InternalUnitStruct::G(UnitNewtype(UnitStruct)),
+    ] {
+        let mut driver = SerializeDriver::new(&value);
+        let err = loop {
+            match driver.next() {
+                Ok(Some(_)) => {}
+                Ok(None) => panic!("{:?} was serialized", value),
+                Err(err) => break err,
+            }
+        };
+        assert_eq!(
+            err.to_string(),
+            "UnsupportedType: newtype variants of internally tagged enums must contain \
+             structs, maps or unit structs"
+        );
+    }
+}
+
+/// A unit struct with hand-written implementations that describe it.
+#[derive(Debug, PartialEq)]
+struct HandUnit;
+
+impl Serialize for HandUnit {
+    fn serialize<'a>(
+        _value: &'a Self,
+        _state: &mut deser::State,
+    ) -> Result<deser::ser::Emit<'a>, Error> {
+        Ok(deser::ser::Emit::Atom(Atom::Null))
+    }
+
+    fn describe(_value: &Self, d: &mut dyn deser::ser::Describe) {
+        d.unit_struct("HandUnit");
+    }
+}
+
+impl Deserialize<'_> for HandUnit {
+    fn deserialize_atom(
+        slot: &mut deser::de::Slot<Self>,
+        atom: Atom,
+        state: &mut deser::State,
+    ) -> Result<(), Error> {
+        match atom {
+            Atom::Null => {
+                slot.set(HandUnit);
+                Ok(())
+            }
+            other => deser::de::default_atom(slot, other, state),
+        }
+    }
+
+    fn describe_type(d: &mut dyn deser::ser::Describe) {
+        d.unit_struct("HandUnit");
+    }
+}
+
+/// Like `HandUnit` but without descriptions.
+#[derive(Debug, PartialEq)]
+struct Undescribed;
+
+impl Serialize for Undescribed {
+    fn serialize<'a>(
+        _value: &'a Self,
+        _state: &mut deser::State,
+    ) -> Result<deser::ser::Emit<'a>, Error> {
+        Ok(deser::ser::Emit::Atom(Atom::Null))
+    }
+}
+
+impl Deserialize<'_> for Undescribed {
+    fn deserialize_atom(
+        slot: &mut deser::de::Slot<Self>,
+        atom: Atom,
+        state: &mut deser::State,
+    ) -> Result<(), Error> {
+        match atom {
+            Atom::Null => {
+                slot.set(Undescribed);
+                Ok(())
+            }
+            other => deser::de::default_atom(slot, other, state),
+        }
+    }
+}
+
+/// A unit struct whose derived implementation is used through an adapter.
+#[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
+#[deser(deserialize_as = deser::adapters::DefaultOnError<_>)]
+struct AdaptedUnit;
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[deser(tag = "type")]
+enum InternalHandUnit {
+    A(HandUnit),
+    B(Undescribed),
+    C(AdaptedUnit),
+    D(std::num::Wrapping<UnitStruct>),
+}
+
+#[test]
+fn test_internally_tagged_described_unit_struct() {
+    // types that describe themselves as unit structs are the tag alone
+    check(
+        InternalHandUnit::A(HandUnit),
+        vec![Event::map_start(), "type".into(), "A".into(), Event::MapEnd],
+    );
+
+    // also through adapters
+    check(
+        InternalHandUnit::C(AdaptedUnit),
+        vec![Event::map_start(), "type".into(), "C".into(), Event::MapEnd],
+    );
+
+    // other types are not, in both directions (newtypes like `Wrapping`
+    // describe themselves as newtypes)
+    let err = deserialize::<InternalHandUnit>(vec![
+        Event::map_start(),
+        "type".into(),
+        "D".into(),
+        Event::MapEnd,
+    ])
+    .unwrap_err();
+    assert!(err.to_string().starts_with("InvalidType: unexpected map"));
+    let value = InternalHandUnit::B(Undescribed);
+    let mut driver = SerializeDriver::new(&value);
+    let err = loop {
+        match driver.next() {
+            Ok(Some(_)) => {}
+            Ok(None) => panic!("{:?} was serialized", value),
+            Err(err) => break err,
+        }
+    };
+    assert_eq!(err.kind(), deser::ErrorKind::UnsupportedType);
+    let err = deserialize::<InternalHandUnit>(vec![
+        Event::map_start(),
+        "type".into(),
+        "B".into(),
+        Event::MapEnd,
+    ])
+    .unwrap_err();
+    assert!(err.to_string().starts_with("InvalidType: unexpected map"));
+
+    // the descriptions of the types
+    #[derive(Default)]
+    struct Names(Vec<String>);
+
+    impl deser::ser::Describe for Names {
+        fn unit_struct(&mut self, name: &str) {
+            self.0.push(format!("unit {}", name));
+        }
+    }
+
+    let mut names = Names::default();
+    <UnitStruct as Deserialize>::describe_type(&mut names);
+    <Box<UnitStruct> as Deserialize>::describe_type(&mut names);
+    <std::sync::Arc<UnitStruct> as Deserialize>::describe_type(&mut names);
+    <Option<UnitStruct> as Deserialize>::describe_type(&mut names);
+    <Undescribed as Deserialize>::describe_type(&mut names);
+    assert_eq!(
+        names.0,
+        ["unit UnitStruct", "unit UnitStruct", "unit UnitStruct"]
+    );
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[deser(tag = "t", content = "c")]
 enum Adjacent {
     Unit,

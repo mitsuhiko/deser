@@ -47,6 +47,18 @@
 ///
 /// All methods ignore the call by default so that describers only need to
 /// implement what they care about.  New methods can be added in the future.
+///
+/// Types describe themselves with
+/// [`Serialize::describe`](crate::ser::Serialize::describe) (a value) and
+/// [`Deserialize::describe_type`](crate::de::Deserialize::describe_type)
+/// (what is known without a value).  Descriptions are mostly informational
+/// (for formats like a `Debug`-like formatter), but some facts change how
+/// values are represented, so the descriptions have to be accurate:
+///
+/// * [`unit_struct`](Self::unit_struct): newtype variants of internally
+///   tagged enums whose content is a unit struct are the tag alone.  The
+///   serializer checks the description of the value, the deserializer the
+///   one of the type, so both have to describe the unit struct.
 pub trait Describe {
     /// The value is a struct with named fields.
     ///
@@ -113,7 +125,13 @@ pub trait Describe {
 
     /// The value is a unit struct (a struct without fields).
     ///
-    /// It's serialized as null.
+    /// It's serialized as null and deserialized from null.  This is not
+    /// only informational: newtype variants of internally tagged enums with
+    /// a unit struct as content are the tag alone (`{"type": "A"}`), other
+    /// content that is null is not.  Only unit
+    /// structs themselves and wrappers that are serialized and deserialized
+    /// as the value they wrap (like `Box`) describe this, not newtypes or
+    /// options of unit structs.
     fn unit_struct(&mut self, name: &str) {
         let _ = name;
     }
@@ -223,4 +241,44 @@ pub enum VariantRepr<'a> {
     },
     /// Untagged: just the content.
     Untagged,
+}
+
+/// Returns `true` if a description is the one of a unit struct.
+///
+/// The description is given by a function that describes a value or type
+/// (like `|d| value.describe(d)` or `T::describe_type`).  It's the
+/// description of a unit struct if it says
+/// [`unit_struct`](Describe::unit_struct) and does not wrap it (newtypes
+/// and options of unit structs are not unit structs).  The serializer and
+/// the deserializer decide with this whether newtype variants of internally
+/// tagged enums are the tag alone, so they agree for all types whose
+/// descriptions agree.
+pub(crate) fn is_unit_struct(describe: impl FnOnce(&mut dyn Describe)) -> bool {
+    #[derive(Default)]
+    struct IsUnitStruct {
+        unit_struct: bool,
+        wrapped: bool,
+    }
+
+    impl Describe for IsUnitStruct {
+        fn unit_struct(&mut self, _name: &str) {
+            self.unit_struct = true;
+        }
+
+        fn newtype(&mut self, _name: &str) {
+            self.wrapped = true;
+        }
+
+        fn some(&mut self) {
+            self.wrapped = true;
+        }
+
+        fn none(&mut self) {
+            self.wrapped = true;
+        }
+    }
+
+    let mut d = IsUnitStruct::default();
+    describe(&mut d);
+    d.unit_struct && !d.wrapped
 }

@@ -968,6 +968,54 @@ pub trait Deserialize<'de, T: Send = Self>: Sized + Send {
         slot::short_type_name(core::any::type_name::<Self>())
     }
 
+    /// Describes the Rust shape of the type.
+    ///
+    /// This is the counterpart of [`Serialize::describe`](crate::ser::Serialize::describe)
+    /// for what is known without a value: it receives the same
+    /// [`Describe`](crate::ser::Describe) calls the values of the type
+    /// describe themselves with, except the ones that depend on the value
+    /// (like [`some`](crate::ser::Describe::some) or
+    /// [`variant`](crate::ser::Describe::variant)).  The default
+    /// implementation describes nothing.  Wrappers which are deserialized as
+    /// the value they wrap (like `Box<T>`) delegate to it.
+    ///
+    /// The derive describes unit structs, which are the tag alone in newtype
+    /// variants of internally tagged enums (see
+    /// [`Describe::unit_struct`](crate::ser::Describe::unit_struct)).
+    /// Types that implement `Deserialize` by hand describe themselves as
+    /// unit structs for that:
+    ///
+    /// ```
+    /// use deser::de::{Deserialize, Slot, default_atom};
+    /// use deser::ser::Describe;
+    /// use deser::{Atom, Error, State};
+    ///
+    /// struct Marker;
+    ///
+    /// impl Deserialize<'_> for Marker {
+    ///     fn deserialize_atom(
+    ///         slot: &mut Slot<Self>,
+    ///         atom: Atom,
+    ///         state: &mut State,
+    ///     ) -> Result<(), Error> {
+    ///         match atom {
+    ///             Atom::Null => {
+    ///                 slot.set(Marker);
+    ///                 Ok(())
+    ///             }
+    ///             other => default_atom(slot, other, state),
+    ///         }
+    ///     }
+    ///
+    ///     fn describe_type(d: &mut dyn Describe) {
+    ///         d.unit_struct("Marker");
+    ///     }
+    /// }
+    /// ```
+    fn describe_type(d: &mut dyn crate::ser::Describe) {
+        let _ = d;
+    }
+
     /// Provides the value of a missing struct field.
     ///
     /// When a struct is deserialized the slots of its fields start out with

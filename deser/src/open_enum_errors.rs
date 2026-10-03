@@ -15,10 +15,10 @@
 /// trait Shape<T>: Send + Sync {}
 /// ```
 ///
-/// Open enums cannot be untagged.
+/// Untagged open enums have no tag.
 ///
 /// ```compile_fail
-/// #[deser::open_enum(untagged)]
+/// #[deser::open_enum(untagged, tag = "type")]
 /// trait Shape: Send + Sync {}
 /// ```
 ///

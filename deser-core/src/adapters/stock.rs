@@ -530,6 +530,10 @@ impl<'de, T: Default + Send, A: Deserialize<'de, T>> Deserialize<'de, T> for Def
         A::expecting()
     }
 
+    fn describe_type(d: &mut dyn Describe) {
+        A::describe_type(d)
+    }
+
     fn initial_value() -> Option<T> {
         A::initial_value()
     }

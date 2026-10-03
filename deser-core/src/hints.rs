@@ -176,6 +176,10 @@ impl<'de, T: Send, H: Hint, A: Deserialize<'de, T>> Deserialize<'de, T> for Hint
         A::expecting()
     }
 
+    fn describe_type(d: &mut dyn Describe) {
+        A::describe_type(d)
+    }
+
     #[inline]
     fn initial_value() -> Option<T> {
         A::initial_value()

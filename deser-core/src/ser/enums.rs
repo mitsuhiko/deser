@@ -11,7 +11,7 @@ use crate::ser::begin::Begin;
 use crate::ser::flatten::FlattenedStruct;
 use crate::ser::{
     Describe, Emit, MapEmitter, SeqEmitter, Serialize, SerializeHandle, SerializeRef,
-    StructEmitter, Variant, VariantKind, VariantRepr,
+    StructEmitter, Variant, VariantKind, VariantRepr, is_unit_struct,
 };
 use crate::{State, Text};
 
@@ -283,12 +283,13 @@ impl<'a> SeqEmitter for SeqValuesEmitter<'a> {
 /// Serializes a newtype variant of an internally tagged enum.
 ///
 /// The tag is emitted first, followed by the fields of the inner value which
-/// has to serialize as a struct.
+/// has to serialize as a struct or map.  Unit structs have no fields, the
+/// variant is the tag alone (which is deserialized as null, see
+/// `InternallyTaggedSink`).
 pub struct TaggedNewtype<'a> {
     tag: &'static str,
     name: SerializeHandle<'a>,
     inner: SerializeRef<'a>,
-    allow_unit: bool,
 }
 
 impl<'a> TaggedNewtype<'a> {
@@ -296,23 +297,7 @@ impl<'a> TaggedNewtype<'a> {
     ///
     /// `name` is the value of the tag.
     pub fn new(tag: &'static str, name: SerializeHandle<'a>, inner: SerializeRef<'a>) -> Self {
-        TaggedNewtype {
-            tag,
-            name,
-            inner,
-            allow_unit: false,
-        }
-    }
-
-    /// Serializes content that is null (like unit structs) as the tag alone.
-    ///
-    /// The variants of open enums deserialize such content from the tag
-    /// alone (enums handle `()` in the derive and reject other null
-    /// content).
-    #[cfg(feature = "open-enums")]
-    pub(crate) fn allow_unit(mut self) -> Self {
-        self.allow_unit = true;
-        self
+        TaggedNewtype { tag, name, inner }
     }
 
     /// Converts the value into an [`Emit`].
@@ -391,18 +376,21 @@ impl<'a> StructEmitter for TaggedNewtypeEmitter<'a> {
         }
         if self.content.is_none() {
             let content = FlattenedStruct::new(self.value.inner, state)?;
-            // the tag alone would be deserialized as the content (not as
-            // null), `()` is handled by the derive.
+            // unit structs are the tag alone, which is deserialized as null.
+            // Other null content (like `None`) is not: it's not deserialized
+            // from the tag alone (`()` is handled by the derive).
             if content.is_null() {
-                if self.value.allow_unit {
-                    self.done = true;
-                    self.value.inner.finish(state)?;
-                    return Ok(None);
+                let inner = self.value.inner;
+                if !is_unit_struct(|d| inner.describe(d)) {
+                    return Err(Error::new(
+                        ErrorKind::UnsupportedType,
+                        "newtype variants of internally tagged enums must contain structs, \
+                         maps or unit structs",
+                    ));
                 }
-                return Err(Error::new(
-                    ErrorKind::UnsupportedType,
-                    "newtype variants of internally tagged enums must contain structs or maps",
-                ));
+                self.done = true;
+                self.value.inner.finish(state)?;
+                return Ok(None);
             }
             self.content = Some(content);
         }

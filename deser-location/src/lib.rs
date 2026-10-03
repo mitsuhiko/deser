@@ -298,6 +298,10 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Spanned<T> {
     fn expecting() -> Cow<'static, str> {
         T::expecting()
     }
+
+    fn describe_type(d: &mut dyn Describe) {
+        T::describe_type(d)
+    }
 }
 
 struct SpannedSink<'a, 'de, T> {

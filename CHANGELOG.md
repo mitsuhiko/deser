@@ -96,14 +96,25 @@ All notable changes to deser are documented here.
   the implementations marked with `#[deser::variant]`, which can be in any
   crate.  `Box<dyn Trait>` and `Arc<dyn Trait>` are serialized and
   deserialized like the enums of the derive (externally, internally or
-  adjacently tagged, with `rename_all`, `alias_all`, aliases and names
-  that are not strings).  The variants are registered explicitly in an
-  `OpenEnums` registry which is given to deserializations in the context.
+  adjacently tagged or untagged, with `rename_all`, `alias_all`, aliases
+  and names that are not strings).  The variants are registered explicitly
+  in an `OpenEnums` registry which is given to deserializations in the
+  context, the variants of untagged open enums are tried in the order they
+  are registered.
   Registering two variants with the same name and deserializing without
   registry fail with the new `ErrorKind::Configuration` (in the `Usage`
   category).
   `Arc<T>` is deserialized through a hidden trait (`de::DeserializeArc`)
   so that it works for the trait objects of open enums.
+- Newtype variants of internally tagged enums can contain unit structs,
+  they are the tag alone (`{"type": "A"}`) like with serde.  Serializing
+  them was an error.  Whether the content is a unit struct is decided by
+  its description (`Describe::unit_struct`), so types implemented by hand
+  can be unit structs as well.
+- Added `Deserialize::describe_type`, the counterpart of
+  `Serialize::describe` for what is known about a type without a value.
+  The derive describes unit structs, wrappers like `Box<T>` and adapters
+  forward the description of their value.
 - **Breaking:** merged `DeserializeAs` into `Deserialize`, which has a
   type parameter for the type of the value: `Deserialize<'de, T = Self>`.
   Adapters implement `Deserialize<'de, T>` with the methods of

@@ -1874,7 +1874,7 @@ where
 
 /// Implements `Deserialize` for types that implement [`Via`].
 macro_rules! deserialize_via {
-    ($([$($gen:tt)*] $ty:ty => $via:ty;)*) => {
+    ($([$($gen:tt)*] $ty:ty => $via:ty $({ $($extra:tt)* })?;)*) => {
         $(
             impl<'de, $($gen)*> $crate::de::Deserialize<'de> for $ty {
                 #[inline]
@@ -1913,6 +1913,8 @@ macro_rules! deserialize_via {
                 fn __private_raw() -> Option<&'static $crate::ext::RawFormatInfo> {
                     <$via as $crate::de::Deserialize<'de>>::__private_raw()
                 }
+
+                $($($extra)*)?
             }
         )*
     };
@@ -1959,6 +1961,10 @@ macro_rules! deserialize_as_via {
                 #[inline(always)]
                 fn __private_raw() -> Option<&'static crate::ext::RawFormatInfo> {
                     A::__private_raw()
+                }
+
+                fn describe_type(d: &mut dyn crate::ser::Describe) {
+                    A::describe_type(d)
                 }
 
                 $($($update)*)?
@@ -2058,6 +2064,12 @@ pub trait DeserializeArc<'de, T: ?Sized> {
     fn __private_arc_raw() -> Option<&'static crate::ext::RawFormatInfo> {
         None
     }
+
+    /// Describes the Rust shape of the type (see
+    /// [`Deserialize::describe_type`]).
+    fn __private_arc_describe_type(d: &mut dyn crate::ser::Describe) {
+        let _ = d;
+    }
 }
 
 impl<'de, T: Send + Sync, A: Deserialize<'de, T>> DeserializeArc<'de, T> for A {
@@ -2094,6 +2106,10 @@ impl<'de, T: Send + Sync, A: Deserialize<'de, T>> DeserializeArc<'de, T> for A {
     #[inline(always)]
     fn __private_arc_raw() -> Option<&'static crate::ext::RawFormatInfo> {
         A::__private_raw()
+    }
+
+    fn __private_arc_describe_type(d: &mut dyn crate::ser::Describe) {
+        A::describe_type(d)
     }
 }
 
@@ -2135,6 +2151,10 @@ where
     #[inline(always)]
     fn __private_raw() -> Option<&'static crate::ext::RawFormatInfo> {
         A::__private_arc_raw()
+    }
+
+    fn describe_type(d: &mut dyn crate::ser::Describe) {
+        A::__private_arc_describe_type(d)
     }
 }
 

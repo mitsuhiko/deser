@@ -79,6 +79,10 @@ pub trait DerivedDeserialize<'de>: Sized + Send {
         crate::de::slot::short_type_name(core::any::type_name::<Self>())
     }
 
+    fn describe_type(d: &mut dyn Describe) {
+        let _ = d;
+    }
+
     fn deserialize_update<'out>(value: &'out mut Self, state: &mut State) -> SinkHandle<'out, 'de> {
         update::replace_handle_with(
             value,
@@ -201,6 +205,10 @@ impl<'de, T: DerivedDeserialize<'de>> Deserialize<'de, T> for Derived {
 
     fn expecting() -> Cow<'static, str> {
         T::expecting()
+    }
+
+    fn describe_type(d: &mut dyn Describe) {
+        T::describe_type(d)
     }
 
     #[inline]

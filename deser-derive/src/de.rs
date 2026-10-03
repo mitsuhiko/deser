@@ -313,6 +313,8 @@ fn derive_unit_struct(
     let (impl_generics, _, _) = de_generics.split_for_impl();
 
     let type_name = container_attrs.expecting();
+    // the name in the description is the one of `Serialize::describe`
+    let unit_name = container_attrs.container_name();
     let construct = st.construct(&[]);
     let de_trait = crate::forward::deserialize_trait(container_attrs);
     Ok(quote! {
@@ -331,6 +333,10 @@ fn derive_unit_struct(
 
             fn expecting() -> __deser::__derive::StrCow<'static> {
                 __deser::__derive::StrCow::Borrowed(#type_name)
+            }
+
+            fn describe_type(__d: &mut dyn __deser::ser::Describe) {
+                __d.unit_struct(#unit_name);
             }
 
             #[inline]

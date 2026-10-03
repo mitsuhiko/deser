@@ -43,6 +43,15 @@ pub trait VariantBuilder<'de, E>: Send {
 
     /// Builds the enum value after the sink finished.
     fn build(&mut self) -> Option<E>;
+
+    /// Returns `true` if the content of the variant is a unit struct.
+    ///
+    /// Such variants of internally tagged enums are the tag alone, they
+    /// receive null if there are no other keys (see
+    /// [`InternallyTaggedSink`]).
+    fn unit_struct(&self) -> bool {
+        false
+    }
 }
 
 /// A variant builder in the arena of the state.
@@ -111,6 +120,10 @@ impl<'de, V: Deserialize<'de>, E> VariantBuilder<'de, E> for ValueVariant<'de, V
 
     fn build(&mut self) -> Option<E> {
         self.sink.take().map(self.convert)
+    }
+
+    fn unit_struct(&self) -> bool {
+        crate::ser::is_unit_struct(V::describe_type)
     }
 }
 
@@ -852,11 +865,28 @@ pub fn untagged_handle<'a, 'de, E: Send>(
     variants: UntaggedVariants<'de, E>,
     state: &mut State,
 ) -> SinkHandle<'a, 'de> {
+    untagged_handle_with(out, name, variants, no_matching_variant, state)
+}
+
+/// Creates the error for a value that no variant of an untagged enum
+/// accepted, from the name of the enum.
+pub(crate) type NoMatch = fn(&str, &State) -> Error;
+
+/// Creates a sink handle for an untagged enum with the error for values
+/// that no variant accepts (see [`untagged_handle`]).
+pub(crate) fn untagged_handle_with<'a, 'de, E: Send>(
+    out: &'a mut Option<E>,
+    name: &'static str,
+    variants: UntaggedVariants<'de, E>,
+    no_match: NoMatch,
+    state: &mut State,
+) -> SinkHandle<'a, 'de> {
     RecordBuf::capture_with(
         UntaggedCapture {
             out,
             name,
             variants,
+            no_match,
         },
         state,
     )
@@ -875,7 +905,7 @@ pub fn untagged_atom<'de, E>(
 ) -> Result<(), Error> {
     *out = Some(
         try_untagged_atom(variants, UntaggedInput::Atom(atom), state)
-            .ok_or_else(|| no_matching_variant(name))?,
+            .ok_or_else(|| no_matching_variant(name, state))?,
     );
     Ok(())
 }
@@ -892,7 +922,7 @@ pub fn untagged_borrowed_atom<'de, E>(
 ) -> Result<(), Error> {
     *out = Some(
         try_untagged_atom(variants, UntaggedInput::Borrowed(atom), state)
-            .ok_or_else(|| no_matching_variant(name))?,
+            .ok_or_else(|| no_matching_variant(name, state))?,
     );
     Ok(())
 }
@@ -914,6 +944,13 @@ pub struct UntaggedTry<'t, 'de, E> {
 }
 
 impl<'t, 'de, E> UntaggedTry<'t, 'de, E> {
+    /// Returns the state.
+    #[cfg(feature = "open-enums")]
+    #[inline]
+    pub(crate) fn state(&self) -> &State {
+        self.state
+    }
+
     /// Tries a variant whose content is deserialized as `V`.
     ///
     /// If the variant accepts the value, it's converted with `convert`.
@@ -985,7 +1022,7 @@ fn try_untagged_atom<'de, E>(
 /// Creates the error for a value that no variant of an untagged enum
 /// accepted.
 #[cold]
-fn no_matching_variant(name: &str) -> Error {
+pub(crate) fn no_matching_variant(name: &str, _state: &State) -> Error {
     Error::new(
         ErrorKind::UnknownVariant,
         format!("data did not match any variant of {}", name),
@@ -997,6 +1034,20 @@ struct UntaggedCapture<'a, 'de, E> {
     out: &'a mut Option<E>,
     name: &'static str,
     variants: UntaggedVariants<'de, E>,
+    no_match: NoMatch,
+}
+
+impl<E> UntaggedCapture<'_, '_, E> {
+    /// Stores the value of the variant that accepted it.
+    fn set(&mut self, value: Option<E>, state: &State) -> Result<(), Error> {
+        match value {
+            Some(value) => {
+                *self.out = Some(value);
+                Ok(())
+            }
+            None => Err((self.no_match)(self.name, state)),
+        }
+    }
 }
 
 impl<'a, 'de, E: Send> Capture<'de, RecordBuf<'de>> for UntaggedCapture<'a, 'de, E> {
@@ -1005,21 +1056,20 @@ impl<'a, 'de, E: Send> Capture<'de, RecordBuf<'de>> for UntaggedCapture<'a, 'de,
     }
 
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        untagged_atom(self.out, self.name, self.variants, atom, state)
+        let value = try_untagged_atom(self.variants, UntaggedInput::Atom(atom), state);
+        self.set(value, state)
     }
 
     fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
-        untagged_borrowed_atom(self.out, self.name, self.variants, atom, state)
+        let value = try_untagged_atom(self.variants, UntaggedInput::Borrowed(atom), state);
+        self.set(value, state)
     }
 
     fn recorded(&mut self, buffer: RecordBuf<'de>, state: &mut State) -> Result<(), Error> {
         // replaying restores the event data of the recorded events
         let input = UntaggedInput::Recorded(&buffer);
-        *self.out = Some(
-            try_untagged(self.variants, input, EventData::new(), state)
-                .ok_or_else(|| no_matching_variant(self.name))?,
-        );
-        Ok(())
+        let value = try_untagged(self.variants, input, EventData::new(), state);
+        self.set(value, state)
     }
 }
 
@@ -1126,6 +1176,11 @@ impl<'a, 'de, E: Send> Capture<'de, RecordBuf<'de>> for FallbackCapture<'a, 'de,
 /// Until the tag is known, all key value pairs are recorded.  Once the tag
 /// was seen, the recorded pairs are replayed into the variant and all further
 /// pairs are forwarded to it directly.
+///
+/// Newtype variants of unit structs are given by the tag alone: they
+/// receive null if there are no other keys (other content that does not
+/// accept maps is an error, like `None`, which is not serialized as the tag
+/// alone either).
 pub struct InternallyTaggedSink<'a, 'de, E> {
     out: &'a mut Option<E>,
     tag: EnumKey,
@@ -1141,6 +1196,21 @@ pub struct InternallyTaggedSink<'a, 'de, E> {
     flattened: bool,
     // the errors for keys that were taken but the variant did not use
     unclaimed: Vec<Error>,
+    // the error of a unit struct variant for the map, which is reported
+    // once it receives a key (without keys it receives null instead, see
+    // `finish`)
+    map_error: Option<Error>,
+}
+
+/// Returns the error of a variant that does not accept maps.
+///
+/// The error is reported once, when the variant receives the first key.
+#[inline]
+fn check_map(map_error: &mut Option<Error>) -> Result<(), Error> {
+    match map_error.take() {
+        Some(err) => Err(err),
+        None => Ok(()),
+    }
 }
 
 impl<'a, 'de, E: Send> InternallyTaggedSink<'a, 'de, E> {
@@ -1165,6 +1235,7 @@ impl<'a, 'de, E: Send> InternallyTaggedSink<'a, 'de, E> {
                 variant_key: false,
                 flattened: false,
                 unclaimed: Vec::new(),
+                map_error: None,
             },
             state,
         )
@@ -1176,7 +1247,12 @@ impl<'a, 'de, E: Send> InternallyTaggedSink<'a, 'de, E> {
         mut variant: ArenaVariant<'a, 'de, E>,
         state: &mut State,
     ) -> Result<(), Error> {
-        variant.sink().map(state)?;
+        if let Err(err) = variant.sink().map(state) {
+            if !self.pending.is_empty() || !variant.unit_struct() {
+                return Err(err);
+            }
+            self.map_error = Some(err);
+        }
         for (key, value) in take(&mut self.pending) {
             if !self.flattened {
                 key.replay(variant.sink().next_key(state)?, state)?;
@@ -1237,6 +1313,7 @@ impl<'a, 'de, E: Send> Sink<'de> for InternallyTaggedSink<'a, 'de, E> {
                 if atom.as_str().is_some_and(|key| self.tag.matches(key)) {
                     return Err(duplicate_key("tag", self.tag.name));
                 }
+                check_map(&mut self.map_error)?;
                 variant.sink().__private_key_atom(atom, state)
             }
             None => {
@@ -1257,6 +1334,7 @@ impl<'a, 'de, E: Send> Sink<'de> for InternallyTaggedSink<'a, 'de, E> {
                 if atom.as_str().is_some_and(|key| self.tag.matches(key)) {
                     return Err(duplicate_key("tag", self.tag.name));
                 }
+                check_map(&mut self.map_error)?;
                 variant.sink().__private_borrowed_key_atom(atom, state)
             }
             None => {
@@ -1273,6 +1351,7 @@ impl<'a, 'de, E: Send> Sink<'de> for InternallyTaggedSink<'a, 'de, E> {
                 if self.tag.matches_recorded(&key) {
                     return Err(duplicate_key("tag", self.tag.name));
                 }
+                check_map(&mut self.map_error)?;
                 key.replay(variant.sink().next_key(state)?, state)?;
             }
             return variant.sink().next_value(state);
@@ -1312,6 +1391,7 @@ impl<'a, 'de, E: Send> Sink<'de> for InternallyTaggedSink<'a, 'de, E> {
         }
         self.ensure_variant(state)?;
         if let Some(variant) = &mut self.variant {
+            check_map(&mut self.map_error)?;
             return variant.sink().value_for_key(key, state);
         }
         let mut recorded_key = RecordBuf::new();
@@ -1327,6 +1407,13 @@ impl<'a, 'de, E: Send> Sink<'de> for InternallyTaggedSink<'a, 'de, E> {
             self.start_variant(variant, state)?;
         }
         let variant = self.variant.as_mut().unwrap();
+        // a unit struct variant and there were no other keys: the variant
+        // is the tag alone
+        if let Some(err) = self.map_error.take()
+            && variant.sink().atom(Atom::Null, state).is_err()
+        {
+            return Err(err);
+        }
         variant.sink().finish(state)?;
         *self.out = variant.build();
         for err in take(&mut self.unclaimed) {

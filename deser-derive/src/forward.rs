@@ -386,6 +386,10 @@ pub(crate) fn derive_deserialize(
                     #adapter::__private_collects()
                 }
 
+                fn describe_type(__d: &mut dyn __deser::ser::Describe) {
+                    #adapter::describe_type(__d)
+                }
+
                 #[inline]
                 fn __private_collect_into<'__out>(__slot: &'__out mut __deser::__derive::Option<Self>, __state: &mut __deser::State)
                     -> __deser::de::SinkHandle<'__out, 'de>

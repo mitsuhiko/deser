@@ -179,6 +179,10 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Tagged<T> {
     fn expecting() -> Cow<'static, str> {
         T::expecting()
     }
+
+    fn describe_type(d: &mut dyn Describe) {
+        T::describe_type(d)
+    }
 }
 
 struct TaggedSink<'a, 'de, T> {

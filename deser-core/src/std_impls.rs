@@ -111,7 +111,12 @@ macro_rules! newtype_wrapper {
             }
 
             deserialize_via! {
-                [T: Deserialize<'de>] $ty<T> => T;
+                [T: Deserialize<'de>] $ty<T> => T {
+                    fn describe_type(d: &mut dyn Describe) {
+                        d.newtype(stringify!($ty));
+                        T::describe_type(d);
+                    }
+                };
             }
         )*
     };
@@ -157,7 +162,11 @@ impl<T: Send> Via<T> for ManuallyDrop<T> {
 }
 
 deserialize_via! {
-    [T: Deserialize<'de>] ManuallyDrop<T> => T;
+    [T: Deserialize<'de>] ManuallyDrop<T> => T {
+        fn describe_type(d: &mut dyn Describe) {
+            T::describe_type(d);
+        }
+    };
 }
 
 // Infallible

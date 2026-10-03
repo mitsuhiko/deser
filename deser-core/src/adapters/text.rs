@@ -463,6 +463,10 @@ impl<'de, T: Send, A: Deserialize<'de, T>> Deserialize<'de, T> for SkipBlank<A> 
         A::expecting()
     }
 
+    fn describe_type(d: &mut dyn Describe) {
+        A::describe_type(d)
+    }
+
     fn initial_value() -> Option<T> {
         A::initial_value()
     }
@@ -514,6 +518,10 @@ impl<'de, T: Send, A: Deserialize<'de, T>> Deserialize<'de, T> for TrimWhitespac
 
     fn expecting() -> Cow<'static, str> {
         A::expecting()
+    }
+
+    fn describe_type(d: &mut dyn Describe) {
+        A::describe_type(d)
     }
 
     fn initial_value() -> Option<T> {

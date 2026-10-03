@@ -341,6 +341,10 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de, T> for Same {
         T::__private_raw()
     }
 
+    fn describe_type(d: &mut dyn Describe) {
+        T::describe_type(d)
+    }
+
     #[inline]
     fn __private_collects() -> bool {
         T::__private_collects()
@@ -582,6 +586,10 @@ impl<'de, T: Send, A: Deserialize<'de, T>> Deserialize<'de> for As<T, A> {
     #[inline(always)]
     fn __private_raw() -> Option<&'static crate::ext::RawFormatInfo> {
         A::__private_raw()
+    }
+
+    fn describe_type(d: &mut dyn Describe) {
+        A::describe_type(d)
     }
 
     fn __private_vec_from_bytes(bytes: Vec<u8>) -> Option<Vec<Self>> {

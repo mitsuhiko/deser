@@ -122,6 +122,10 @@ where
         A::expecting()
     }
 
+    fn describe_type(d: &mut dyn Describe) {
+        A::describe_type(d)
+    }
+
     fn initial_value() -> Option<T> {
         A::initial_value().filter(|value| V::validate(value).is_ok())
     }

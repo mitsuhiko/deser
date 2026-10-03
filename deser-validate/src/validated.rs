@@ -182,6 +182,10 @@ impl<'de, T: Deserialize<'de>, V: Validator<T>> Deserialize<'de> for Validated<T
         T::expecting()
     }
 
+    fn describe_type(d: &mut dyn Describe) {
+        T::describe_type(d)
+    }
+
     /// Missing values are the missing values of `T` (validated).
     fn initial_value() -> Option<Self> {
         T::initial_value().map(Validated::new)
