@@ -25,7 +25,8 @@ The example has four functions, each run from `main`:
 3. `unknown_fields`: a struct with `#[deser(flatten)] extra: Map` keeps
    the fields it does not know and writes them back unchanged. `kind:
    &'a str` borrows from the `Value`.
-4. `merge`: two JSON files, parsed with `track_locations(true)`, are
+4. `merge`: two JSON files, parsed with `TrackLocations(true)` in the
+   context, are
    merged with `update`. Then a typed `Config` is deserialized with
    `deser_value::Deserializer` + `PathLayer`. The resulting error points
    to line 4, column 13 **of the second file**, where the bad value came

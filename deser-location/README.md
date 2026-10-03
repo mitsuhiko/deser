@@ -8,7 +8,7 @@ value is semantically wrong and you want to point the user at the exact
 spot, like a compiler would.
 
 ```rust
-use deser::Deserialize;
+use deser::{Context, Deserialize, TrackLocations};
 use deser_location::Spanned;
 
 #[derive(Deserialize)]
@@ -18,10 +18,9 @@ struct Config {
 }
 
 let input = "name: web\nworkers: 0\n";
-let config: Config = deser_yaml::DeserializerConfig::builder()
-    .track_locations(true).build()
-    .from_str(input)
-    .unwrap();
+let mut de = deser_yaml::Deserializer::from_str(input);
+de.set_context(Context::with(TrackLocations(true)));
+let config: Config = de.deserialize().unwrap();
 
 if config.workers.value == 0 {
     let span = config.workers.span.unwrap();
@@ -31,8 +30,9 @@ if config.workers.value == 0 {
 }
 ```
 
-Location tracking is opt-in per deserializer (`track_locations`) and is
-supported by `deser-json`, `deser-yaml` and `deser-toml`.  Formats publish
+Location tracking is opt-in with `TrackLocations` in the context of the
+deserialization and is supported by all text formats (JSON and its
+dialects, YAML, TOML, XML, CSV, query strings and property lists).  Formats publish
 the byte range of every event, lines and columns are only computed when a
 location is requested.  Locations survive buffering: `Spanned` values inside
 internally tagged or untagged enums still know where they came from.

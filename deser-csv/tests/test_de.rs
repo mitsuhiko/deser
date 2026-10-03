@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use deser::adapters::Separated;
-use deser::{Deserialize, ErrorKind};
+use deser::{Context, Deserialize, ErrorKind, TrackLocations};
 use deser_csv::{
     Deserializer, DeserializerConfig, Escape, Headers, Nulls, Terminator, Trim, from_slice,
     from_str,
@@ -642,10 +642,9 @@ fn test_locations() {
         age: Spanned<u32>,
     }
 
-    let config = DeserializerConfig::builder().track_locations(true).build();
-    let rows: Vec<Row> = config
-        .from_str("name,age\njane,42\n\"jo\nhn\",23\n")
-        .unwrap();
+    let mut de = Deserializer::from_str("name,age\njane,42\n\"jo\nhn\",23\n");
+    de.set_context(Context::with(TrackLocations(true)));
+    let rows: Vec<Row> = de.deserialize().unwrap();
     assert_eq!(rows[0].age.span.unwrap().to_string(), "2:6-2:8");
     assert_eq!(rows[1].name.span.unwrap().to_string(), "3:1-4:4");
     assert_eq!(rows[1].age.span.unwrap().to_string(), "4:5-4:7");

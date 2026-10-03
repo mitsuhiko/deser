@@ -1,4 +1,4 @@
-use deser::Deserialize;
+use deser::{Context, Deserialize, TrackLocations};
 use deser_location::Spanned;
 use deser_path::{Path, PathLayer};
 use deser_value::{Deserializer, Value, from_value};
@@ -18,27 +18,21 @@ struct Server {
 }
 
 fn json(input: &str) -> Value {
-    deser_json::DeserializerConfig::builder()
-        .track_locations(true)
-        .build()
-        .from_str(input)
-        .unwrap()
+    let mut de = deser_json::Deserializer::from_str(input);
+    de.set_context(Context::with(TrackLocations(true)));
+    de.deserialize().unwrap()
 }
 
 fn toml(input: &str) -> Value {
-    deser_toml::DeserializerConfig::builder()
-        .track_locations(true)
-        .build()
-        .from_str(input)
-        .unwrap()
+    let mut de = deser_toml::Deserializer::from_str(input);
+    de.set_context(Context::with(TrackLocations(true)));
+    de.deserialize().unwrap()
 }
 
 fn yaml(input: &str) -> Value {
-    deser_yaml::DeserializerConfig::builder()
-        .track_locations(true)
-        .build()
-        .from_str(input)
-        .unwrap()
+    let mut de = deser_yaml::Deserializer::from_str(input);
+    de.set_context(Context::with(TrackLocations(true)));
+    de.deserialize().unwrap()
 }
 
 fn location(err: &deser::Error) -> (Option<usize>, Option<usize>) {
@@ -144,10 +138,8 @@ fn test_path_and_spanned() {
 #[test]
 fn test_duplicate_key_location() {
     let input = "{\"a\": 1,\n \"a\": 2}";
-    let err = deser_json::DeserializerConfig::builder()
-        .track_locations(true)
-        .build()
-        .from_str::<Value>(input)
-        .unwrap_err();
+    let mut de = deser_json::Deserializer::from_str(input);
+    de.set_context(Context::with(TrackLocations(true)));
+    let err = de.deserialize::<Value>().unwrap_err();
     assert_eq!(location(&err), (Some(2), Some(2)));
 }

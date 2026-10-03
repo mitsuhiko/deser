@@ -5,9 +5,9 @@ use deser::Deserialize;
 use deser::ext::Decimal;
 use deser_location::Spanned;
 
-use super::common::{NEWLINE, STOP, STRICT, check_stream};
+use super::common::{NEWLINE, STOP, STRICT, check_stream, tracked};
 use super::dialect;
-use dialect::{DeserializerConfig, from_slice, from_str};
+use dialect::{from_slice, from_str};
 
 /// The example from <https://json5.org/>.
 const EXAMPLE: &str = r#"{
@@ -145,10 +145,8 @@ fn test_spans() {
         hex: Spanned<u32>,
     }
 
-    let doc: Doc = DeserializerConfig::builder()
-        .track_locations(true)
-        .build()
-        .from_str("{\n  key: 'välue', // c\n  hex: 0xFF,\n}")
+    let doc: Doc = tracked("{\n  key: 'välue', // c\n  hex: 0xFF,\n}", &STRICT)
+        .deserialize()
         .unwrap();
     let span = |s: Option<deser_location::Span>| format!("{:?}", s.unwrap());
     assert_eq!(span(doc.key.span), "2:8-2:15");

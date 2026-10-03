@@ -1,10 +1,10 @@
 use std::collections::BTreeMap;
 
-use deser::Deserialize;
 use deser::de::Limits;
 use deser::ext::Timestamp;
+use deser::{Context, Deserialize, TrackLocations};
 use deser_location::{Span, Spanned};
-use deser_plist::{Deserializer, DeserializerConfig, Format, Uid};
+use deser_plist::{Deserializer, Format, Uid};
 
 use crate::common::{Value, parse, parse_err};
 
@@ -556,7 +556,7 @@ fn test_deserializer() {
     // the depth is limited with a layer
     let limited = |input: &[u8]| {
         Deserializer::from_slice(input).deserialize_with::<Value, _>(|driver| {
-            driver.push_layer(Limits::builder().max_depth(2).build())
+            driver.set_context(deser::Context::with(Limits::builder().max_depth(2).build()))
         })
     };
     assert!(limited(b"((()))").is_err());
@@ -586,17 +586,21 @@ fn test_locations() {
         b: Spanned<Vec<Spanned<String>>>,
     }
     let span = |s: Option<Span>| format!("{:?}", s.unwrap());
-    let config = DeserializerConfig::builder().track_locations(true).build();
+    let tracked = |input: &'static [u8]| {
+        let mut de = Deserializer::from_slice(input);
+        de.set_context(Context::with(TrackLocations(true)));
+        de
+    };
 
-    let doc: Doc = config
-        .from_slice(b"{\n  a = 1;\n  b = (x, \"y\");\n}")
+    let doc: Doc = tracked(b"{\n  a = 1;\n  b = (x, \"y\");\n}")
+        .deserialize()
         .unwrap();
     assert_eq!(span(doc.a.span), "2:7-2:8");
     assert_eq!(span(doc.b.span), "3:7-3:15");
     assert_eq!(span(doc.b.value[1].span), "3:11-3:14");
 
-    let doc: Doc = config
-        .from_slice(b"<plist><dict>\n<key>a</key><integer>1</integer>\n<key>b</key><array><string>x</string></array>\n</dict></plist>")
+    let doc: Doc = tracked(b"<plist><dict>\n<key>a</key><integer>1</integer>\n<key>b</key><array><string>x</string></array>\n</dict></plist>")
+        .deserialize()
         .unwrap();
     assert_eq!(span(doc.a.span), "2:13-2:33");
     assert_eq!(span(doc.b.span), "3:13-3:46");

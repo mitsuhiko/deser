@@ -33,7 +33,8 @@ request with all of its problems at once, not just the first one.
   all problems of a JSON request with paths, violation codes (the names of
   the validators) and lines, including type errors and missing fields.
 - `Validated<Address>` which keeps all errors of one part of the input.
-- `track_locations` on the JSON deserializer, so that the errors values
+- `TrackLocations` in the context of the JSON deserializer, so that the
+  errors values
   keep have lines and columns too (without it they only have offsets,
   `Report::resolve_positions` resolves them).
 

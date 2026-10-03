@@ -14,11 +14,12 @@ use crate::error::{Error, ErrorKind};
 /// * [`deserialize`](Self::deserialize) deserializes a value.
 /// * [`deserialize_with`](Self::deserialize_with) deserializes a value and
 ///   allows configuring the driver first, for instance to add
-///   [`Layer`](crate::de::Layer)s or to wrap the sink of the value.
+///   [`Layer`](crate::de::Layer)s, to wrap the sink of the value or to
+///   give it a [`Context`](crate::Context).
 ///
 /// ```
 /// use deser::de::{DeserializeDriver, Deserializer, Limits};
-/// use deser::{Error, Event};
+/// use deser::{Context, Error, Event};
 ///
 /// /// A format which reads comma separated numbers as a sequence.
 /// struct Numbers<'a>(&'a str);
@@ -42,9 +43,9 @@ use crate::error::{Error, ErrorKind};
 /// let value: Vec<u32> = Numbers("1, 2, 3").deserialize().unwrap();
 /// assert_eq!(value, [1, 2, 3]);
 ///
-/// let rv = Numbers("1, 2, 3").deserialize_with::<Vec<u32>, _>(|driver| {
-///     driver.push_layer(Limits::builder().max_items(2).build());
-/// });
+/// let limits = Context::with(Limits::builder().max_items(2).build());
+/// let rv = Numbers("1, 2, 3")
+///     .deserialize_with::<Vec<u32>, _>(|driver| driver.set_context(limits.clone()));
 /// assert_eq!(rv.unwrap_err().to_string(), "LimitExceeded: too many items");
 /// ```
 pub trait Deserializer<'de> {

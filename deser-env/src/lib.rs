@@ -391,7 +391,7 @@ pub fn var<T: DeserializeOwned>(name: &str) -> Result<T, Error> {
         // the variable stands for a key given once: collections (like
         // `Vec<T>`) are one value
         let mut driver = DeserializeDriver::multimap_value(&mut out);
-        LexicalRules::LENIENT.set(driver.state_mut());
+        LexicalRules::LENIENT.set_default(driver.state_mut());
         match value.into_string() {
             Ok(text) => driver.emit(Atom::Lexical(Text::borrowed(&text))),
             Err(value) => match de::os_bytes(value) {

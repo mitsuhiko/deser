@@ -203,7 +203,7 @@ fn test_feeding_with_limits() {
         size: 2,
     });
     let limits = |driver: &mut deser::de::DeserializeDriver<'_, '_>| {
-        driver.push_layer(Limits::builder().max_depth(2).build())
+        driver.set_context(deser::Context::with(Limits::builder().max_depth(2).build()))
     };
     let err = reader.read_with::<Recording, _>(limits).unwrap_err();
     assert_eq!(

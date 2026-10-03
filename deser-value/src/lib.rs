@@ -36,13 +36,13 @@
 //! * [Event data](deser_core::State::event), which is information that is
 //!   attached to values but not part of the data model (for instance CBOR
 //!   tags or formatting hints), is retained in the [`Meta`] data of values.
-//! * If the format tracks locations, values retain their [`Span`] in the
-//!   input.  Types that are deserialized from such values report errors at
-//!   the original location:
+//! * If the format tracks locations (see
+//!   [`TrackLocations`](deser_core::TrackLocations)), values retain their
+//!   [`Span`] in the input.  Types that are deserialized from such values
+//!   report errors at the original location:
 //!
 //! ```
-//! use deser::Deserialize;
-//! use deser_json::DeserializerConfig;
+//! use deser::{Context, Deserialize, TrackLocations};
 //! use deser_value::{Value, from_value};
 //!
 //! #[derive(Debug, Deserialize)]
@@ -50,10 +50,9 @@
 //!     port: u16,
 //! }
 //!
-//! let value: Value = DeserializerConfig::builder()
-//!     .track_locations(true).build()
-//!     .from_str("{\n  \"port\": \"80\"\n}")
-//!     .unwrap();
+//! let mut de = deser_json::Deserializer::from_str("{\n  \"port\": \"80\"\n}");
+//! de.set_context(Context::with(TrackLocations(true)));
+//! let value: Value = de.deserialize().unwrap();
 //! let err = from_value::<Config>(&value).unwrap_err();
 //! assert_eq!((err.line(), err.column()), (Some(2), Some(11)));
 //! ```

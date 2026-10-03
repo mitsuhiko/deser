@@ -56,6 +56,6 @@ Why use it:
   Values are parsed while their input arrives, so only incomplete tokens
   are buffered, and written while they are serialized.
 * **Source locations:** errors carry line and column and with
-  `DeserializerConfig::set_track_locations` values can be wrapped in
+  `deser::TrackLocations` in the context values can be wrapped in
   [`deser_location::Spanned`](https://docs.rs/deser-location) to learn
   where they came from.

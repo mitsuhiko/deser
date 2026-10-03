@@ -615,7 +615,7 @@ impl<W: AsyncWrite + Unpin, S: StreamSerializer> Writer<W, S> {
         let mut driver = SerializeDriver::new(&value);
         setup(&mut driver);
         if !self.context.is_empty() {
-            driver.state_mut().set_default_context(self.context.clone());
+            driver.set_default_context(self.context.clone());
         }
         // output that was not written (for instance of values serialized
         // before the serializer was given to the writer) comes first

@@ -16,7 +16,8 @@ to carry extra information through deser, and both survive buffering.
 ## What it shows
 
 1. **Out-of-band, through the state**: the JSON deserializer (with
-   `track_locations(true)`) publishes the input range of each event.
+   `TrackLocations(true)` in its context) publishes the input range of
+   each event.
    `deser_location::Spanned<T>` picks it up. This works for maps and
    sequences too (`hosts: Spanned<Vec<...>>`).
 2. **In-band, as extension values**: the custom `Annotator` layer

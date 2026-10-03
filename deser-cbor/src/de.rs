@@ -303,9 +303,7 @@ impl<'b, 'a, T: Deserialize<'a>> Iterator for Iter<'b, 'a, T> {
 impl<'a> de::Deserializer<'a> for Deserializer<'a> {
     fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
         if !self.config.context.is_empty() {
-            driver
-                .state_mut()
-                .set_default_context(self.config.context.clone());
+            driver.set_default_context(self.config.context.clone());
         }
         Deserializer::drive(self, driver)
     }

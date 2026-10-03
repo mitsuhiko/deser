@@ -49,7 +49,7 @@ pub use self::extensions::EventData;
 #[cfg(feature = "open-enums")]
 pub use self::open_enum::{DuplicateVariant, OpenEnum, OpenEnums, OpenVariant};
 pub use self::position::Position;
-pub use self::source::Source;
+pub use self::source::{Source, TrackLocations};
 pub use self::state::State;
 pub use self::text::Text;
 

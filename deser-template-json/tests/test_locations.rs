@@ -1,5 +1,6 @@
+use super::common::{STRICT, tracked};
 use super::dialect;
-use deser::Deserialize;
+use deser::{Context, Deserialize, TrackLocations};
 use deser_location::Spanned;
 
 #[derive(Deserialize, Debug)]
@@ -24,11 +25,7 @@ const INPUT: &str = r#"{
 
 #[test]
 fn test_spans() {
-    let doc: Doc = dialect::DeserializerConfig::builder()
-        .track_locations(true)
-        .build()
-        .from_str(INPUT)
-        .unwrap();
+    let doc: Doc = tracked(INPUT, &STRICT).deserialize().unwrap();
     let span = |s: Option<deser_location::Span>| format!("{:?}", s.unwrap());
     // spans include the quotes of strings
     assert_eq!(span(doc.name.span), "2:11-2:17");
@@ -45,11 +42,9 @@ fn test_spans() {
 
 #[test]
 fn test_spans_from_slice() {
-    let doc: Doc = dialect::DeserializerConfig::builder()
-        .track_locations(true)
-        .build()
-        .from_slice(INPUT.as_bytes())
-        .unwrap();
+    let mut de = dialect::Deserializer::from_slice(INPUT.as_bytes());
+    de.set_context(Context::with(TrackLocations(true)));
+    let doc: Doc = de.deserialize().unwrap();
     let span = |s: Option<deser_location::Span>| format!("{:?}", s.unwrap());
     assert_eq!(span(doc.name.span), "2:11-2:17");
     assert_eq!(span(doc.unicode.span), "5:14-5:21");
@@ -78,11 +73,7 @@ fn test_spans_through_buffering() {
     // the tag comes last, so all fields are buffered and replayed
     let input =
         "{\n  \"url\": \"http://x\",\n  \"headers\": [\"a\", \"b\"],\n  \"type\": \"Http\"\n}";
-    let backend: Backend = dialect::DeserializerConfig::builder()
-        .track_locations(true)
-        .build()
-        .from_str(input)
-        .unwrap();
+    let backend: Backend = tracked(input, &STRICT).deserialize().unwrap();
     let Backend::Http { url, headers } = backend;
     let span = |s: Option<deser_location::Span>| format!("{:?}", s.unwrap());
     assert_eq!(url.value, "http://x");
@@ -107,11 +98,7 @@ enum Adjacent {
 #[test]
 fn test_spans_through_enum_buffering() {
     let input = "[\n  \"x\",\n  {\"c\": 42, \"t\": \"Value\"}\n]";
-    let (text, adjacent): (NumberOrText, Adjacent) = dialect::DeserializerConfig::builder()
-        .track_locations(true)
-        .build()
-        .from_str(input)
-        .unwrap();
+    let (text, adjacent): (NumberOrText, Adjacent) = tracked(input, &STRICT).deserialize().unwrap();
     let span = |s: Option<deser_location::Span>| format!("{:?}", s.unwrap());
     match text {
         NumberOrText::Text(text) => assert_eq!(span(text.span), "2:3-2:6"),

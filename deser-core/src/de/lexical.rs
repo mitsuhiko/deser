@@ -22,10 +22,13 @@ const MAX_QUOTED: usize = 64;
 /// variable is text so `on` and `yes` are booleans too and empty values are
 /// missing values.
 ///
-/// The rules are an extension value in the [`State`] (see
-/// [`State::get_mut`]) which formats set, the default are the
-/// [strict](Self::STRICT) rules.  As they are part of the state (and not of
-/// the atoms), lexical atoms that are buffered and replayed are
+/// The rules are an extension value, the default are the
+/// [strict](Self::STRICT) rules.  Formats where everything is text have
+/// other defaults (query strings, environment variables and CSV use the
+/// [lenient](Self::LENIENT) rules), which rules in the
+/// [`Context`](crate::Context) (or in the [`State`], see
+/// [`set`](Self::set)) override.  As they are part of the state (and not
+/// of the atoms), lexical atoms that are buffered and replayed are
 /// interpreted with the rules of the deserialization they are replayed in.
 ///
 /// ```
@@ -86,6 +89,14 @@ impl LexicalRules {
     #[inline]
     pub fn set(self, state: &mut State) {
         *state.get_mut::<LexicalRules>() = self;
+    }
+
+    /// Sets the rules unless the state or the context has rules.
+    ///
+    /// Formats use this for their default (see [`State::set_default`]).
+    #[inline]
+    pub fn set_default(self, state: &mut State) {
+        state.set_default(self);
     }
 
     /// Sets if booleans are also `yes`, `on` and `1` and `no`, `off` and

@@ -10,8 +10,8 @@ Layers are middleware that sits between the values and the format. A
 layer sees every event and can change, drop or add events. With layers
 you can make cross-cutting changes (renaming keys, redacting secrets,
 limits, error paths) without touching the types. This example implements
-three serialization layers from scratch and uses the two built-in
-deserialization layers.
+three serialization layers from scratch and uses the built-in
+deserialization layer for paths together with limits.
 
 ## What it shows
 
@@ -28,13 +28,14 @@ Custom `deser::ser::Layer` implementations (all in `main.rs`):
 
 These are pushed with `SerializerConfig::to_string_with(&v, |driver| ...)`.
 
-Built-in deserialization layers:
+During deserialization:
 
-- `deser::de::Limits` (here `max_items(5)`)
-- `deser_path::PathLayer`
+- `deser::de::Limits` (here `max_items(5)`) in the context of the
+  deserializer
+- `deser_path::PathLayer`, a built-in layer
 
-The order of the layers matters: `PathLayer` is pushed first, so errors
-raised by `Limits` also get a path.
+The limits see the events after the layers, so errors raised by `Limits`
+also get a path.
 
 ## What you should see
 

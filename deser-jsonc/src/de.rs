@@ -6,7 +6,7 @@ use core::marker::PhantomData;
 use core::str;
 
 use deser_core::de::{self, Deserialize, DeserializeDriver, deserialize_value};
-use deser_core::{Error, ErrorKind, Source};
+use deser_core::{Error, ErrorKind, Source, TrackLocations};
 
 use crate::Trailing;
 use crate::parser::{Borrowing, Cursor, Options, Parser, Progress};
@@ -31,7 +31,6 @@ use crate::scan::LineScan;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeserializerConfig {
-    track_locations: bool,
     exact_numbers: bool,
     trailing: Trailing,
     context: deser_core::Context,
@@ -47,7 +46,6 @@ impl DeserializerConfig {
     /// Creates the default configuration.
     pub const fn new() -> DeserializerConfig {
         DeserializerConfig {
-            track_locations: false,
             exact_numbers: true,
             trailing: Trailing::Strict,
             context: deser_core::Context::new(),
@@ -148,19 +146,6 @@ impl DeserializerConfig {
         self.exact_numbers
     }
 
-    /// Enables or disables location tracking.
-    ///
-    /// The byte range of every event is always published into the state
-    /// (see [`State::input_range`](deser_core::State::input_range)).  When
-    /// enabled additionally the input is set as source (see
-    /// [`Source`]) which allows resolving the
-    /// ranges into lines and columns, for instance with the `Spanned` type
-    /// of [`deser-location`](https://docs.rs/deser-location).  This copies
-    /// the input.
-    pub const fn set_track_locations(&mut self, yes: bool) {
-        self.track_locations = yes;
-    }
-
     /// Enables or disables exact numbers.
     ///
     /// When enabled (which is the default) floats which lose precision as
@@ -256,14 +241,6 @@ impl DeserializerConfigBuilder {
     /// See [`DeserializerConfig::set_trailing`].
     pub const fn trailing(mut self, trailing: Trailing) -> DeserializerConfigBuilder {
         self.value.set_trailing(trailing);
-        self
-    }
-
-    /// Enables or disables location tracking.
-    ///
-    /// See [`DeserializerConfig::set_track_locations`].
-    pub const fn track_locations(mut self, yes: bool) -> DeserializerConfigBuilder {
-        self.value.set_track_locations(yes);
         self
     }
 
@@ -516,7 +493,7 @@ impl<'a> Deserializer<'a> {
                 "cannot continue after an error",
             ));
         }
-        if self.config.track_locations {
+        if TrackLocations::of(driver.state()) {
             let source = match self.source {
                 Some(ref source) => source.clone(),
                 None => {
@@ -655,9 +632,7 @@ impl<'b, 'a, T: Deserialize<'a>> Iterator for Iter<'b, 'a, T> {
 impl<'a> de::Deserializer<'a> for Deserializer<'a> {
     fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
         if !self.config.context.is_empty() {
-            driver
-                .state_mut()
-                .set_default_context(self.config.context.clone());
+            driver.set_default_context(self.config.context.clone());
         }
         Deserializer::drive(self, driver)
     }

@@ -37,8 +37,9 @@
 //! delivered to: numbers parse them, strings take them as they are.  They
 //! are interpreted with the [lenient
 //! rules](deser_core::de::LexicalRules::LENIENT): `yes`, `on` and `1` are
-//! booleans too and empty fields are `None` for optional numbers.  This
-//! also works when values are buffered, so flattened structs and
+//! booleans too and empty fields are `None` for optional numbers (other
+//! [`LexicalRules`](deser_core::de::LexicalRules) can be given in the
+//! [`Context`](deser_core::Context)).  This also works when values are buffered, so flattened structs and
 //! internally tagged and untagged enums work:
 //!
 //! ```rust

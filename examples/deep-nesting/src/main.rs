@@ -9,7 +9,7 @@
 //! instance because it's processed recursively later).  The `Limits`
 //! layer limits the depth and the size of the input.
 use deser::de::Limits;
-use deser::{Deserialize, Serialize};
+use deser::{Context, Deserialize, Serialize};
 
 /// A recursive type.
 #[derive(Default, Serialize, Deserialize)]
@@ -58,11 +58,8 @@ fn main() {
     println!("JSON: {} bytes, CBOR: {} bytes", json.len(), cbor.len());
 
     // untrusted input can be limited
-    let err = deser_json::Deserializer::from_str(&json)
-        .deserialize_with::<Tree, _>(|driver| {
-            driver.push_layer(Limits::builder().max_depth(64).build())
-        })
-        .err()
-        .unwrap();
+    let mut de = deser_json::Deserializer::from_str(&json);
+    de.set_context(Context::with(Limits::builder().max_depth(64).build()));
+    let err = de.deserialize::<Tree>().err().unwrap();
     println!("with limits: {}", err);
 }

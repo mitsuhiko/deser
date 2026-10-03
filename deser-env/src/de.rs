@@ -402,10 +402,10 @@ impl<'a> Deserializer<'a> {
         }
         let tree = Tree::build(&self.vars, &self.config)?;
         let state = driver.state_mut();
-        // the last value of repeated keys is used unless the context says
-        // otherwise
+        // the last value of repeated keys is used and everything is text
+        // unless the context says otherwise
         DuplicateKeys::Last.set_default(state);
-        LexicalRules::LENIENT.set(state);
+        LexicalRules::LENIENT.set_default(state);
         state.add_error_context::<CurrentVar>();
         tree.emit(&self.vars, driver)
     }
@@ -431,9 +431,7 @@ impl<'a> Deserializer<'a> {
 impl<'a> de::Deserializer<'a> for Deserializer<'a> {
     fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
         if !self.config.context.is_empty() {
-            driver
-                .state_mut()
-                .set_default_context(self.config.context.clone());
+            driver.set_default_context(self.config.context.clone());
         }
         Deserializer::drive(self, driver)
     }

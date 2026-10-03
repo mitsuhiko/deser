@@ -6,6 +6,7 @@ use crate::Text;
 use crate::arena::Buffer;
 use crate::de::layer::{Layer, LayerEvent, Next};
 use crate::de::lexical::ContentKey;
+use crate::de::limits::{Limits, LimitsLayer};
 use crate::de::{Deserialize, InlineEvent, Sink, SinkHandle};
 use crate::error::{Error, ErrorKind};
 use crate::event::{Atom, ContainerShape, Event};
@@ -55,6 +56,8 @@ pub struct DeserializeDriver<'a, 'de: 'a> {
     // passes events through the layers, set by `push_layer`.  The code of
     // the layers is only linked into programs that add layers.
     emit_layered: Option<EmitLayered<'de>>,
+    // `true` if the last layer enforces the limits of the context
+    has_limits: bool,
     // the sinks borrow for 'a
     _marker: PhantomData<&'a mut ()>,
 }
@@ -366,6 +369,7 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
             },
             layers: Vec::new(),
             emit_layered: None,
+            has_limits: false,
             _marker: PhantomData,
         }
     }
@@ -386,9 +390,36 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
     /// Sets the context of the deserialization.
     ///
     /// The values of the context are the defaults of the extension values
-    /// of the state (see [`Context`]).  This replaces the context.
+    /// of the state (see [`Context`]).  This replaces the context.  If the
+    /// context has [`Limits`], the driver enforces them: they see the
+    /// events as the sinks receive them, after all layers (see
+    /// [`push_layer`](Self::push_layer)).  This way the errors of the
+    /// limits have the context the layers add (like the path).
     pub fn set_context(&mut self, context: Context) {
+        if core::mem::take(&mut self.has_limits) {
+            self.layers.pop();
+        }
+        if let Some(limits) = context.get::<Limits>()
+            && !limits.is_unlimited()
+        {
+            self.layers.push(Box::new(LimitsLayer::new(*limits)));
+            self.emit_layered = Some(emit_layered);
+            self.has_limits = true;
+        }
         self.core.state.set_context(context);
+    }
+
+    /// Sets the context unless the driver has one.
+    ///
+    /// Formats use this for the context they were given: a context set on
+    /// the driver (for instance in the setup callback of
+    /// [`Deserializer::deserialize_with`](crate::de::Deserializer::deserialize_with))
+    /// takes precedence.
+    #[inline(never)]
+    pub fn set_default_context(&mut self, context: Context) {
+        if self.core.state.context().is_empty() && !context.is_empty() {
+            self.set_context(context);
+        }
     }
 
     /// Returns the context of the deserialization.
@@ -400,10 +431,13 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
     ///
     /// Layers see the events in the order they were added: the layer that
     /// was added first sees the events emitted into the driver, the last
-    /// one passes them on to the sinks.  See [`Layer`] for more
+    /// one passes them on to the sinks (or the [`Limits`] of the context,
+    /// see [`set_context`](Self::set_context)).  See [`Layer`] for more
     /// information.
     pub fn push_layer<L: Layer + 'static>(&mut self, layer: L) {
-        self.layers.push(Box::new(layer));
+        // the limits of the context come last
+        let idx = self.layers.len() - usize::from(self.has_limits);
+        self.layers.insert(idx, Box::new(layer));
         self.emit_layered = Some(emit_layered);
     }
 

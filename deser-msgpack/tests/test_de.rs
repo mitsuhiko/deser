@@ -47,7 +47,9 @@ fn recursion_limit() {
     // ...but the depth can be limited with a layer.
     let limited = |input: &[u8], max_depth| {
         deser_msgpack::Deserializer::from_slice(input).deserialize_with::<Value, _>(|driver| {
-            driver.push_layer(Limits::builder().max_depth(max_depth).build())
+            driver.set_context(deser::Context::with(
+                Limits::builder().max_depth(max_depth).build(),
+            ))
         })
     };
     let bomb = vec![0x91u8; depth];

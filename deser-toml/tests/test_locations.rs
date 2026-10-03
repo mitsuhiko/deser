@@ -1,6 +1,13 @@
-use deser::Deserialize;
+use deser::{Context, Deserialize, TrackLocations};
 use deser_location::{Span, Spanned};
-use deser_toml::{Datetime, DeserializerConfig};
+use deser_toml::Datetime;
+
+/// Returns a deserializer that tracks locations.
+fn tracked(input: &str) -> deser_toml::Deserializer<'_> {
+    let mut de = deser_toml::Deserializer::from_str(input);
+    de.set_context(Context::with(TrackLocations(true)));
+    de
+}
 
 #[derive(Deserialize, Debug)]
 struct Doc {
@@ -34,11 +41,7 @@ x = true
 
 #[test]
 fn test_spans() {
-    let doc: Doc = DeserializerConfig::builder()
-        .track_locations(true)
-        .build()
-        .from_str(INPUT)
-        .unwrap();
+    let doc: Doc = tracked(INPUT).deserialize().unwrap();
     let span = |s: Option<Span>| format!("{:?}", s.unwrap());
     // spans include the quotes of strings, columns count characters
     assert_eq!(span(doc.name.span), "1:8-1:13");
@@ -60,10 +63,6 @@ fn test_spans() {
 
 #[test]
 fn test_root_span() {
-    let doc: Spanned<Nested> = DeserializerConfig::builder()
-        .track_locations(true)
-        .build()
-        .from_str("x = true\n")
-        .unwrap();
+    let doc: Spanned<Nested> = tracked("x = true\n").deserialize().unwrap();
     assert_eq!(format!("{:?}", doc.span.unwrap()), "1:1-2:1");
 }

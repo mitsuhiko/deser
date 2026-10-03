@@ -135,7 +135,7 @@ impl SerializerConfig {
     #[inline]
     fn apply_context(&self, driver: &mut SerializeDriver<'_>) {
         if !self.context.is_empty() {
-            driver.state_mut().set_default_context(self.context.clone());
+            driver.set_default_context(self.context.clone());
         }
     }
 
@@ -657,9 +657,7 @@ impl ser::StreamSerializer for Serializer {
         limit: usize,
     ) -> Result<bool, Error> {
         if !self.config.context.is_empty() {
-            driver
-                .state_mut()
-                .set_default_context(self.config.context.clone());
+            driver.set_default_context(self.config.context.clone());
         }
         if self.document.is_none() {
             if self.in_progress {

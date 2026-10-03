@@ -117,17 +117,20 @@ where
 /// Transcodes a value with configured drivers.
 ///
 /// The callbacks are invoked with the drivers before the value is
-/// deserialized and serialized, for instance to add layers:
+/// deserialized and serialized, for instance to add layers or to give
+/// them a context:
 ///
 /// ```rust
+/// use deser::Context;
 /// use deser::de::Limits;
 ///
+/// let limits = Context::with(Limits::builder().max_depth(2).build());
 /// let mut de = deser_json::Deserializer::from_str("[[[1]]]");
 /// let mut ser = deser_yaml::Serializer::new();
 /// let err = deser_transcode::transcode_with(
 ///     &mut de,
 ///     &mut ser,
-///     |driver| driver.push_layer(Limits::builder().max_depth(2).build()),
+///     |driver| driver.set_context(limits.clone()),
 ///     |_driver| {},
 /// )
 /// .unwrap_err();

@@ -147,9 +147,7 @@ impl<D: StreamDeserializer, S: StreamSerializer, T, V: Serialize> tokio_util::co
         // the value is written at once, the output is moved to the
         // destination
         let mut driver = deser_core::ser::SerializeDriver::new(&item);
-        driver
-            .state_mut()
-            .set_default_context(self.buffer.context().clone());
+        driver.set_default_context(self.buffer.context().clone());
         self.serializer.drive(&mut driver)?;
         dst.extend_from_slice(self.serializer.output());
         self.serializer.clear_output();

@@ -817,7 +817,9 @@ fn test_limits() {
     let input = r#"{"a": [[1]], "b": "hello"}"#;
     let parse = |limits: Limits| {
         dialect::Deserializer::from_str(input)
-            .deserialize_with::<deser::de::Recording, _>(|driver| driver.push_layer(limits))
+            .deserialize_with::<deser::de::Recording, _>(|driver| {
+                driver.set_context(deser::Context::with(limits))
+            })
             .map(|_| ())
             .map_err(|err| err.to_string())
     };

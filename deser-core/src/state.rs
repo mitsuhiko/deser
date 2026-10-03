@@ -429,25 +429,15 @@ impl State {
         &self.context
     }
 
-    /// Sets the context unless the state has one.
-    ///
-    /// Formats use this for the context they were given: a context set on
-    /// the driver (for instance in the setup callback of
-    /// [`Deserializer::deserialize_with`](crate::de::Deserializer::deserialize_with))
-    /// takes precedence.
-    #[inline(never)]
-    pub fn set_default_context(&mut self, context: Context) {
-        if self.context.is_empty() && !context.is_empty() {
-            self.set_context(context);
-        }
-    }
-
     /// Sets the context of the serialization or deserialization.
     ///
-    /// This replaces the context.  The drivers forward this (see
+    /// This replaces the context.  The context is usually given to the
+    /// drivers (see
     /// [`DeserializeDriver::set_context`](crate::de::DeserializeDriver::set_context)
     /// and [`SerializeDriver::set_context`](crate::ser::SerializeDriver::set_context)),
-    /// which is typically done before the first event.
+    /// which is typically done before the first event.  Only the
+    /// [`DeserializeDriver`](crate::de::DeserializeDriver) enforces the
+    /// [`Limits`](crate::de::Limits) of a context.
     pub fn set_context(&mut self, context: Context) {
         if let Some(collect) = context.get::<CollectErrors>() {
             self.collect_errors = true;

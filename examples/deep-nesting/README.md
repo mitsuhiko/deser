@@ -20,8 +20,8 @@ depth anyway.
   levels deep into a recursive `Tree`.
 - Serializing it to CBOR, reading it back and serializing to JSON again,
   still without recursion.
-- `deser::de::Limits::builder().max_depth(64).build()` as a layer to reject deep
-  input.
+- `deser::de::Limits::builder().max_depth(64).build()` in the context to
+  reject deep input.
 - A custom iterative `Drop` for `Tree`. This is needed because Rust's own
   generated drop glue is recursive and would overflow. That limitation is
   in Rust, not in deser.
@@ -42,4 +42,4 @@ The point is that the program finishes at all. Try removing the `Drop`
 impl and see that the crash comes from dropping the tree, not from
 deser.
 
-Related: `layers` (the `Limits` layer in combination with `PathLayer`).
+Related: `layers` (`Limits` in combination with `PathLayer`).

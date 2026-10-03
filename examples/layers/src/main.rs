@@ -12,7 +12,7 @@
 //! the `PathLayer` of `deser-path` adds the path to errors.
 use deser::de::Limits;
 use deser::ser::{Layer, Next};
-use deser::{Atom, Deserialize, Error, Event, Serialize};
+use deser::{Atom, Context, Deserialize, Error, Event, Serialize};
 use deser_path::{Path, PathLayer};
 
 /// Renames the string keys of maps.
@@ -161,8 +161,8 @@ fn main() {
         r#"{"user-name":"jdoe","password-hash":"[redacted]","api-tokens":"[redacted]","settings":{"dark-mode":true}}"#
     );
 
-    // during deserialization, the limits layer rejects input that is too
-    // large and the path layer adds the path to errors.
+    // during deserialization, the limits of the context reject input that
+    // is too large and the path layer adds the path to errors.
     println!();
     println!("deserialization errors:");
     let input = r#"{
@@ -173,12 +173,11 @@ fn main() {
         "settings": {"dark_mode": "yes", "time_zone": null}
     }"#;
     let parse = |limits: Limits| {
-        deser_json::Deserializer::from_str(input).deserialize_with::<User, _>(|driver| {
-            // the path layer comes first so that the errors of the limits
-            // layer get the path of the event it rejects
-            driver.push_layer(PathLayer::new());
-            driver.push_layer(limits);
-        })
+        let mut de = deser_json::Deserializer::from_str(input);
+        de.set_context(Context::with(limits));
+        // the limits see the events after the layers, so their errors get
+        // the path of the event they reject
+        de.deserialize_with::<User, _>(|driver| driver.push_layer(PathLayer::new()))
     };
     let err = parse(Limits::builder().max_items(5).build()).unwrap_err();
     println!("{}", err);

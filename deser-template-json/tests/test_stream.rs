@@ -264,8 +264,11 @@ fn test_borrowed() {
 fn test_locations() {
     use deser_location::Spanned;
 
-    let config = NEWLINE.into_builder().track_locations(true).build();
-    let items = stream::<Spanned<Vec<Spanned<u32>>>>(&config, "[1]\n\n  [2, 3]\n").unwrap();
+    let items = collect::<Spanned<Vec<Spanned<u32>>>>(&mut super::common::tracked(
+        "[1]\n\n  [2, 3]\n",
+        &NEWLINE,
+    ))
+    .unwrap();
     let spans = items
         .iter()
         .flat_map(|item| item.value.iter().map(|x| format!("{:?}", x.span.unwrap())))

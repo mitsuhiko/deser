@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use deser_core::de::{self, Deserialize, DeserializeDriver, deserialize_value};
 use deser_core::hints::Layout;
-use deser_core::{Atom, Error, ErrorKind, Event, Implicit, ImplicitValue, Source};
+use deser_core::{Atom, Error, ErrorKind, Event, Implicit, ImplicitValue, Source, TrackLocations};
 
 use crate::event::{Event as YamlEvent, EventKind, Mark, ScalarStyle};
 use crate::parser::{Parser, error_at};
@@ -41,7 +41,7 @@ pub struct DeserializerConfig {
     version: Version,
     alias_limit: usize,
     merge_keys: bool,
-    track_locations: bool,
+
     context: deser_core::Context,
 }
 
@@ -58,7 +58,7 @@ impl DeserializerConfig {
             version: Version::V1_2,
             alias_limit: DEFAULT_ALIAS_LIMIT,
             merge_keys: true,
-            track_locations: false,
+
             context: deser_core::Context::new(),
         }
     }
@@ -145,21 +145,6 @@ impl DeserializerConfig {
         self.merge_keys = yes;
     }
 
-    /// Enables or disables location tracking.
-    ///
-    /// The byte range of every event is always published into the state
-    /// (see [`State::input_range`](deser_core::State::input_range)).  When
-    /// enabled additionally the input is set as source (see
-    /// [`Source`]) which allows resolving the
-    /// ranges into lines and columns, for instance with the `Spanned` type
-    /// of [`deser-location`](https://docs.rs/deser-location).  This copies
-    /// the input.
-    ///
-    /// Values produced by aliases report the location of the anchored node.
-    pub const fn set_track_locations(&mut self, yes: bool) {
-        self.track_locations = yes;
-    }
-
     /// Deserializes a value from YAML.
     ///
     /// See [`from_str`].
@@ -233,14 +218,6 @@ impl DeserializerConfigBuilder {
     /// See [`DeserializerConfig::set_merge_keys`].
     pub const fn merge_keys(mut self, yes: bool) -> DeserializerConfigBuilder {
         self.value.set_merge_keys(yes);
-        self
-    }
-
-    /// Enables or disables location tracking.
-    ///
-    /// See [`DeserializerConfig::set_track_locations`].
-    pub const fn track_locations(mut self, yes: bool) -> DeserializerConfigBuilder {
-        self.value.set_track_locations(yes);
         self
     }
 
@@ -747,7 +724,7 @@ impl<'a> Deserializer<'a> {
         };
         self.doc.reset(version);
 
-        if self.config.track_locations {
+        if TrackLocations::of(driver.state()) {
             let source = self.source.get_or_insert_with(|| self.input.into());
             Source(source.clone()).set(driver.state_mut());
         }
@@ -1191,9 +1168,7 @@ impl<'b, 'a, T: Deserialize<'a>> Iterator for Iter<'b, 'a, T> {
 impl<'a> de::Deserializer<'a> for Deserializer<'a> {
     fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
         if !self.config.context.is_empty() {
-            driver
-                .state_mut()
-                .set_default_context(self.config.context.clone());
+            driver.set_default_context(self.config.context.clone());
         }
         Deserializer::drive(self, driver)
     }

@@ -11,9 +11,9 @@
 //!   writing them back unchanged,
 //! * merging files into one value and deserializing a type from it, with
 //!   errors that point into the file the bad value came from.
-use deser::Deserialize;
 use deser::Serialize;
 use deser::de::Deserializer as _;
+use deser::{Context, Deserialize, TrackLocations};
 use deser_path::{Path, PathLayer};
 use deser_value::{Kind, Map, Value, from_value, to_value, value};
 
@@ -153,13 +153,13 @@ fn merge() {
         "{\n  \"server\": {\n    \"host\": \"example.com\",\n    \"port\": \"eighty\"\n  }\n}";
 
     // values remember where they came from
-    let json = deser_json::DeserializerConfig::builder()
-        .track_locations(true)
-        .build();
-    let mut merged: Value = json.from_str(base).unwrap();
-    deser_json::Deserializer::from_str_with_config(local, &json)
-        .update(&mut merged)
-        .unwrap();
+    let context = Context::with(TrackLocations(true));
+    let mut de = deser_json::Deserializer::from_str(base);
+    de.set_context(context.clone());
+    let mut merged: Value = de.deserialize().unwrap();
+    let mut de = deser_json::Deserializer::from_str(local);
+    de.set_context(context.clone());
+    de.update(&mut merged).unwrap();
     // the keys of the file are merged into the map, the values of keys that
     // exist are replaced
     assert_eq!(merged["server"]["host"], "example.com");
@@ -176,7 +176,7 @@ fn merge() {
     assert_eq!(&**span.source(), local);
     assert_eq!(span.text(), Some("\"eighty\""));
 
-    let config: Config = from_value(&json.from_str::<Value>(base).unwrap()).unwrap();
+    let config: Config = from_value(&deser_json::from_str::<Value>(base).unwrap()).unwrap();
     assert_eq!(config.server.port, 8080);
     assert_eq!(config.server.host, "localhost");
     assert!(!config.debug);

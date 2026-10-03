@@ -13,7 +13,7 @@
 //!
 //! Validators are types.  `validator!` turns a function (or a condition)
 //! into one.
-use deser::Deserialize;
+use deser::{Context, Deserialize, TrackLocations};
 use deser_validate::{
     Check, Each, Email, Len, MaxLen, NonEmpty, Range, Validated, Validation, validator,
 };
@@ -138,13 +138,11 @@ fn api() {
     // with the locations tracked, the errors that values keep (like the
     // gift message) have lines and columns too, not only the errors that
     // are returned
-    let config = deser_json::DeserializerConfig::builder()
-        .track_locations(true)
-        .build();
+    let mut de = deser_json::Deserializer::from_str(request);
+    de.set_context(Context::with(TrackLocations(true)));
     let mut validation = Validation::new();
     validation.set_max_errors(100);
-    let rv = deser_json::Deserializer::from_str_with_config(request, &config)
-        .deserialize_with::<Order, _>(|driver| validation.setup(driver));
+    let rv = de.deserialize_with::<Order, _>(|driver| validation.setup(driver));
     let report = validation.finish(rv).into_result().unwrap_err();
 
     // what an API would answer with

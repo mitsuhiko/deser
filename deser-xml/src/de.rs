@@ -3,7 +3,9 @@ use std::borrow::Cow;
 use deser_core::de::{
     self, ContentKey, Deserialize, DeserializeDriver, LexicalRules, deserialize_value,
 };
-use deser_core::{Atom, ContainerShape, Error, ErrorKind, Event, Order, Source, Text};
+use deser_core::{
+    Atom, ContainerShape, Error, ErrorKind, Event, Order, Source, Text, TrackLocations,
+};
 use quick_xml::XmlVersion;
 use quick_xml::events::{BytesRef, BytesStart, Event as XmlEvent};
 use quick_xml::name::{QName, ResolveResult};
@@ -21,7 +23,7 @@ use crate::root::{Declarations, RootData};
 pub struct DeserializerConfig {
     pub(crate) names: Names,
     resolve_namespaces: bool,
-    track_locations: bool,
+
     context: deser_core::Context,
 }
 
@@ -37,7 +39,7 @@ impl DeserializerConfig {
         DeserializerConfig {
             names: Names::new(),
             resolve_namespaces: false,
-            track_locations: true,
+
             context: deser_core::Context::new(),
         }
     }
@@ -174,16 +176,6 @@ impl DeserializerConfig {
         self.resolve_namespaces = yes;
     }
 
-    /// Enables or disables location tracking.
-    ///
-    /// The byte range of every event is always published into the state
-    /// (see [`State::input_range`](deser_core::State::input_range)), this
-    /// controls if the input is published as [`Source`] so that errors can
-    /// be resolved into lines and columns.  The default is `true`.
-    pub const fn set_track_locations(&mut self, yes: bool) {
-        self.track_locations = yes;
-    }
-
     /// Deserializes a value from a string with this configuration.
     pub fn from_str<'de, T: Deserialize<'de>>(&self, s: &'de str) -> Result<T, Error> {
         deserialize_value(|driver| self.drive_str(s, driver))
@@ -258,14 +250,6 @@ impl DeserializerConfigBuilder {
     /// See [`DeserializerConfig::set_resolve_namespaces`].
     pub const fn resolve_namespaces(mut self, yes: bool) -> DeserializerConfigBuilder {
         self.value.set_resolve_namespaces(yes);
-        self
-    }
-
-    /// Enables or disables location tracking.
-    ///
-    /// See [`DeserializerConfig::set_track_locations`].
-    pub const fn track_locations(mut self, yes: bool) -> DeserializerConfigBuilder {
-        self.value.set_track_locations(yes);
         self
     }
 
@@ -397,10 +381,10 @@ impl<'a> Deserializer<'a> {
             return Err(err);
         }
         let state = driver.state_mut();
-        if self.config.track_locations {
+        if TrackLocations::of(state) {
             Source(self.input.into()).set(state);
         }
-        TEXT_RULES.set(state);
+        TEXT_RULES.set_default(state);
         // elements with attributes are text for types that expect text,
         // text is an element for types that expect maps
         ContentKey(self.config.names.text_key).set(state);
@@ -442,9 +426,7 @@ impl<'a> Deserializer<'a> {
 impl<'a> de::Deserializer<'a> for Deserializer<'a> {
     fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
         if !self.config.context.is_empty() {
-            driver
-                .state_mut()
-                .set_default_context(self.config.context.clone());
+            driver.set_default_context(self.config.context.clone());
         }
         Deserializer::drive(self, driver)
     }

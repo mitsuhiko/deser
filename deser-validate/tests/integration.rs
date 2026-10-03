@@ -1,7 +1,7 @@
 mod check;
 
 use deser::de::Limits;
-use deser::{Deserialize, Serialize};
+use deser::{Context, Deserialize, Serialize, TrackLocations};
 use deser_path::{Path, PathLayer};
 use deser_validate::{
     Check, Each, Email, Len, MaxLen, NonEmpty, Range, Validated, Validation, Violation,
@@ -43,11 +43,9 @@ const INVALID: &str = r#"{
 }"#;
 
 fn with_paths<'de, T: Deserialize<'de>>(input: &'de str) -> Result<T, deser::Error> {
-    let config = deser_json::DeserializerConfig::builder()
-        .track_locations(true)
-        .build();
-    deser_json::Deserializer::from_str_with_config(input, &config)
-        .deserialize_with(|driver| driver.push_layer(PathLayer::new()))
+    let mut de = deser_json::Deserializer::from_str(input);
+    de.set_context(Context::with(TrackLocations(true)));
+    de.deserialize_with(|driver| driver.push_layer(PathLayer::new()))
 }
 
 #[test]
@@ -145,7 +143,7 @@ fn test_format_and_layer_errors_are_not_kept() {
 
     let err = deser_json::Deserializer::from_str(r#"{"a": [[[1]]]}"#)
         .deserialize_with::<std::collections::BTreeMap<String, Validated<u32>>, _>(|driver| {
-            driver.push_layer(Limits::builder().max_depth(3).build())
+            driver.set_context(deser::Context::with(Limits::builder().max_depth(3).build()))
         })
         .unwrap_err();
     assert_eq!(err.message(), "recursion limit exceeded");
@@ -237,11 +235,9 @@ fn test_untagged_variants_do_not_keep_errors() {
 #[test]
 fn test_validation() {
     let validation = Validation::new();
-    let config = deser_json::DeserializerConfig::builder()
-        .track_locations(true)
-        .build();
-    let rv = deser_json::Deserializer::from_str_with_config(INVALID, &config)
-        .deserialize_with::<Signup, _>(|driver| validation.setup(driver));
+    let mut de = deser_json::Deserializer::from_str(INVALID);
+    de.set_context(Context::with(TrackLocations(true)));
+    let rv = de.deserialize_with::<Signup, _>(|driver| validation.setup(driver));
     let outcome = validation.finish(rv);
     // the value exists, it holds the invalid values
     assert!(!outcome.is_valid());

@@ -1,6 +1,12 @@
-use deser::Deserialize;
+use deser::{Context, Deserialize, TrackLocations};
 use deser_location::{Span, Spanned};
-use deser_yaml::DeserializerConfig;
+
+/// Returns a deserializer that tracks locations.
+fn tracked(input: &str) -> deser_yaml::Deserializer<'_> {
+    let mut de = deser_yaml::Deserializer::from_str(input);
+    de.set_context(Context::with(TrackLocations(true)));
+    de
+}
 
 #[derive(Deserialize, Debug)]
 struct Doc {
@@ -33,11 +39,7 @@ alias: *n
 
 #[test]
 fn test_spans() {
-    let doc: Doc = DeserializerConfig::builder()
-        .track_locations(true)
-        .build()
-        .from_str(INPUT)
-        .unwrap();
+    let doc: Doc = tracked(INPUT).deserialize().unwrap();
     let span = |s: Option<Span>| format!("{:?}", s.unwrap());
     // spans include the quotes of strings
     assert_eq!(span(doc.name.span), "1:7-1:13");

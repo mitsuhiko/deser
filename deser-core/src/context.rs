@@ -13,11 +13,13 @@ type Entry = (TypeKey, Arc<dyn DebugAny>);
 /// A context holds typed values which are given to a serialization or
 /// deserialization from the outside: policies like how unknown fields are
 /// handled ([`UnknownFields`](crate::de::UnknownFields)), how bytes are
-/// decoded from strings ([`BytesFormat`](crate::BytesFormat)) or data
-/// that types need, such as the variants of open enums.  It's created once
-/// and given to every serialization or deserialization that uses it: the
-/// deserializer and serializer configurations of the formats hold one (for
-/// instance `deser_json::DeserializerConfig::builder().context(context)`),
+/// decoded from strings ([`BytesFormat`](crate::BytesFormat)), limits for
+/// untrusted input ([`Limits`](crate::de::Limits)), whether formats
+/// provide source locations ([`TrackLocations`](crate::TrackLocations)) or
+/// data that types need, such as the variants of open enums.  It's created
+/// once and given to every serialization or deserialization that uses it:
+/// the deserializer and serializer configurations of the formats hold one
+/// (for instance `deser_json::DeserializerConfig::builder().context(context)`),
 /// and the deserializers, serializers, drivers, readers and writers have
 /// `set_context` methods:
 ///
@@ -54,7 +56,10 @@ type Entry = (TypeKey, Arc<dyn DebugAny>);
 ///
 /// Cloning a context is cheap, the values are shared.  Values are
 /// [`Debug`], [`Send`] and [`Sync`] like the extension values of the state
-/// so that contexts can be shared between threads.
+/// so that contexts can be shared between threads.  Values that collect
+/// results (like [`UnknownFields::Collect`](crate::de::UnknownFields::Collect))
+/// are shared too: everything that uses the context reports to them, so
+/// they belong into the state of a single deserialization instead.
 #[derive(Clone, Default)]
 pub struct Context {
     // `None` for the empty context so that it does not allocate.

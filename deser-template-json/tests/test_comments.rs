@@ -5,7 +5,7 @@ use deser::Deserialize;
 use deser::de::Recording;
 use deser_location::Spanned;
 
-use super::common::{Chunked, NEWLINE, STOP, STRICT, check_stream, chunk_sizes};
+use super::common::{Chunked, NEWLINE, STOP, STRICT, check_stream, chunk_sizes, tracked};
 use super::{DIALECT, dialect};
 use dialect::{Deserializer, DeserializerConfig, Trailing, from_slice, from_str};
 
@@ -84,11 +84,12 @@ fn test_spans() {
         b: Spanned<Vec<Spanned<bool>>>,
     }
 
-    let doc: Doc = DeserializerConfig::builder()
-        .track_locations(true)
-        .build()
-        .from_str("{\n  // a\n  \"a\": /* one */ 1,\n  \"b\": [true, /**/ false,],\n}")
-        .unwrap();
+    let doc: Doc = tracked(
+        "{\n  // a\n  \"a\": /* one */ 1,\n  \"b\": [true, /**/ false,],\n}",
+        &STRICT,
+    )
+    .deserialize()
+    .unwrap();
     let span = |s: Option<deser_location::Span>| format!("{:?}", s.unwrap());
     assert_eq!(span(doc.a.span), "3:18-3:19");
     assert_eq!(span(doc.b.span), "4:8-4:27");

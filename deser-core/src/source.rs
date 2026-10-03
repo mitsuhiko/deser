@@ -10,9 +10,8 @@ use crate::State;
 /// resolving the ranges into lines and columns (see
 /// [`Position::of`](crate::Position::of)) requires the source.  As
 /// this requires a copy of the input, formats only provide it when asked to
-/// (for instance with their `track_locations` option).  They store it in
-/// the [`State`] as an extension value with [`set`](Self::set) before they
-/// emit the first event:
+/// with [`TrackLocations`].  They store it in the [`State`] as an extension
+/// value with [`set`](Self::set) before they emit the first event:
 ///
 /// ```
 /// use deser::de::DeserializeDriver;
@@ -40,5 +39,57 @@ impl fmt::Debug for Source {
         f.debug_struct("Source")
             .field("len", &self.0.len())
             .finish()
+    }
+}
+
+/// Asks the formats to provide the [`Source`] (a value of the
+/// [`Context`](crate::Context)).
+///
+/// Formats publish the byte range of every event, resolving them into
+/// lines and columns (for instance with the `Spanned` type of
+/// [`deser-location`](https://docs.rs/deser-location)) also requires the
+/// source, which is a copy of the input.  Formats only provide it if this
+/// is set to `true` in the context (or the state).  Errors have their
+/// line and column either way.
+///
+/// ```
+/// use deser::de::{DeserializeDriver, Deserializer};
+/// use deser::{Context, Error, Event, Source, TrackLocations};
+///
+/// /// A format which provides the source if asked to.
+/// struct Text<'a>(&'a str);
+///
+/// impl<'de> Deserializer<'de> for Text<'de> {
+///     fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'de>) -> Result<(), Error> {
+///         if TrackLocations::of(driver.state()) {
+///             Source(self.0.into()).set(driver.state_mut());
+///         }
+///         driver.state_mut().set_input_range(0, self.0.len());
+///         driver.emit(self.0)
+///     }
+/// }
+///
+/// let context = Context::with(TrackLocations(true));
+/// let mut out = None::<String>;
+/// let mut driver = DeserializeDriver::new(&mut out);
+/// driver.set_context(context.clone());
+/// Text("hello").drive(&mut driver).unwrap();
+/// assert_eq!(&*driver.state().get::<Source>().unwrap().0, "hello");
+/// ```
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TrackLocations(pub bool);
+
+impl TrackLocations {
+    /// Returns `true` if the formats provide the source.
+    // not inlined: formats read it once per value
+    #[inline(never)]
+    pub fn of(state: &State) -> bool {
+        state.get::<TrackLocations>().is_some_and(|track| track.0)
+    }
+
+    /// Sets if the formats provide the source.
+    #[inline]
+    pub fn set(self, state: &mut State) {
+        *state.get_mut::<TrackLocations>() = self;
     }
 }

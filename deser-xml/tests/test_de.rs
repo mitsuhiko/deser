@@ -488,7 +488,9 @@ fn test_limits() {
     // elements are maps if they have attributes or child elements
     let parse = |max_depth| {
         Deserializer::from_str("<a><b><c/></b></a>").deserialize_with::<Value, _>(|driver| {
-            driver.push_layer(Limits::builder().max_depth(max_depth).build())
+            driver.set_context(deser::Context::with(
+                Limits::builder().max_depth(max_depth).build(),
+            ))
         })
     };
     assert!(parse(2).is_ok());

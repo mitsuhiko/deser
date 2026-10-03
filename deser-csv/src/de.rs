@@ -9,7 +9,7 @@ use deser_core::Text;
 use deser_core::de::{
     self, Deserialize, DeserializeDriver, Frame, LexicalRules, deserialize_value,
 };
-use deser_core::{Atom, Bytes, ContainerShape, Error, ErrorKind, Event, Source};
+use deser_core::{Atom, Bytes, ContainerShape, Error, ErrorKind, Event, Source, TrackLocations};
 
 use crate::parser::{Dialect, Field, Options, QUOTED, Scan, Scanner, UNESCAPE, unescape};
 use crate::{Escape, Headers, Nulls, Terminator, Trim};
@@ -49,7 +49,7 @@ pub struct DeserializerConfig {
     pub(crate) lenient_quotes: bool,
     pub(crate) sep_line: bool,
     pub(crate) max_record_len: usize,
-    pub(crate) track_locations: bool,
+
     context: deser_core::Context,
 }
 
@@ -77,7 +77,7 @@ impl DeserializerConfig {
             lenient_quotes: false,
             sep_line: false,
             max_record_len: 64 * 1024 * 1024,
-            track_locations: false,
+
             context: deser_core::Context::new(),
         }
     }
@@ -273,16 +273,6 @@ impl DeserializerConfig {
         self.max_record_len = len;
     }
 
-    /// Enables or disables location tracking.
-    ///
-    /// The byte range of every field is always published into the state
-    /// (see [`State::input_range`](deser_core::State::input_range)).  When
-    /// enabled additionally the input is set as source (see
-    /// [`Source`]).  This copies the input.
-    pub const fn set_track_locations(&mut self, yes: bool) {
-        self.track_locations = yes;
-    }
-
     /// Deserializes the records of a string.
     ///
     /// See [`from_str`](crate::from_str).
@@ -473,14 +463,6 @@ impl DeserializerConfigBuilder {
     /// See [`DeserializerConfig::set_max_record_len`].
     pub const fn max_record_len(mut self, len: usize) -> DeserializerConfigBuilder {
         self.value.set_max_record_len(len);
-        self
-    }
-
-    /// Enables or disables location tracking.
-    ///
-    /// See [`DeserializerConfig::set_track_locations`].
-    pub const fn track_locations(mut self, yes: bool) -> DeserializerConfigBuilder {
-        self.value.set_track_locations(yes);
         self
     }
 
@@ -709,8 +691,9 @@ impl StreamState {
         if let Some((offset, msg)) = scanner.error {
             return Err(Error::with_offset(ErrorKind::Syntax, msg, base + offset));
         }
-        // everything in a CSV file is text, like in a query string
-        LexicalRules::LENIENT.set(driver.state_mut());
+        // everything in a CSV file is text, like in a query string (unless
+        // the context says otherwise)
+        LexicalRules::LENIENT.set_default(driver.state_mut());
         let fields = &scanner.fields[..];
         // with `Headers::Skip` the names are known but not used
         let names = match config.headers {
@@ -869,7 +852,7 @@ pub struct Deserializer<'a> {
     config: DeserializerConfig,
     state: StreamState,
     failed: bool,
-    // the input as source (with `track_locations`)
+    // the input as source (with `TrackLocations`)
     source: Option<Arc<str>>,
 }
 
@@ -1032,9 +1015,9 @@ impl<'a> Deserializer<'a> {
         Ok(true)
     }
 
-    /// Sets the input as source (with `track_locations`).
+    /// Sets the input as source (with `TrackLocations`).
     fn set_source(&mut self, driver: &mut DeserializeDriver<'_, 'a>) {
-        if self.config.track_locations {
+        if TrackLocations::of(driver.state()) {
             let input = self.input;
             let source = self
                 .source
@@ -1132,9 +1115,7 @@ impl<'a> Deserializer<'a> {
 impl<'a> de::Deserializer<'a> for Deserializer<'a> {
     fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
         if !self.config.context.is_empty() {
-            driver
-                .state_mut()
-                .set_default_context(self.config.context.clone());
+            driver.set_default_context(self.config.context.clone());
         }
         Deserializer::drive(self, driver)
     }

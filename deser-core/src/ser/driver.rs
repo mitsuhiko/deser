@@ -507,6 +507,18 @@ impl<'a> SerializeDriver<'a> {
         self.state.set_context(context);
     }
 
+    /// Sets the context unless the driver has one.
+    ///
+    /// Formats use this for the context they were given: a context set on
+    /// the driver (for instance in the setup callback of `serialize_with`)
+    /// takes precedence.
+    #[inline(never)]
+    pub fn set_default_context(&mut self, context: Context) {
+        if self.state.context().is_empty() && !context.is_empty() {
+            self.set_context(context);
+        }
+    }
+
     /// Returns the context of the serialization.
     pub fn context(&self) -> &Context {
         self.state.context()

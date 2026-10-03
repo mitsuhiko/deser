@@ -4,7 +4,7 @@ use deser_core::Text;
 use deser_core::de::{self, Deserialize, DeserializeDriver, deserialize_value};
 use deser_core::ext::ExtValue;
 use deser_core::hints::Layout;
-use deser_core::{Atom, ContainerShape, Error, ErrorKind, Event, Source};
+use deser_core::{Atom, ContainerShape, Error, ErrorKind, Event, Source, TrackLocations};
 
 use crate::document::{Document, Item, Span, TableKind, Value};
 use crate::parser::{ROOT, parse};
@@ -16,20 +16,21 @@ use crate::parser::{ROOT, parse};
 /// [`from_str`](Self::from_str) and [`from_slice`](Self::from_slice) work
 /// like the functions of the same name.  To create a [`Deserializer`] with
 /// the configuration use [`Deserializer::from_str_with_config`] or
-/// [`Deserializer::from_slice_with_config`].
+/// [`Deserializer::from_slice_with_config`].  The only option is the
+/// [`Context`](deser_core::Context) (see [`set_context`](Self::set_context)),
+/// which holds what is configured from the outside (like
+/// [`TrackLocations`]).
 ///
 /// ```
 /// use std::collections::BTreeMap;
 /// use deser_toml::DeserializerConfig;
 ///
-/// const CONFIG: DeserializerConfig =
-///     DeserializerConfig::builder().track_locations(true).build();
+/// const CONFIG: DeserializerConfig = DeserializerConfig::new();
 /// let value: BTreeMap<String, u32> = CONFIG.from_str("a = 1").unwrap();
 /// assert_eq!(value["a"], 1);
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeserializerConfig {
-    track_locations: bool,
     context: deser_core::Context,
 }
 
@@ -43,7 +44,6 @@ impl DeserializerConfig {
     /// Creates the default configuration.
     pub const fn new() -> DeserializerConfig {
         DeserializerConfig {
-            track_locations: false,
             context: deser_core::Context::new(),
         }
     }
@@ -72,24 +72,6 @@ impl DeserializerConfig {
     /// Returns the context the values are deserialized in.
     pub fn context(&self) -> &deser_core::Context {
         &self.context
-    }
-
-    /// Enables or disables location tracking.
-    ///
-    /// The byte range of every event is always published into the state
-    /// (see [`State::input_range`](deser_core::State::input_range)).  When
-    /// enabled additionally the input is set as source (see
-    /// [`Source`]) which allows resolving the
-    /// ranges into lines and columns, for instance with the `Spanned` type
-    /// of [`deser-location`](https://docs.rs/deser-location).  This copies
-    /// the input.
-    ///
-    /// Tables report the location of the header that defines them (the
-    /// whole document for the root table), tables created by dotted keys
-    /// report the location of the key.  Arrays of tables report the
-    /// location of their first header.
-    pub const fn set_track_locations(&mut self, yes: bool) {
-        self.track_locations = yes;
     }
 
     /// Deserializes a value from TOML.
@@ -147,14 +129,6 @@ impl DeserializerConfigBuilder {
         }
     }
 
-    /// Enables or disables location tracking.
-    ///
-    /// See [`DeserializerConfig::set_track_locations`].
-    pub const fn track_locations(mut self, yes: bool) -> DeserializerConfigBuilder {
-        self.value.set_track_locations(yes);
-        self
-    }
-
     /// Sets the context the values are deserialized in.
     ///
     /// See [`DeserializerConfig::set_context`].
@@ -186,6 +160,11 @@ impl Default for DeserializerConfigBuilder {
 /// [`from_slice`] functions (or the methods of the same
 /// name on [`DeserializerConfig`]) are all that is needed.  The
 /// deserializer is useful to [`drive`](Self::drive) a custom sink.
+///
+/// With [`TrackLocations`] in the context, tables report the location of
+/// the header that defines them (the whole document for the root table),
+/// tables created by dotted keys report the location of the key.  Arrays
+/// of tables report the location of their first header.
 ///
 /// ```
 /// use deser_toml::Deserializer;
@@ -281,7 +260,7 @@ impl<'a> Deserializer<'a> {
         }
         let doc = parse(self.input)?;
 
-        if self.config.track_locations {
+        if TrackLocations::of(driver.state()) {
             Source(self.input.into()).set(driver.state_mut());
         }
         emit(&doc, driver).map_err(|mut err| {
@@ -311,9 +290,7 @@ impl<'a> Deserializer<'a> {
 impl<'a> de::Deserializer<'a> for Deserializer<'a> {
     fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
         if !self.config.context.is_empty() {
-            driver
-                .state_mut()
-                .set_default_context(self.config.context.clone());
+            driver.set_default_context(self.config.context.clone());
         }
         Deserializer::drive(self, driver)
     }

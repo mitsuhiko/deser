@@ -5,7 +5,7 @@ use deser::Deserialize;
 use deser::ext::Decimal;
 use deser_location::Spanned;
 
-use super::common::{NEWLINE, STOP, STRICT, check_stream};
+use super::common::{NEWLINE, STOP, STRICT, check_stream, tracked};
 use super::dialect;
 use dialect::{DeserializerConfig, from_slice, from_str};
 
@@ -222,9 +222,8 @@ fn test_locations() {
         c: Spanned<String>,
     }
 
-    let config = DeserializerConfig::builder().track_locations(true).build();
-    let doc: Doc = config
-        .from_str("a: 1 # c\nb: two  words  \nc:\n  '''\n  x\n  '''")
+    let doc: Doc = tracked("a: 1 # c\nb: two  words  \nc:\n  '''\n  x\n  '''", &STRICT)
+        .deserialize()
         .unwrap();
     let span = |span: Option<deser_location::Span>| format!("{:?}", span.unwrap());
     assert_eq!(span(doc.a.span), "1:4-1:5");

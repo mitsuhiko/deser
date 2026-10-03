@@ -222,8 +222,8 @@ fn test_replayed_events_skip_layers() {
 #[test]
 fn test_limits() {
     fn check(limits: Limits, events: Vec<Event<'static>>) -> Result<(), String> {
-        let rv: Result<deser::de::Recording, _> =
-            Events(events).deserialize_with(|driver| driver.push_layer(limits));
+        let rv: Result<deser::de::Recording, _> = Events(events)
+            .deserialize_with(|driver| driver.set_context(deser::Context::with(limits)));
         rv.map(|_| ()).map_err(|err| err.to_string())
     }
 
@@ -328,7 +328,7 @@ fn test_error_context() {
     // errors of layers get the context too
     let mut out = None::<Vec<u32>>;
     let mut driver = DeserializeDriver::new(&mut out);
-    driver.push_layer(Limits::builder().max_len(0).build());
+    driver.set_context(deser::Context::with(Limits::builder().max_len(0).build()));
     let err = emit_all(&mut driver, vec![Event::seq_start(), "x".into()]).unwrap_err();
     assert_eq!(err.offset(), Some(1));
 }

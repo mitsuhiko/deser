@@ -5,7 +5,7 @@ use deser_core::Text;
 use deser_core::de::{
     self, Deserialize, DeserializeDriver, DuplicateKeys, LexicalRules, deserialize_value,
 };
-use deser_core::{Atom, Bytes, ContainerShape, Error, ErrorKind, Event, Source};
+use deser_core::{Atom, Bytes, ContainerShape, Error, ErrorKind, Event, Source, TrackLocations};
 
 use crate::Nesting;
 use crate::encoding::{Decoded, decode};
@@ -32,7 +32,7 @@ pub struct DeserializerConfig {
     nesting: Nesting,
     max_depth: usize,
     max_params: usize,
-    track_locations: bool,
+
     context: deser_core::Context,
 }
 
@@ -49,7 +49,7 @@ impl DeserializerConfig {
             nesting: Nesting::Brackets,
             max_depth: 16,
             max_params: 4096,
-            track_locations: false,
+
             context: deser_core::Context::new(),
         }
     }
@@ -104,16 +104,6 @@ impl DeserializerConfig {
     /// default is 4096.
     pub const fn set_max_params(&mut self, max: usize) {
         self.max_params = max;
-    }
-
-    /// Enables or disables location tracking.
-    ///
-    /// The byte range of every event is always published into the state
-    /// (see [`State::input_range`](deser_core::State::input_range)).  When
-    /// enabled additionally the input is set as source (see
-    /// [`Source`]).  This copies the input.
-    pub const fn set_track_locations(&mut self, yes: bool) {
-        self.track_locations = yes;
     }
 
     /// Deserializes a value from a query string.
@@ -192,14 +182,6 @@ impl DeserializerConfigBuilder {
     /// See [`DeserializerConfig::set_max_params`].
     pub const fn max_params(mut self, max: usize) -> DeserializerConfigBuilder {
         self.value.set_max_params(max);
-        self
-    }
-
-    /// Enables or disables location tracking.
-    ///
-    /// See [`DeserializerConfig::set_track_locations`].
-    pub const fn track_locations(mut self, yes: bool) -> DeserializerConfigBuilder {
-        self.value.set_track_locations(yes);
         self
     }
 
@@ -346,13 +328,13 @@ impl<'a> Deserializer<'a> {
         }
         let tree = Tree::parse(self.input, &self.config)?;
         let state = driver.state_mut();
-        if self.config.track_locations {
+        if TrackLocations::of(state) {
             Source(self.input.into()).set(state);
         }
-        // the last value of repeated keys is used unless the context says
-        // otherwise
+        // the last value of repeated keys is used and everything is text
+        // unless the context says otherwise
         DuplicateKeys::Last.set_default(state);
-        LexicalRules::LENIENT.set(state);
+        LexicalRules::LENIENT.set_default(state);
         tree.emit(driver).map_err(|mut err| {
             err.resolve_position(self.input.as_bytes());
             err
@@ -380,9 +362,7 @@ impl<'a> Deserializer<'a> {
 impl<'a> de::Deserializer<'a> for Deserializer<'a> {
     fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
         if !self.config.context.is_empty() {
-            driver
-                .state_mut()
-                .set_default_context(self.config.context.clone());
+            driver.set_default_context(self.config.context.clone());
         }
         Deserializer::drive(self, driver)
     }

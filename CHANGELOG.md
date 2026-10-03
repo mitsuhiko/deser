@@ -9,8 +9,8 @@ All notable changes to deser are documented here.
   getters, there are no methods that return a changed copy anymore.
   Types that are configured in one expression have a separate builder.
   * The configurations of the formats (`DeserializerConfig` and
-    `SerializerConfig`) have setters (`config.set_track_locations(true)`)
-    and builders: `DeserializerConfig::builder().track_locations(true).build()`
+    `SerializerConfig`) have setters (`config.set_trailing(Trailing::Newline)`)
+    and builders: `DeserializerConfig::builder().trailing(Trailing::Newline).build()`
     (also in constants) and `config.into_builder()` to start from an
     existing configuration.  The same goes for `Limits`
     (`Limits::builder().max_depth(64).build()`).
@@ -51,8 +51,9 @@ All notable changes to deser are documented here.
   the buffers and readers start with.  A context set on the driver (for
   instance in the setup callback of `deserialize_with`) takes precedence
   over the one of the deserializer or serializer (see
-  `State::set_default_context`).  Contexts are equal if they share their
-  values.
+  `DeserializeDriver::set_default_context` and
+  `SerializeDriver::set_default_context`).  Contexts are equal if they
+  share their values.
 - **Breaking:** configuration given from the outside moved into the
   context.  The `bytes` options of the deserializer and serializer
   configurations of the formats (JSON, JSONC, JSON5, Hjson, TOML, YAML,
@@ -62,9 +63,25 @@ All notable changes to deser are documented here.
   context instead, the same context configures writing and reading.  The
   serializers write bytes in the `BytesFormat` of the state (or context).
   Formats with other defaults apply them unless the context has a value
-  (`State::set_default` and `DuplicateKeys::set_default`), query strings
-  and environment variables still use the last of repeated keys by
-  default.
+  (`State::set_default`, `DuplicateKeys::set_default` and
+  `LexicalRules::set_default`), query strings and environment variables
+  still use the last of repeated keys by default.  The lenient
+  `LexicalRules` of query strings, environment variables, CSV, XML and
+  OpenStep property lists are such defaults now, `LexicalRules` in the
+  context override them.
+- **Breaking:** `Limits` moved into the context: it's no longer a layer
+  but a value of the context, which the `DeserializeDriver` enforces with
+  a layer of its own after all other layers (so that the errors of the
+  limits get the path of `deser-path`).  Use
+  `Context::with(Limits::builder().max_depth(64).build())` instead of
+  `driver.push_layer(Limits::builder().max_depth(64).build())`.  `Limits`
+  has getters and `into_builder`.
+- **Breaking:** location tracking is requested with `TrackLocations(true)`
+  in the context instead of the `track_locations` options of the
+  deserializer configurations (JSON, JSONC, JSON5, Hjson, TOML, YAML, XML,
+  CSV, query strings and property lists).  XML no longer tracks locations
+  by default.  The deserializer configurations of TOML and property lists
+  have no other options than their context anymore.
 - Added `CollectErrors`, a value of the context that makes the whole
   deserialization collect errors (like `State::set_collect_errors`, with
   an optional limit).

@@ -1,7 +1,7 @@
 use alloc::sync::Arc;
 
 use deser_core::de::{self, Deserialize, DeserializeDriver, LexicalRules, deserialize_value};
-use deser_core::{Error, ErrorKind, Source};
+use deser_core::{Error, ErrorKind, Source, TrackLocations};
 
 use crate::common::{Borrowing, Copying, Out, decode_utf16_text, syntax_error};
 use crate::format::Format;
@@ -12,17 +12,19 @@ use crate::{read_ascii, read_binary, read_xml};
 /// The configuration is independent of the input so it can be created once
 /// (even as a constant) and used for many inputs.  The method
 /// [`from_slice`](Self::from_slice) works like the function of the same
-/// name.
+/// name.  The only option is the [`Context`](deser_core::Context) (see
+/// [`set_context`](Self::set_context)), which holds what is configured from
+/// the outside (like [`TrackLocations`], which provides the source of XML
+/// and OpenStep property lists).
 ///
 /// ```
 /// use deser_plist::DeserializerConfig;
 ///
-/// const CONFIG: DeserializerConfig = DeserializerConfig::builder().track_locations(true).build();
+/// const CONFIG: DeserializerConfig = DeserializerConfig::new();
 /// assert_eq!(CONFIG.from_slice::<Vec<u32>>(b"(1, 2)").unwrap(), [1, 2]);
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DeserializerConfig {
-    track_locations: bool,
     context: deser_core::Context,
 }
 
@@ -30,7 +32,6 @@ impl DeserializerConfig {
     /// Creates the default configuration.
     pub const fn new() -> DeserializerConfig {
         DeserializerConfig {
-            track_locations: false,
             context: deser_core::Context::new(),
         }
     }
@@ -59,19 +60,6 @@ impl DeserializerConfig {
     /// Returns the context the values are deserialized in.
     pub fn context(&self) -> &deser_core::Context {
         &self.context
-    }
-
-    /// Enables or disables location tracking for the text formats.
-    ///
-    /// The byte range of every event is always published into the state
-    /// (see [`State::input_range`](deser_core::State::input_range)).  When
-    /// enabled additionally the input of XML and OpenStep property lists
-    /// is set as source (see [`Source`]) which allows resolving the ranges
-    /// into lines and columns, for instance with the `Spanned` type of
-    /// [`deser-location`](https://docs.rs/deser-location).  This copies
-    /// the input.
-    pub const fn set_track_locations(&mut self, yes: bool) {
-        self.track_locations = yes;
     }
 
     /// Deserializes a value from a property list.
@@ -110,14 +98,6 @@ impl DeserializerConfigBuilder {
         DeserializerConfigBuilder {
             value: DeserializerConfig::new(),
         }
-    }
-
-    /// Enables or disables location tracking for the text formats.
-    ///
-    /// See [`DeserializerConfig::set_track_locations`].
-    pub const fn track_locations(mut self, yes: bool) -> DeserializerConfigBuilder {
-        self.value.set_track_locations(yes);
-        self
     }
 
     /// Sets the context the values are deserialized in.
@@ -249,7 +229,7 @@ impl<'a> Deserializer<'a> {
     }
 
     fn drive_text<'i, O: Out<'i>>(&self, text: &'i str, out: &mut O) -> Result<(), Error> {
-        if self.config.track_locations {
+        if TrackLocations::of(out.state_mut()) {
             Source(Arc::<str>::from(text)).set(out.state_mut());
         }
         let rv = if self.format == Format::Xml {
@@ -258,7 +238,7 @@ impl<'a> Deserializer<'a> {
             // everything is text, `YES` and `NO` are booleans
             let mut rules = LexicalRules::STRICT;
             rules.set_lenient_bools(true);
-            rules.set(out.state_mut());
+            rules.set_default(out.state_mut());
             read_ascii::parse(text, out)
         };
         rv.map_err(|mut err| {
@@ -288,9 +268,7 @@ impl<'a> Deserializer<'a> {
 impl<'a> de::Deserializer<'a> for Deserializer<'a> {
     fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
         if !self.config.context.is_empty() {
-            driver
-                .state_mut()
-                .set_default_context(self.config.context.clone());
+            driver.set_default_context(self.config.context.clone());
         }
         Deserializer::drive(self, driver)
     }

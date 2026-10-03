@@ -109,9 +109,10 @@ system looks like that is allowed to start over:
   value, also inside buffered values.  Their category tells malformed input
   apart from input that does not fit your types (HTTP 400 vs. 422).
 * **Layers** sit between the format and your types and can track paths,
-  enforce limits, rename keys or reject input.
+  rename keys or reject input.
 * **Safe defaults for untrusted input:** duplicate keys are an error by
-  default.
+  default, limits for depth, size and length are configured once in a
+  context.
 
 Many of these came up while building
 [Sentry Relay](https://github.com/getsentry/relay), which processes untrusted

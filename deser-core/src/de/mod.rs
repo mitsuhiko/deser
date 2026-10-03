@@ -65,8 +65,9 @@
 //!
 //! * [`Layer`]s sit between the format and the driver and see the events.
 //!   They are useful for everything that can be derived from the events,
-//!   for instance to track the current path, to enforce limits (see
-//!   [`Limits`]) or to rewrite values.
+//!   for instance to track the current path or to rewrite values.
+//!   [`Limits`] (which are given in the [`Context`](crate::Context)) are
+//!   enforced the same way.
 //! * Wrapped sinks (see [`DeserializeDriver::wrap_sink`]) sit between the
 //!   driver and the sinks of the values.  They are useful for changes that
 //!   depend on the target types.
@@ -247,6 +248,7 @@ mod ignore;
 pub(crate) mod impls;
 mod layer;
 pub(crate) mod lexical;
+mod limits;
 pub(crate) mod mapped;
 mod owned;
 pub(crate) mod recording;
@@ -268,8 +270,9 @@ pub use self::driver::DeserializeDriver;
 pub use self::duplicates::DuplicateKeys;
 #[doc(hidden)]
 pub use self::impls::DeserializeArc;
-pub use self::layer::{Layer, LayerEvent, Limits, LimitsBuilder, Next};
+pub use self::layer::{Layer, LayerEvent, Next};
 pub use self::lexical::{ContentKey, LexicalRules};
+pub use self::limits::{Limits, LimitsBuilder};
 pub use self::owned::{OwnedDriver, OwnedSink};
 pub use self::recording::{RecordBuf, Recording};
 #[cfg(feature = "derive")]

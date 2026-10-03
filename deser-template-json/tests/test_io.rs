@@ -297,7 +297,7 @@ fn test_feeding_with_layers() {
     });
     let err = reader
         .read_with::<Vec<u32>, _>(|driver| {
-            driver.push_layer(Limits::builder().max_items(2).build())
+            driver.set_context(deser::Context::with(Limits::builder().max_items(2).build()))
         })
         .unwrap_err();
     assert_eq!(

@@ -90,7 +90,7 @@ fn test_layers() {
     let err = transcode_with(
         &mut de,
         &mut ser,
-        |driver| driver.push_layer(Limits::builder().max_items(2).build()),
+        |driver| driver.set_context(deser::Context::with(Limits::builder().max_items(2).build())),
         |_| {},
     )
     .unwrap_err();

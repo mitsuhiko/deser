@@ -1,8 +1,8 @@
 //! Helpers for the tests of all dialects.
 use std::io::Read;
 
-use deser::Event;
 use deser::de::Recording;
+use deser::{Context, Event, TrackLocations};
 
 use super::dialect::{Deserializer, DeserializerConfig, Trailing};
 
@@ -13,6 +13,14 @@ pub const NEWLINE: DeserializerConfig = DeserializerConfig::builder()
 pub const STOP: DeserializerConfig = DeserializerConfig::builder()
     .trailing(Trailing::Stop)
     .build();
+
+/// Returns a deserializer that tracks locations.
+#[allow(dead_code)]
+pub fn tracked<'a>(input: &'a str, config: &DeserializerConfig) -> Deserializer<'a> {
+    let mut de = Deserializer::from_str_with_config(input, config);
+    de.set_context(Context::with(TrackLocations(true)));
+    de
+}
 
 /// A reader that returns the input in chunks of a fixed size.
 pub struct Chunked<'a> {

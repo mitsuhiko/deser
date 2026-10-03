@@ -23,7 +23,7 @@ use std::fmt;
 use deser::State;
 use deser::de::{Layer, LayerEvent, Next, OwnedSink, Sink, SinkHandle};
 use deser::ext::{ExtValue, Extension};
-use deser::{Atom, Deserialize, Error, Event};
+use deser::{Atom, Context, Deserialize, Error, Event, TrackLocations};
 use deser_location::{Locations, Span, Spanned};
 use deser_path::{Path, PathLayer};
 
@@ -79,10 +79,9 @@ impl Layer for Annotator {
 /// Deserializes JSON and annotates all values with their path and location.
 pub fn from_json_with_locations<'de, T: Deserialize<'de>>(json: &'de str) -> Result<T, Error> {
     // locations are needed for the spans
-    let config = deser_json::DeserializerConfig::builder()
-        .track_locations(true)
-        .build();
-    deser_json::Deserializer::from_str_with_config(json, &config).deserialize_with(|driver| {
+    let mut de = deser_json::Deserializer::from_str(json);
+    de.set_context(Context::with(TrackLocations(true)));
+    de.deserialize_with(|driver| {
         driver.push_layer(PathLayer::new());
         driver.push_layer(Annotator);
     })

@@ -35,7 +35,7 @@ Deserializing a value and serializing it again gives you the same output:
   from different files:
 
 ```rust
-use deser::Deserialize;
+use deser::{Context, Deserialize, TrackLocations};
 use deser_value::{Value, from_value};
 
 #[derive(Debug, Deserialize)]
@@ -43,10 +43,9 @@ struct Config {
     port: u16,
 }
 
-let value: Value = deser_json::DeserializerConfig::builder()
-    .track_locations(true).build()
-    .from_str("{\n  \"port\": \"80\"\n}")
-    .unwrap();
+let mut de = deser_json::Deserializer::from_str("{\n  \"port\": \"80\"\n}");
+de.set_context(Context::with(TrackLocations(true)));
+let value: Value = de.deserialize().unwrap();
 let err = from_value::<Config>(&value).unwrap_err();
 assert_eq!((err.line(), err.column()), (Some(2), Some(11)));
 ```

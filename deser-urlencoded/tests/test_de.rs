@@ -2,7 +2,7 @@
 //! serde based libraries (serde_urlencoded, serde_qs, serde_html_form).
 use std::collections::{BTreeMap, HashMap};
 
-use deser::de::DuplicateKeys;
+use deser::de::{DuplicateKeys, LexicalRules};
 use deser::{Context, Deserialize, ErrorKind};
 use deser_path::{Path, PathLayer};
 use deser_urlencoded::{Deserializer, DeserializerConfig, Nesting, from_slice, from_str};
@@ -455,6 +455,21 @@ fn test_duplicate_keys() {
             .multi,
         ["a", "b"]
     );
+}
+
+#[test]
+fn test_lexical_rules() {
+    #[derive(Debug, Deserialize)]
+    struct Query {
+        debug: bool,
+    }
+    assert!(from_str::<Query>("debug=yes").unwrap().debug);
+
+    // the context overrides the default of the format
+    let mut de = Deserializer::from_str("debug=yes");
+    de.set_context(Context::with(LexicalRules::STRICT));
+    let err = de.deserialize::<Query>().unwrap_err();
+    assert_eq!(err.kind(), ErrorKind::InvalidValue);
 }
 
 #[test]

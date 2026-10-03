@@ -71,7 +71,7 @@ impl SerializerConfig {
     #[inline]
     fn apply_context(&self, driver: &mut SerializeDriver<'_>) {
         if !self.context.is_empty() {
-            driver.state_mut().set_default_context(self.context.clone());
+            driver.set_default_context(self.context.clone());
         }
     }
 
@@ -282,9 +282,7 @@ impl Serializer {
 impl ser::Serializer for Serializer {
     fn drive(&mut self, driver: &mut SerializeDriver<'_>) -> Result<(), Error> {
         if !self.config.context.is_empty() {
-            driver
-                .state_mut()
-                .set_default_context(self.config.context.clone());
+            driver.set_default_context(self.config.context.clone());
         }
         if self.written > 0 {
             return Err(Error::new(

@@ -167,7 +167,7 @@ fn test_error_paths_through_buffering() {
 #[test]
 fn test_unknown_field_paths() {
     use deser::de::{IgnoredFields, UnknownFields};
-    use deser_json::DeserializerConfig;
+    use deser::{Context, TrackLocations};
 
     #[derive(deser::Deserialize, Debug)]
     #[deser(deny_unknown_fields)]
@@ -189,11 +189,9 @@ fn test_unknown_field_paths() {
     // collected keys carry the same information
     let ignored = IgnoredFields::new();
     let json = "{\"servers\": [\n  {\"host\": \"a\", \"port\": 1, \"tiemout\": 2}\n]}";
-    deser_json::Deserializer::from_str_with_config(
-        json,
-        &DeserializerConfig::builder().track_locations(true).build(),
-    )
-    .deserialize_with::<BTreeMap<String, Vec<Server>>, _>(|driver| {
+    let mut de = deser_json::Deserializer::from_str(json);
+    de.set_context(Context::with(TrackLocations(true)));
+    de.deserialize_with::<BTreeMap<String, Vec<Server>>, _>(|driver| {
         UnknownFields::Collect(ignored.clone()).set(driver.state_mut());
         driver.push_layer(PathLayer::new())
     })

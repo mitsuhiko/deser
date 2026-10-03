@@ -142,7 +142,7 @@ impl<D: StreamDeserializer> InputBuffer<D> {
     #[inline]
     fn apply_context(&self, driver: &mut DeserializeDriver<'_, '_>) {
         if !self.context.is_empty() {
-            driver.state_mut().set_default_context(self.context.clone());
+            driver.set_default_context(self.context.clone());
         }
     }
 

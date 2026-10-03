@@ -508,7 +508,9 @@ fn test_alias_limit() {
 fn test_max_depth() {
     let parse = |max_depth| {
         Deserializer::from_str("[[[[1]]]]").deserialize_with::<Value, _>(|driver| {
-            driver.push_layer(deser::de::Limits::builder().max_depth(max_depth).build())
+            driver.set_context(deser::Context::with(
+                deser::de::Limits::builder().max_depth(max_depth).build(),
+            ))
         })
     };
     assert!(parse(4).is_ok());
@@ -913,7 +915,7 @@ fn test_error_locations() {
     use deser::de::Limits;
     let err = Deserializer::from_str("a: [1, 2, 3]")
         .deserialize_with::<Value, _>(|driver| {
-            driver.push_layer(Limits::builder().max_items(2).build())
+            driver.set_context(deser::Context::with(Limits::builder().max_items(2).build()))
         })
         .unwrap_err();
     assert_eq!(

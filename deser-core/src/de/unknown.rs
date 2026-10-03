@@ -15,8 +15,10 @@ use crate::sync::{Mutex, MutexGuard};
 /// Derived structs ignore keys they do not know by default.  This policy
 /// changes that for all structs of a deserialization, while
 /// `#[deser(deny_unknown_fields)]` rejects unknown keys for a single type
-/// regardless of the policy.  It's an extension value in the [`State`] (see
-/// [`set`](Self::set)).
+/// regardless of the policy.  It's an extension value, usually configured
+/// in the [`Context`](crate::Context) (or in the [`State`] of a single
+/// deserialization, see [`set`](Self::set)).  To collect the unknown keys
+/// of a single deserialization see [`IgnoredFields`].
 ///
 /// Only the struct that the key is given to decides: flattened fields are
 /// asked if they take a key first (see
@@ -25,16 +27,18 @@ use crate::sync::{Mutex, MutexGuard};
 ///
 /// ```
 /// use deser::de::{DeserializeDriver, UnknownFields};
-/// use deser::{Deserialize, Event};
+/// use deser::{Context, Deserialize, Event};
 ///
 /// #[derive(Deserialize)]
 /// struct Config {
 ///     name: String,
 /// }
 ///
+/// let context = Context::with(UnknownFields::Error);
+///
 /// let mut out = None::<Config>;
 /// let mut driver = DeserializeDriver::new(&mut out);
-/// UnknownFields::Error.set(driver.state_mut());
+/// driver.set_context(context.clone());
 /// driver.emit(Event::map_start()).unwrap();
 /// driver.emit("name").unwrap();
 /// driver.emit("demo").unwrap();
@@ -51,6 +55,9 @@ pub enum UnknownFields {
     /// Unknown keys are rejected.
     Error,
     /// Unknown keys are ignored but reported to a [`IgnoredFields`].
+    ///
+    /// The collector is shared, so this is meant for a single
+    /// deserialization (see [`IgnoredFields`]).
     Collect(IgnoredFields),
 }
 
@@ -77,11 +84,16 @@ impl UnknownFields {
 /// information as if the key was rejected: the location (if the format
 /// provides it) and the context registered in the state (for instance the
 /// path with `deser-path`).  The line and column are only available if the
-/// format provides the [`Source`] (for instance with its `track_locations`
-/// option).
+/// format provides the [`Source`] (see [`TrackLocations`](crate::TrackLocations)).
 ///
 /// The collector is shared between its clones, the clone in the state
-/// reports to the one that was set up:
+/// reports to the one that was set up.  This makes it an output of the
+/// deserialization rather than configuration: set the policy in the state
+/// of the deserialization (for instance in the setup callback of
+/// [`Deserializer::deserialize_with`](crate::de::Deserializer::deserialize_with))
+/// rather than in a [`Context`](crate::Context) that is shared.  In a
+/// shared context the keys of all deserializations that use it (which
+/// might run on other threads) are reported to the same collector:
 ///
 /// ```
 /// use deser::de::{DeserializeDriver, IgnoredFields, UnknownFields};

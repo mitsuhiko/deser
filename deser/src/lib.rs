@@ -72,9 +72,11 @@ pub struct Account {
 //! the outside, like how bytes are represented in formats without native
 //! bytes ([`BytesFormat`]), what happens with repeated keys
 //! ([`DuplicateKeys`](de::DuplicateKeys)) or unknown fields
-//! ([`UnknownFields`](de::UnknownFields)) and whether errors are collected
-//! ([`CollectErrors`](de::CollectErrors)), is held in a [`Context`].  It's
-//! created once and given to the deserializer and serializer
+//! ([`UnknownFields`](de::UnknownFields)), whether errors are collected
+//! ([`CollectErrors`](de::CollectErrors)), limits for untrusted input
+//! ([`Limits`](de::Limits)) and whether the formats provide what is needed
+//! for source locations ([`TrackLocations`]), is held in a [`Context`].
+//! It's created once and given to the deserializer and serializer
 //! configurations of the formats (`builder().context(context)`) or to the
 //! deserializers and serializers (and the drivers, readers and writers)
 //! with their `set_context` methods.
@@ -193,7 +195,7 @@ pub use deser_core::derive;
 pub use deser_core::{
     Atom, Bytes, BytesFormat, ContainerShape, Context, Error, ErrorAttachment, ErrorCategory,
     ErrorContext, ErrorKind, Event, EventData, Implicit, ImplicitValue, Order, Position, Source,
-    State, Text,
+    State, Text, TrackLocations,
 };
 
 // common re-exports

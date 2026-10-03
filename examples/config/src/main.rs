@@ -24,7 +24,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use deser::de::{DeserializeDriver, Deserializer, IgnoredFields, UnknownFields};
-use deser::{Deserialize, Error, Serialize};
+use deser::{Context, Deserialize, Error, Serialize, TrackLocations};
 use deser_env::EnvVar;
 use deser_path::{Path, PathLayer};
 use deser_urlencoded::Nesting;
@@ -116,11 +116,9 @@ fn setup(driver: &mut DeserializeDriver<'_, '_>, warnings: &IgnoredFields) {
 /// Applies a TOML file to the configuration.
 fn apply_file(config: &mut Config, source: &str, warnings: &IgnoredFields) -> Result<(), Error> {
     // the source is needed for the locations of the warnings
-    let toml = deser_toml::DeserializerConfig::builder()
-        .track_locations(true)
-        .build();
-    deser_toml::Deserializer::from_str_with_config(source, &toml)
-        .update_with(config, |driver| setup(driver, warnings))
+    let mut de = deser_toml::Deserializer::from_str(source);
+    de.set_context(Context::with(TrackLocations(true)));
+    de.update_with(config, |driver| setup(driver, warnings))
 }
 
 /// Applies environment variables (`SHOP_SERVER__PORT`) to the
