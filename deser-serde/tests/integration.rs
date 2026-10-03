@@ -445,3 +445,50 @@ macro_rules! adapter_tests {
 }
 
 adapter_tests!(buffered, deser_serde::Serde);
+
+#[test]
+fn test_ambiguous_empty() {
+    use deser::de::DeserializeDriver;
+    use deser::{ContainerShape, Event};
+
+    fn deserialize<T>(is_map: bool) -> Result<T, deser::Error>
+    where
+        T: for<'de> serde::Deserialize<'de> + Send,
+    {
+        let mut shape = ContainerShape::with_len(0);
+        shape.set_ambiguous_empty(true);
+        let mut out = None::<As<T, deser_serde::Serde>>;
+        let mut driver = DeserializeDriver::new(&mut out);
+        if is_map {
+            driver.emit(Event::MapStart(shape))?;
+            driver.emit(Event::MapEnd)?;
+        } else {
+            driver.emit(Event::SeqStart(shape))?;
+            driver.emit(Event::SeqEnd)?;
+        }
+        drop(driver);
+        Ok(out.unwrap().into_inner())
+    }
+
+    #[derive(Debug, PartialEq, serde::Deserialize)]
+    struct Settings {
+        #[serde(default)]
+        theme: Option<String>,
+    }
+
+    // serde values receive the kind of container they ask for
+    assert_eq!(
+        deserialize::<BTreeMap<String, u32>>(false).unwrap(),
+        BTreeMap::new()
+    );
+    assert_eq!(
+        deserialize::<Settings>(false).unwrap(),
+        Settings { theme: None }
+    );
+    assert_eq!(deserialize::<Vec<u32>>(true).unwrap(), Vec::<u32>::new());
+    // values that take anything receive what the format emitted
+    assert_eq!(
+        deserialize::<serde_json::Value>(false).unwrap(),
+        serde_json::json!([])
+    );
+}

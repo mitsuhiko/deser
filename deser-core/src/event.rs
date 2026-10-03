@@ -739,6 +739,7 @@ impl Order {
 const ORDER_MASK: u32 = 0b11;
 const MULTIMAP: u32 = 0b100;
 const LEN_HINT: u32 = 0b1000;
+const AMBIGUOUS_EMPTY: u32 = 0b1_0000;
 const UNKNOWN_LEN: usize = usize::MAX;
 
 /// The maximum number of bytes that
@@ -757,6 +758,8 @@ const MAX_PREALLOCATION: usize = 1024 * 1024;
 ///   [`set_len_hint`](Self::set_len_hint)).
 /// * [`is_multimap`](Self::is_multimap): the keys of the map can be given
 ///   more than once.
+/// * [`is_ambiguous_empty`](Self::is_ambiguous_empty): the container is
+///   empty and could just as well be the other kind of container.
 ///
 /// ```
 /// use deser::{ContainerShape, Order};
@@ -960,6 +963,57 @@ impl ContainerShape {
     pub const fn is_multimap(&self) -> bool {
         self.flags & MULTIMAP != 0
     }
+
+    /// Marks an empty container as one that could also be the other kind.
+    ///
+    /// Some formats cannot tell an empty sequence from an empty map: PHP
+    /// has a single array type for lists and maps, so the empty array is
+    /// both (and so is `[]` in JSON written by PHP).  Formats like this
+    /// emit their best guess with this flag.  If the value it's delivered
+    /// to rejects the container, the value receives an empty container of
+    /// the other kind instead: an empty sequence becomes an empty map for
+    /// a struct or a map, an empty map an empty sequence for a `Vec`.
+    /// Values that accept the container (like dynamic values) receive it as
+    /// it is.  If the other kind is rejected too, the error is the one of
+    /// the container that was emitted.
+    ///
+    /// The flag only has an effect if the [length](Self::len) is `0`, so
+    /// formats have to know that the container is empty when they emit its
+    /// start.  It's only tried after a value rejected the container, so it
+    /// costs nothing otherwise.  Serializers ignore it.
+    ///
+    /// ```
+    /// use std::collections::BTreeMap;
+    /// use deser::de::DeserializeDriver;
+    /// use deser::{ContainerShape, Event};
+    ///
+    /// let mut shape = ContainerShape::with_len(0);
+    /// shape.set_ambiguous_empty(true);
+    /// let mut out = None::<BTreeMap<String, u32>>;
+    /// let mut driver = DeserializeDriver::new(&mut out);
+    /// driver.emit(Event::SeqStart(shape)).unwrap();
+    /// driver.emit(Event::SeqEnd).unwrap();
+    /// drop(driver);
+    /// assert_eq!(out, Some(BTreeMap::new()));
+    /// ```
+    #[inline]
+    pub const fn set_ambiguous_empty(&mut self, yes: bool) {
+        if yes {
+            self.flags |= AMBIGUOUS_EMPTY;
+        } else {
+            self.flags &= !AMBIGUOUS_EMPTY;
+        }
+    }
+
+    /// Returns `true` if the container is empty and could also be the
+    /// other kind of container.
+    ///
+    /// This requires the length to be `0`.  See
+    /// [`set_ambiguous_empty`](Self::set_ambiguous_empty).
+    #[inline]
+    pub const fn is_ambiguous_empty(&self) -> bool {
+        self.flags & AMBIGUOUS_EMPTY != 0 && matches!(self.len(), Some(0))
+    }
 }
 
 impl Default for ContainerShape {
@@ -978,6 +1032,9 @@ impl fmt::Debug for ContainerShape {
         }
         if self.is_multimap() {
             s.field("is_multimap", &true);
+        }
+        if self.is_ambiguous_empty() {
+            s.field("is_ambiguous_empty", &true);
         }
         s.finish()
     }

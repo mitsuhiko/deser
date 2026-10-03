@@ -67,6 +67,7 @@ impl Serialize for Seq {
         {
             let mut shape = ContainerShape::with_len(value.len());
             shape.set_order(value.order());
+            shape.set_ambiguous_empty(value.is_ambiguous_empty());
             shape
         }
     }
@@ -96,6 +97,7 @@ impl Serialize for Map {
             let mut shape = ContainerShape::with_len(value.len());
             shape.set_order(value.order());
             shape.set_multimap(value.is_multimap());
+            shape.set_ambiguous_empty(value.is_ambiguous_empty());
             shape
         }
     }

@@ -116,6 +116,10 @@ enum Container {
     /// [`Sink::recover`]), the value of the key is skipped.  It holds a null
     /// sink.
     SkipValue,
+    /// An empty container that the sink took as the other kind of
+    /// container (see [`ContainerShape::set_ambiguous_empty`]).  The flag
+    /// is `true` if it's a map in the input.
+    Empty(bool),
 }
 
 impl Container {
@@ -848,6 +852,7 @@ impl<'de> DriverCore<'de> {
                 self.skip_value();
                 Ok(())
             }
+            Some((_, Container::Empty(_))) => Err(not_empty_error()),
             None => {
                 let sink = self.root.as_mut().expect("no active sink");
                 sink.borrowed_atom(atom, &mut self.state)?;
@@ -889,6 +894,7 @@ impl<'de> DriverCore<'de> {
                 self.skip_value();
                 Ok(())
             }
+            Some((_, Container::Empty(_))) => Err(not_empty_error()),
             None => {
                 let sink = self.root.as_mut().expect("no active sink");
                 sink.atom(atom, &mut self.state)?;
@@ -951,6 +957,7 @@ impl<'de> DriverCore<'de> {
                     .push((SinkHandle::null(), Container::new(is_map)));
                 return Ok(());
             }
+            Some((_, Container::Empty(_))) => return Err(not_empty_error()),
             // the skipped value is a container, the null sink takes it
             Some((_, container @ Container::SkipValue)) => {
                 self.state.is_map_key = false;
@@ -964,6 +971,10 @@ impl<'de> DriverCore<'de> {
         let container = if is_map {
             match sink.map(&mut self.state) {
                 Ok(()) => Container::Map(true, shape.is_multimap()),
+                // an empty map that can be an empty sequence
+                Err(err) if err.kind().is_rejection() && shape.is_ambiguous_empty() => {
+                    empty_as_seq(&mut sink, err, &mut self.state)?
+                }
                 // a map for a sink that wants its content
                 Err(err) if err.kind().is_rejection() && ContentKey::of(&self.state).is_some() => {
                     Container::Content(true, false, false)
@@ -978,6 +989,10 @@ impl<'de> DriverCore<'de> {
                 Err(err) if err.is_raw_request() => {
                     return self.start_raw_seq(sink, err);
                 }
+                // an empty sequence that can be an empty map
+                Err(err) if err.kind().is_rejection() && shape.is_ambiguous_empty() => {
+                    empty_as_map(&mut sink, err, &mut self.state)?
+                }
                 Err(err) => return Err(err),
             }
         };
@@ -991,6 +1006,7 @@ impl<'de> DriverCore<'de> {
     fn emit_end(&mut self, is_map: bool) -> Result<(), Error> {
         match self.sink_stack.last() {
             Some((_, Container::Map(..) | Container::Content(..))) if is_map => {}
+            Some((_, Container::Empty(map_in_input))) if *map_in_input == is_map => {}
             Some((_, Container::Seq(_))) if !is_map => {}
             Some((_, Container::Inline(_))) if !is_map => return self.end_inline(),
             _ => panic!("not inside a {}", if is_map { "map" } else { "sequence" }),
@@ -1091,6 +1107,55 @@ fn content_atom(
         ));
     }
     Ok(true)
+}
+
+/// Delivers an empty sequence that the sink rejected as an empty map
+/// (see [`ContainerShape::set_ambiguous_empty`]).
+///
+/// If the map is rejected too, the error of the sequence is returned.
+#[cold]
+#[inline(never)]
+fn empty_as_map(
+    sink: &mut SinkHandle<'_, '_>,
+    err: Error,
+    state: &mut State,
+) -> Result<Container, Error> {
+    match sink.map(state) {
+        Ok(()) => Ok(Container::Empty(false)),
+        Err(_) => Err(err),
+    }
+}
+
+/// Delivers an empty map that the sink rejected as an empty sequence
+/// (see [`ContainerShape::set_ambiguous_empty`]).
+///
+/// If the sequence is rejected too, the error of the map is returned.
+#[cold]
+#[inline(never)]
+fn empty_as_seq(
+    sink: &mut SinkHandle<'_, '_>,
+    err: Error,
+    state: &mut State,
+) -> Result<Container, Error> {
+    match sink.__private_seq(state) {
+        Ok(_) => Ok(Container::Empty(true)),
+        // the first item is requested as raw value, there is none
+        Err(request) if request.is_raw_request() => {
+            state.raw_requested = None;
+            Ok(Container::Empty(true))
+        }
+        Err(_) => Err(err),
+    }
+}
+
+/// The error of an item in a container that was announced as empty.
+#[cold]
+#[inline(never)]
+fn not_empty_error() -> Error {
+    Error::new(
+        ErrorKind::InvalidState,
+        "item in a container that was announced as empty",
+    )
 }
 
 #[cold]

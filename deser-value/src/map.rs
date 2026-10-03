@@ -35,6 +35,7 @@ pub(crate) struct MapInner {
     pub(crate) entries: Entries,
     pub(crate) order: Order,
     pub(crate) multimap: bool,
+    pub(crate) ambiguous_empty: bool,
 }
 
 /// A map of values.
@@ -81,6 +82,7 @@ impl Map {
                 entries: IndexMap::with_capacity_and_hasher(capacity, MapHasher),
                 order: Order::Natural,
                 multimap: false,
+                ambiguous_empty: false,
             }),
         }
     }
@@ -138,12 +140,28 @@ impl Map {
         self.inner.multimap = yes;
     }
 
-    /// Creates an empty map with the order and the multimap flag of this
-    /// one.
+    /// Returns `true` if the map is empty and could also be an empty
+    /// sequence.
+    ///
+    /// This is the counterpart of
+    /// [`Seq::is_ambiguous_empty`](crate::Seq::is_ambiguous_empty): types
+    /// that expect a sequence receive an empty sequence.  The flag has no
+    /// effect once the map has entries.
+    pub fn is_ambiguous_empty(&self) -> bool {
+        self.inner.ambiguous_empty && self.inner.entries.is_empty()
+    }
+
+    /// Sets if the map could also be an empty sequence when it's empty.
+    pub fn set_ambiguous_empty(&mut self, yes: bool) {
+        self.inner.ambiguous_empty = yes;
+    }
+
+    /// Creates an empty map with the order and the flags of this one.
     pub(crate) fn empty_like(&self, capacity: usize) -> Map {
         let mut map = Map::with_capacity(capacity);
         map.set_order(self.order());
         map.set_multimap(self.is_multimap());
+        map.set_ambiguous_empty(self.inner.ambiguous_empty);
         map
     }
 

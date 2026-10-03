@@ -177,11 +177,14 @@ fn drive<'de>(
             }
             match value.kind {
                 Kind::Seq(ref seq) => {
-                    driver.emit(Event::SeqStart(shape(seq.len(), seq.order())))?;
+                    let mut seq_shape = shape(seq.len(), seq.order());
+                    seq_shape.set_ambiguous_empty(seq.is_ambiguous_empty());
+                    driver.emit(Event::SeqStart(seq_shape))?;
                     stack.push(Frame::Seq(seq.iter(), value));
                 }
                 Kind::Map(ref map) => {
                     let mut map_shape = shape(map.len(), map.order());
+                    map_shape.set_ambiguous_empty(map.is_ambiguous_empty());
                     if map.is_multimap() {
                         // the entries include the values of repeated keys
                         map_shape = {

@@ -12,7 +12,8 @@ enum Out<'a> {
     Value(&'a mut Option<Value>),
     Seq(&'a mut Option<Seq>),
     Map(&'a mut Option<Map>),
-    /// Updates a value: maps are merged into maps, everything else replaces
+    /// Updates a value: maps are merged into maps (empty sequences that can
+    /// be maps leave them as they are), everything else replaces
     /// the value.
     UpdateValue(&'a mut Value),
     /// Merges a map into a map.
@@ -193,6 +194,7 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
         let mut map = Map::with_capacity(shape.cautious_capacity::<(Value, Value)>());
         map.set_order(shape.order());
         map.set_multimap(shape.is_multimap());
+        map.set_ambiguous_empty(shape.is_ambiguous_empty());
         self.building = Building::Map(map);
         Ok(())
     }
@@ -208,6 +210,7 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
         self.meta = capture_meta(state);
         let mut seq = Seq::with_capacity(shape.cautious_capacity::<Value>());
         seq.set_order(shape.order());
+        seq.set_ambiguous_empty(shape.is_ambiguous_empty());
         self.building = Building::Seq(seq);
         Ok(())
     }
@@ -309,6 +312,8 @@ impl<'a, 'de> Sink<'de> for ValueSink<'a> {
             // everything else is replaced
             (Out::UpdateValue(out), kind) => match (&mut out.kind, kind) {
                 (Kind::Map(target), Kind::Map(map)) => merge_map(target, map),
+                // an empty sequence that can be an empty map changes nothing
+                (Kind::Map(_), Kind::Seq(seq)) if seq.is_ambiguous_empty() => {}
                 (_, kind) => {
                     **out = Value {
                         kind,

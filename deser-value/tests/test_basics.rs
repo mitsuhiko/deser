@@ -632,3 +632,62 @@ fn test_update_flatten() {
         value!({"a": 3, "b": 2}).as_map().unwrap().clone()
     );
 }
+
+#[test]
+fn test_ambiguous_empty() {
+    use deser::de::DeserializeDriver;
+    use deser::{ContainerShape, Event};
+
+    let mut shape = ContainerShape::with_len(0);
+    shape.set_ambiguous_empty(true);
+    let events = || [Event::SeqStart(shape), Event::SeqEnd];
+
+    // values keep the flag and pass it on
+    let mut out = None::<Value>;
+    let mut driver = DeserializeDriver::new(&mut out);
+    for event in events() {
+        driver.emit(event).unwrap();
+    }
+    drop(driver);
+    let value = out.unwrap();
+    assert!(value.as_seq().unwrap().is_ambiguous_empty());
+    assert_eq!(value, value!([]));
+    assert!(
+        from_value::<BTreeMap<String, u32>>(&value)
+            .unwrap()
+            .is_empty()
+    );
+    assert!(from_value::<Map>(&value).unwrap().is_empty());
+    assert!(
+        from_value::<Value>(&value)
+            .unwrap()
+            .as_seq()
+            .unwrap()
+            .is_ambiguous_empty()
+    );
+
+    // updates of maps leave them as they are
+    let mut value = value!({"a": 1});
+    let mut driver = DeserializeDriver::update(&mut value);
+    for event in events() {
+        driver.emit(event).unwrap();
+    }
+    drop(driver);
+    assert_eq!(value, value!({"a": 1}));
+    let mut map = value.as_map().unwrap().clone();
+    let mut driver = DeserializeDriver::update(&mut map);
+    for event in events() {
+        driver.emit(event).unwrap();
+    }
+    drop(driver);
+    assert_eq!(map.len(), 1);
+
+    // other values are replaced
+    let mut value = value!(1);
+    let mut driver = DeserializeDriver::update(&mut value);
+    for event in events() {
+        driver.emit(event).unwrap();
+    }
+    drop(driver);
+    assert_eq!(value, value!([]));
+}

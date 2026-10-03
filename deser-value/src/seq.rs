@@ -11,9 +11,11 @@ use crate::value::{Kind, Value};
 ///
 /// A sequence dereferences to a [`Vec`] of its values.  Additionally it
 /// holds the [`Order`] of the values, which is passed on when the sequence
-/// is serialized, and if it holds the values of a repeated key of a
-/// multimap (see [`Map::is_multimap`](crate::Map::is_multimap)).  They are
-/// not considered when sequences are compared.
+/// is serialized, if it holds the values of a repeated key of a multimap
+/// (see [`Map::is_multimap`](crate::Map::is_multimap)) and if an empty
+/// sequence could also be an empty map (see
+/// [`is_ambiguous_empty`](Self::is_ambiguous_empty)).  They are not
+/// considered when sequences are compared.
 ///
 /// ```
 /// use deser::Order;
@@ -31,6 +33,7 @@ pub struct Seq {
     pub(crate) items: Vec<Value>,
     pub(crate) order: Order,
     pub(crate) repeated: bool,
+    pub(crate) ambiguous_empty: bool,
 }
 
 impl Seq {
@@ -40,6 +43,7 @@ impl Seq {
             items: Vec::new(),
             order: Order::Natural,
             repeated: false,
+            ambiguous_empty: false,
         }
     }
 
@@ -49,6 +53,7 @@ impl Seq {
             items: Vec::with_capacity(capacity),
             order: Order::Natural,
             repeated: false,
+            ambiguous_empty: false,
         }
     }
 
@@ -76,12 +81,41 @@ impl Seq {
         self.repeated = yes;
     }
 
-    /// Creates an empty sequence with the order and the repeated flag of
-    /// this one.
+    /// Returns `true` if the sequence is empty and could also be an empty
+    /// map.
+    ///
+    /// Sequences that are deserialized from empty containers that formats
+    /// cannot tell apart from empty maps (like the empty arrays of PHP, see
+    /// [`ContainerShape::set_ambiguous_empty`](deser_core::ContainerShape::set_ambiguous_empty))
+    /// are marked like this.  When the sequence is deserialized into
+    /// another type, types that expect a map receive an empty map, and an
+    /// update of a map with it leaves the map as it is.  The flag has no
+    /// effect once the sequence has values.
+    ///
+    /// ```
+    /// use std::collections::BTreeMap;
+    /// use deser_value::{Seq, Value};
+    ///
+    /// let mut seq = Seq::new();
+    /// seq.set_ambiguous_empty(true);
+    /// let map: BTreeMap<String, u32> = deser_value::from_value(&Value::from(seq)).unwrap();
+    /// assert!(map.is_empty());
+    /// ```
+    pub fn is_ambiguous_empty(&self) -> bool {
+        self.ambiguous_empty && self.items.is_empty()
+    }
+
+    /// Sets if the sequence could also be an empty map when it's empty.
+    pub fn set_ambiguous_empty(&mut self, yes: bool) {
+        self.ambiguous_empty = yes;
+    }
+
+    /// Creates an empty sequence with the order and the flags of this one.
     pub(crate) fn empty_like(&self, capacity: usize) -> Seq {
         let mut seq = Seq::with_capacity(capacity);
         seq.set_order(self.order);
         seq.set_repeated(self.repeated);
+        seq.set_ambiguous_empty(self.ambiguous_empty);
         seq
     }
 
@@ -148,6 +182,7 @@ impl From<Vec<Value>> for Seq {
             items,
             order: Order::Natural,
             repeated: false,
+            ambiguous_empty: false,
         }
     }
 }

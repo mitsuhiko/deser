@@ -2,6 +2,7 @@
 //! binary has to be linked and on macOS the first launch of a new binary
 //! is slow, so separate binaries make the tests slower.
 mod test_adapters;
+mod test_ambiguous_empty;
 mod test_borrow;
 mod test_bound;
 mod test_bytes;

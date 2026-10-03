@@ -253,6 +253,13 @@ All notable changes to deser are documented here.
   read back.
 - `deser-xml`: added `Deserializer::config` like the deserializers of
   the other formats have.
+- Added `ContainerShape::set_ambiguous_empty` for empty containers that
+  could just as well be the other kind of container (like the empty array
+  of PHP, which is an empty list and an empty map).  Values that reject
+  such a container receive an empty container of the other kind instead.
+  Dynamic values of `deser-value` keep the flag (`Seq::is_ambiguous_empty`
+  and `Map::is_ambiguous_empty`) and serde types used through
+  `deser-serde` receive the kind they ask for.
 - `deser-json`: added `SerializerConfig::non_finite_floats` which writes
   NaN and infinite floats as `NaN`, `Infinity` and `-Infinity` instead of
   `null`.  `deser_json5::to_string` and `deser_json5::to_writer` enable

@@ -316,9 +316,80 @@ impl<'de, 's, S: Source<'de>> de::Deserializer<'de> for ValueDe<'s, S> {
         deserialize_char deserialize_str deserialize_string deserialize_identifier
     }
 
+    fn deserialize_seq<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
+        self.deserialize_container(false, visitor)
+    }
+
+    fn deserialize_tuple<V: Visitor<'de>>(
+        self,
+        _len: usize,
+        visitor: V,
+    ) -> Result<V::Value, Error> {
+        self.deserialize_container(false, visitor)
+    }
+
+    fn deserialize_tuple_struct<V: Visitor<'de>>(
+        self,
+        _name: &'static str,
+        _len: usize,
+        visitor: V,
+    ) -> Result<V::Value, Error> {
+        self.deserialize_container(false, visitor)
+    }
+
+    fn deserialize_map<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
+        self.deserialize_container(true, visitor)
+    }
+
+    fn deserialize_struct<V: Visitor<'de>>(
+        self,
+        _name: &'static str,
+        _fields: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value, Error> {
+        self.deserialize_container(true, visitor)
+    }
+
     serde::forward_to_deserialize_any! {
-        bytes byte_buf unit unit_struct seq tuple
-        tuple_struct map struct
+        bytes byte_buf unit unit_struct
+    }
+}
+
+impl<'de, 's, S: Source<'de>> ValueDe<'s, S> {
+    /// Deserializes a value that asks for a map (or a sequence).
+    ///
+    /// An empty container that can be the other kind of container (see
+    /// [`ContainerShape::set_ambiguous_empty`](deser_core::ContainerShape::set_ambiguous_empty))
+    /// is given to the value as the kind it asks for.
+    fn deserialize_container<V: Visitor<'de>>(
+        self,
+        wants_map: bool,
+        visitor: V,
+    ) -> Result<V::Value, Error> {
+        let other = match self.src.peek()? {
+            Event::SeqStart(shape) => wants_map && shape.is_ambiguous_empty(),
+            Event::MapStart(shape) => !wants_map && shape.is_ambiguous_empty(),
+            _ => false,
+        };
+        if !other {
+            return de::Deserializer::deserialize_any(self, visitor);
+        }
+        // the start and the end of the empty container
+        self.src.next()?;
+        self.src.next()?;
+        if wants_map {
+            visitor.visit_map(MapAccess {
+                src: self.src,
+                len: Some(0),
+                done: true,
+            })
+        } else {
+            visitor.visit_seq(SeqAccess {
+                src: self.src,
+                len: Some(0),
+                done: true,
+            })
+        }
     }
 }
 
