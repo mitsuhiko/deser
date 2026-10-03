@@ -6,15 +6,29 @@
 //! This crate resolves the ranges into lines and columns with a
 //! [`SourceMap`] (see [`Locations`]) and types can pick them up while they
 //! are deserialized.  The simplest way to do that is the [`Spanned`]
-//! wrapper:
+//! wrapper.  Location tracking is requested with
+//! [`TrackLocations`](deser_core::TrackLocations) in the context of the
+//! deserialization:
 //!
 //! ```
-//! # use deser::Deserialize;
+//! use deser::{Context, Deserialize, TrackLocations};
 //! use deser_location::Spanned;
 //!
 //! #[derive(Deserialize)]
 //! struct Config {
-//!     name: Spanned<String>,
+//!     name: String,
+//!     workers: Spanned<u32>,
+//! }
+//!
+//! let input = "{\n  \"name\": \"web\",\n  \"workers\": 0\n}";
+//! let json = deser_json::DeserializerConfig::builder()
+//!     .context(Context::with(TrackLocations(true)))
+//!     .build();
+//! let config: Config = json.from_str(input).unwrap();
+//!
+//! if config.workers.value == 0 {
+//!     let span = config.workers.span.unwrap();
+//!     assert_eq!(span.to_string(), "3:14-3:15");
 //! }
 //! ```
 //!

@@ -50,13 +50,9 @@ use crate::ser::{Begin, Describe, Emit, PlainSink, Serialize};
 ///     limits: Limits,
 /// }
 ///
-/// // `{}`: the limits are missing
-/// let mut config = None::<Config>;
-/// let mut driver = deser::de::DeserializeDriver::new(&mut config);
-/// driver.emit(deser::Event::map_start()).unwrap();
-/// driver.emit(deser::Event::MapEnd).unwrap();
-/// drop(driver);
-/// assert_eq!(config.unwrap().limits.max_connections, 0);
+/// // the limits are missing
+/// let config: Config = deser_json::from_str("{}").unwrap();
+/// assert_eq!(config.limits.max_connections, 0);
 /// ```
 ///
 /// The derived implementation is only available through this adapter for

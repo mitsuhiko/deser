@@ -80,7 +80,9 @@ pub struct Account {
 //! for source locations ([`TrackLocations`]), is held in a [`Context`].
 //! It's created once and given to the deserializer and serializer
 //! configurations of the formats (`builder().context(context)`) or to the
-//! drivers, readers and writers with their `set_context` methods.
+//! readers and writers with their `set_context` methods.  A single
+//! deserialization can add to it in the setup callback of
+//! [`Deserializer::deserialize_with`](de::Deserializer::deserialize_with).
 //!
 //! The data model can be extended with types that are not native to it.  For
 //! more information see [`ext`].

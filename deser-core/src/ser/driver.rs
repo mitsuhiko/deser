@@ -502,20 +502,27 @@ impl<'a> SerializeDriver<'a> {
     /// Sets the context of the serialization.
     ///
     /// The values of the context are the defaults of the extension values
-    /// of the state (see [`Context`]).  This replaces the context.
+    /// of the state (see [`Context`]).  This replaces the context of the
+    /// driver.  Formats add the values of their own context for the types
+    /// it has no value for (see
+    /// [`set_default_context`](Self::set_default_context)).
     pub fn set_context(&mut self, context: Context) {
         self.state.set_context(context);
     }
 
-    /// Sets the context unless the driver has one.
+    /// Adds the values of a context that the context of the driver has no
+    /// value for.
     ///
-    /// Formats use this for the context they were given: a context set on
-    /// the driver (for instance in the setup callback of `serialize_with`)
-    /// takes precedence.
+    /// Formats use this for the context they were given (for instance the
+    /// one of their configuration).  A context that was set on the driver
+    /// before (for instance in the setup callback of `serialize_with`)
+    /// takes precedence: its values are kept and the values of the given
+    /// context are only added for the types it has no value for.
     #[inline(never)]
     pub fn set_default_context(&mut self, context: Context) {
-        if self.state.context().is_empty() && !context.is_empty() {
-            self.set_context(context);
+        let mut merged = self.state.context().clone();
+        if merged.fill_from(&context) {
+            self.set_context(merged);
         }
     }
 

@@ -49,12 +49,41 @@ impl fmt::Debug for Source {
 /// lines and columns (for instance with the `Spanned` type of
 /// [`deser-location`](https://docs.rs/deser-location)) also requires the
 /// source, which is a copy of the input.  Formats only provide it if this
-/// is set to `true` in the context (or the state).  Errors have their
-/// line and column either way.
+/// is set to `true` in the context (or the state).  The errors a
+/// deserialization fails with have their line and column either way, but
+/// for instance the keys collected with
+/// [`UnknownFields::Collect`](crate::de::UnknownFields::Collect) only
+/// have them with the source:
+///
+/// ```
+/// use deser::de::{Deserializer, IgnoredFields, UnknownFields};
+/// use deser::{Context, Deserialize, TrackLocations};
+///
+/// #[derive(Deserialize)]
+/// struct Config {
+///     name: String,
+/// }
+///
+/// let config = deser_json::DeserializerConfig::builder()
+///     .context(Context::with(TrackLocations(true)))
+///     .build();
+/// let input = "{\n  \"name\": \"demo\",\n  \"nmae\": \"x\"\n}";
+/// let ignored = IgnoredFields::new();
+/// deser_json::Deserializer::from_str_with_config(input, config)
+///     .deserialize_with::<Config, _>(|driver| {
+///         UnknownFields::Collect(ignored.clone()).set(driver.state_mut())
+///     })
+///     .unwrap();
+/// let ignored = ignored.take();
+/// assert_eq!((ignored[0].line(), ignored[0].column()), (Some(3), Some(3)));
+/// ```
+///
+/// Formats check this with [`of`](Self::of) and set the [`Source`] before
+/// they emit the first event:
 ///
 /// ```
 /// use deser::de::{DeserializeDriver, Deserializer};
-/// use deser::{Context, Error, Event, Source, TrackLocations};
+/// use deser::{Error, Source, TrackLocations};
 ///
 /// /// A format which provides the source if asked to.
 /// struct Text<'a>(&'a str);
@@ -68,13 +97,6 @@ impl fmt::Debug for Source {
 ///         driver.emit(self.0)
 ///     }
 /// }
-///
-/// let context = Context::with(TrackLocations(true));
-/// let mut out = None::<String>;
-/// let mut driver = DeserializeDriver::new(&mut out);
-/// driver.set_context(context.clone());
-/// Text("hello").drive(&mut driver).unwrap();
-/// assert_eq!(&*driver.state().get::<Source>().unwrap().0, "hello");
 /// ```
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct TrackLocations(pub bool);

@@ -11,19 +11,14 @@ use crate::error::Error;
 /// [`State::set_collect_errors`]).  The limit of errors is optional:
 ///
 /// ```
-/// use deser::de::{CollectErrors, DeserializeDriver};
-/// use deser::{Context, Event};
+/// use deser::de::CollectErrors;
+/// use deser::Context;
 ///
-/// let context = Context::with(CollectErrors::with_max_errors(10));
-///
-/// let mut out = None::<Vec<u32>>;
-/// let mut driver = DeserializeDriver::new(&mut out);
-/// driver.set_context(context.clone());
-/// let mut rv = Ok(());
-/// for event in [Event::seq_start(), "a".into(), 1u64.into(), true.into(), Event::SeqEnd] {
-///     rv = rv.and_then(|()| driver.emit(event));
-/// }
-/// assert_eq!(rv.unwrap_err().errors().count(), 2);
+/// let config = deser_json::DeserializerConfig::builder()
+///     .context(Context::with(CollectErrors::with_max_errors(10)))
+///     .build();
+/// let err = config.from_str::<Vec<u32>>(r#"["a", 1, true]"#).unwrap_err();
+/// assert_eq!(err.errors().count(), 2);
 /// ```
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct CollectErrors {

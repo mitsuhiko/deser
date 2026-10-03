@@ -26,24 +26,20 @@ use crate::sync::{Mutex, MutexGuard};
 /// unknown if neither the struct nor any of its flattened fields take it.
 ///
 /// ```
-/// use deser::de::{DeserializeDriver, UnknownFields};
-/// use deser::{Context, Deserialize, Event};
+/// use deser::de::UnknownFields;
+/// use deser::{Context, Deserialize};
 ///
-/// #[derive(Deserialize)]
+/// #[derive(Deserialize, Debug)]
 /// struct Config {
 ///     name: String,
 /// }
 ///
-/// let context = Context::with(UnknownFields::Error);
-///
-/// let mut out = None::<Config>;
-/// let mut driver = DeserializeDriver::new(&mut out);
-/// driver.set_context(context.clone());
-/// driver.emit(Event::map_start()).unwrap();
-/// driver.emit("name").unwrap();
-/// driver.emit("demo").unwrap();
-/// driver.emit("nmae").unwrap();
-/// let err = driver.emit("demo").unwrap_err();
+/// let config = deser_json::DeserializerConfig::builder()
+///     .context(Context::with(UnknownFields::Error))
+///     .build();
+/// let err = config
+///     .from_str::<Config>(r#"{"name": "demo", "nmae": "demo"}"#)
+///     .unwrap_err();
 /// assert_eq!(err.message(), "unknown field `nmae`, expected `name`");
 /// ```
 #[derive(Debug, Clone, Default)]
@@ -96,8 +92,8 @@ impl UnknownFields {
 /// might run on other threads) are reported to the same collector:
 ///
 /// ```
-/// use deser::de::{DeserializeDriver, IgnoredFields, UnknownFields};
-/// use deser::{Deserialize, Event};
+/// use deser::de::{Deserializer, IgnoredFields, UnknownFields};
+/// use deser::Deserialize;
 ///
 /// #[derive(Deserialize)]
 /// struct Config {
@@ -105,21 +101,12 @@ impl UnknownFields {
 /// }
 ///
 /// let ignored = IgnoredFields::new();
-/// let mut out = None::<Config>;
-/// {
-///     let mut driver = DeserializeDriver::new(&mut out);
-///     UnknownFields::Collect(ignored.clone()).set(driver.state_mut());
-///     for event in [
-///         Event::map_start(),
-///         "name".into(),
-///         "demo".into(),
-///         "nmae".into(),
-///         "x".into(),
-///         Event::MapEnd,
-///     ] {
-///         driver.emit(event).unwrap();
-///     }
-/// }
+/// let config: Config = deser_json::Deserializer::from_str(r#"{"name": "demo", "nmae": "x"}"#)
+///     .deserialize_with(|driver| {
+///         UnknownFields::Collect(ignored.clone()).set(driver.state_mut())
+///     })
+///     .unwrap();
+/// assert_eq!(config.name, "demo");
 /// let ignored = ignored.take();
 /// assert_eq!(ignored.len(), 1);
 /// assert_eq!(ignored[0].message(), "unknown field `nmae`, expected `name`");

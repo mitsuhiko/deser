@@ -789,7 +789,7 @@
 //!
 //! ```
 //! use deser::Deserialize;
-//! use deser::de::DeserializeDriver;
+//! use deser::de::Deserializer;
 //!
 //! #[derive(Deserialize)]
 //! pub struct Config {
@@ -807,22 +807,14 @@
 //!     server: Server { host: "localhost".into(), port: 80 },
 //!     debug: false,
 //! };
-//! // {"server": {"port": 8080}}
-//! let mut driver = DeserializeDriver::update(&mut config);
-//! driver.emit(deser::Event::map_start()).unwrap();
-//! driver.emit("server").unwrap();
-//! driver.emit(deser::Event::map_start()).unwrap();
-//! driver.emit("port").unwrap();
-//! driver.emit(8080u64).unwrap();
-//! driver.emit(deser::Event::MapEnd).unwrap();
-//! driver.emit(deser::Event::MapEnd).unwrap();
-//! drop(driver);
+//! deser_json::Deserializer::from_str(r#"{"server": {"port": 8080}}"#)
+//!     .update(&mut config)
+//!     .unwrap();
 //! assert_eq!(config.server.host, "localhost");
 //! assert_eq!(config.server.port, 8080);
 //! ```
 //!
-//! With a data format this is [`Deserializer::update`](crate::de::Deserializer::update)
-//! (for instance `deser_toml::Deserializer::from_str(s).update(&mut config)`).
+//! Updates are done with [`Deserializer::update`](crate::de::Deserializer::update).
 //! Some things to be aware of:
 //!
 //! * Fields with adapters are updated by the adapter (see
@@ -838,7 +830,7 @@
 //! Keys of a struct that no field takes are ignored by default.  They can be
 //! rejected for a type with `#[deser(deny_unknown_fields)]` or for all types
 //! of a deserialization with the [`UnknownFields`](crate::de::UnknownFields)
-//! policy in the state, which can also collect them (for instance to warn
+//! policy in the context, which can also collect them (for instance to warn
 //! about typos in config files).  Errors point to the key and carry the path
 //! if [`deser-path`](https://docs.rs/deser-path) is used.
 //!
@@ -868,18 +860,8 @@
 //!     Unix { path: String },
 //! }
 //!
-//! // {"host": "a", "type": "http", "port": 80, "path": "/"}
-//! let mut out = None::<Server>;
-//! let mut driver = deser::de::DeserializeDriver::new(&mut out);
-//! driver.emit(deser::Event::map_start()).unwrap();
-//! for (key, value) in [("host", "a"), ("type", "http")] {
-//!     driver.emit(key).unwrap();
-//!     driver.emit(value).unwrap();
-//! }
-//! driver.emit("port").unwrap();
-//! driver.emit(80u64).unwrap();
-//! driver.emit("path").unwrap();
-//! let err = driver.emit("/").unwrap_err();
+//! let input = r#"{"host": "a", "type": "http", "port": 80, "path": "/"}"#;
+//! let err = deser_json::from_str::<Server>(input).unwrap_err();
 //! assert_eq!(err.message(), "unknown field `path`");
 //! ```
 //!
@@ -1012,8 +994,7 @@
 //! `deser_json::DeserializerConfig::builder().context(context)`):
 //!
 //! ```
-//! use deser::de::{DeserializeDriver, DeserializeOwned};
-//! use deser::{Context, Deserialize, Error, Event, OpenEnums, Serialize};
+//! use deser::{Context, Deserialize, Error, OpenEnums, Serialize};
 //!
 //! #[deser::open_enum(tag = "type", rename_all = "snake_case")]
 //! pub trait Step: Send + Sync {
@@ -1062,31 +1043,15 @@
 //! register(&mut variants).unwrap();
 //! let context = Context::with(variants);
 //!
-//! // `{"steps": [{"type": "upper"}]}`, for instance with the configuration
-//! // of a format which is created once and reads all pipelines:
-//! //
-//! //     let config = deser_json::DeserializerConfig::builder()
-//! //         .context(context.clone())
-//! //         .build();
-//! //     let pipeline: Pipeline = config.from_str(input)?;
-//! let mut out = None::<Pipeline>;
-//! let mut driver = DeserializeDriver::new(&mut out);
-//! driver.set_context(context.clone());
-//! for event in [
-//!     Event::map_start(),
-//!     "steps".into(),
-//!     Event::seq_start(),
-//!     Event::map_start(),
-//!     "type".into(),
-//!     "upper".into(),
-//!     Event::MapEnd,
-//!     Event::SeqEnd,
-//!     Event::MapEnd,
-//! ] {
-//!     driver.emit(event).unwrap();
-//! }
-//! drop(driver);
-//! assert_eq!(out.unwrap().steps[0].run("hi"), "HI");
+//! // the configuration is created once and reads all pipelines
+//! let config = deser_json::DeserializerConfig::builder()
+//!     .context(context)
+//!     .build();
+//! let pipeline: Pipeline = config
+//!     .from_str(r#"{"steps": [{"type": "upper"}, {"type": "replace", "from": "I", "to": "O"}]}"#)
+//!     .unwrap();
+//! let output = pipeline.steps.iter().fold("hi".to_string(), |s, step| step.run(&s));
+//! assert_eq!(output, "HO");
 //! ```
 //!
 //! The representation is configured on the trait like the one of enums:

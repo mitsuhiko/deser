@@ -7,7 +7,9 @@ use alloc::boxed::Box;
 /// A layer between a format and the sinks.
 ///
 /// Layers are added to a [`DeserializeDriver`](crate::de::DeserializeDriver)
-/// with [`push_layer`](crate::de::DeserializeDriver::push_layer).  Every
+/// with [`push_layer`](crate::de::DeserializeDriver::push_layer), usually in
+/// the setup callback of
+/// [`Deserializer::deserialize_with`](crate::de::Deserializer::deserialize_with).  Every
 /// event that is emitted into the driver passes through the layers before
 /// it's delivered to the sinks.  A layer receives the event together with
 /// a [`Next`] which passes events on to the next layer (or the sinks).  This
@@ -24,7 +26,7 @@ use alloc::boxed::Box;
 /// and [`State::depth`] is the number of open containers.
 ///
 /// ```
-/// use deser::de::{DeserializeDriver, Layer, LayerEvent, Next};
+/// use deser::de::{Deserializer, Layer, LayerEvent, Next};
 /// use deser::{Atom, Error, Event};
 ///
 /// /// Upper cases all strings that are not map keys.
@@ -45,15 +47,10 @@ use alloc::boxed::Box;
 ///     }
 /// }
 ///
-/// let mut out = None::<Vec<String>>;
-/// {
-///     let mut driver = DeserializeDriver::new(&mut out);
-///     driver.push_layer(Uppercase);
-///     driver.emit(Event::seq_start()).unwrap();
-///     driver.emit("hello").unwrap();
-///     driver.emit(Event::SeqEnd).unwrap();
-/// }
-/// assert_eq!(out.unwrap(), ["HELLO"]);
+/// let words: Vec<String> = deser_json::Deserializer::from_str(r#"["hello", "world"]"#)
+///     .deserialize_with(|driver| driver.push_layer(Uppercase))
+///     .unwrap();
+/// assert_eq!(words, ["HELLO", "WORLD"]);
 /// ```
 ///
 /// # Buffered Values

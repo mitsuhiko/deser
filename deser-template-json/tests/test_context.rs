@@ -2,7 +2,7 @@
 use std::collections::BTreeMap;
 
 use deser::Context;
-use deser::de::DuplicateKeys;
+use deser::de::{DuplicateKeys, Limits};
 
 use super::dialect::{self, Deserializer, DeserializerConfig};
 
@@ -38,6 +38,24 @@ fn test_config_context() {
         })
         .unwrap_err();
     assert!(err.message().contains("duplicate"), "{}", err);
+}
+
+#[test]
+fn test_driver_context_extends_config() {
+    // the values of the configuration's context that the context of the
+    // driver does not have are added to it
+    let limits = Context::with(Limits::builder().max_items(2).build());
+    let mut de = Deserializer::from_str_with_config(INPUT, last());
+    let map = de
+        .deserialize_with::<Map, _>(|driver| driver.set_context(limits.clone()))
+        .unwrap();
+    assert_eq!(map["a"], 2);
+
+    let mut de = Deserializer::from_str_with_config(r#"{"a": 1, "a": 2, "b": 3}"#, last());
+    let err = de
+        .deserialize_with::<Map, _>(|driver| driver.set_context(limits.clone()))
+        .unwrap_err();
+    assert_eq!(err.kind(), deser::ErrorKind::LimitExceeded);
 }
 
 #[test]

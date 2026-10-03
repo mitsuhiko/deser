@@ -17,3 +17,4 @@ deser-core = { version = "0.9.1", path = "../deser-core", default-features = fal
 
 [dev-dependencies]
 deser = { version = "0.9.1", path = "../deser", features = ["derive"] }
+deser-json = { path = "../deser-json" }

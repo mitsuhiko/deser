@@ -142,8 +142,8 @@ impl State {
     /// makes it possible to report all problems of the input at once:
     ///
     /// ```
-    /// use deser::de::DeserializeDriver;
-    /// use deser::{Deserialize, Event};
+    /// use deser::de::Deserializer;
+    /// use deser::Deserialize;
     ///
     /// #[derive(Deserialize, Debug)]
     /// struct Server {
@@ -151,31 +151,16 @@ impl State {
     ///     port: u16,
     /// }
     ///
-    /// let mut out = None::<Vec<Server>>;
-    /// let mut driver = DeserializeDriver::new(&mut out);
-    /// driver.state_mut().set_collect_errors(true);
-    /// let mut rv = Ok(());
-    /// for event in [
-    ///     Event::seq_start(),
-    ///     Event::map_start(),
-    ///     "host".into(),
-    ///     42u64.into(),
-    ///     "port".into(),
-    ///     80u64.into(),
-    ///     Event::MapEnd,
-    ///     Event::map_start(),
-    ///     "host".into(),
-    ///     "b".into(),
-    ///     "port".into(),
-    ///     "http".into(),
-    ///     Event::MapEnd,
-    ///     Event::map_start(),
-    ///     Event::MapEnd,
-    ///     Event::SeqEnd,
-    /// ] {
-    ///     rv = rv.and_then(|()| driver.emit(event));
-    /// }
-    /// let err = rv.unwrap_err();
+    /// let input = r#"[
+    ///     {"host": 42, "port": 80},
+    ///     {"host": "b", "port": "http"},
+    ///     {}
+    /// ]"#;
+    /// let err = deser_json::Deserializer::from_str(input)
+    ///     .deserialize_with::<Vec<Server>, _>(|driver| {
+    ///         driver.state_mut().set_collect_errors(true)
+    ///     })
+    ///     .unwrap_err();
     /// let errors: Vec<_> = err.errors().map(|err| err.message()).collect();
     /// assert_eq!(
     ///     errors,

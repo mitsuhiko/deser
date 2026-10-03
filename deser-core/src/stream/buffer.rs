@@ -127,8 +127,8 @@ impl<D: StreamDeserializer> InputBuffer<D> {
     ///
     /// This replaces the context of the deserializer.  The context is
     /// given to the drivers the values are deserialized with (see
-    /// [`DeserializeDriver::set_context`]) unless they have a context
-    /// already.
+    /// [`DeserializeDriver::set_default_context`]): a context the driver
+    /// has already takes precedence for the types it has a value for.
     pub fn set_context(&mut self, context: Context) {
         self.context = context;
     }
@@ -138,7 +138,8 @@ impl<D: StreamDeserializer> InputBuffer<D> {
         &self.context
     }
 
-    /// Gives the context to a driver which has none.
+    /// Gives the context to a driver (for the types its context has no
+    /// value for).
     #[inline]
     fn apply_context(&self, driver: &mut DeserializeDriver<'_, '_>) {
         if !self.context.is_empty() {

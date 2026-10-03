@@ -58,4 +58,7 @@ smallvec = { version = "1.6", optional = true, default-features = false, feature
 [dev-dependencies]
 # the examples in the documentation use deser (with derive)
 deser = { path = "../deser", features = ["derive", "open-enums"] }
+# the examples of user facing features deserialize JSON (without std so that
+# the no-default-features builds of the tests stay without std)
+deser-json = { path = "../deser-json", default-features = false }
 time = { version = "0.3.40", default-features = false, features = ["macros"] }

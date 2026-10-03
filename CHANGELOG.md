@@ -50,7 +50,8 @@ All notable changes to deser are documented here.
   context of their configuration (`StreamDeserializer::context`), which
   the buffers and readers start with.  A context set on the driver (for
   instance in the setup callback of `deserialize_with`) takes precedence
-  over the one of the deserializer or serializer (see
+  over the one of the deserializer or serializer, which adds the values
+  of the types the context of the driver has no value for (see
   `DeserializeDriver::set_default_context` and
   `SerializeDriver::set_default_context`).  Contexts are equal if they
   share their values.

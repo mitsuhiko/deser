@@ -13,26 +13,28 @@ use crate::event::{Atom, Event};
 /// deserialized might be processed recursively later, or to limit the
 /// memory used.  All limits are off by default.
 ///
-/// The limits are configured in the context: the
-/// [`DeserializeDriver`](crate::de::DeserializeDriver) enforces them when
-/// it's given a context with limits (see
+/// The limits are configured in the context, for instance in the
+/// configuration of a format:
+///
+/// ```
+/// use deser::de::Limits;
+/// use deser::Context;
+///
+/// let config = deser_json::DeserializerConfig::builder()
+///     .context(Context::with(Limits::builder().max_depth(1).build()))
+///     .build();
+/// let err = config.from_str::<Vec<Vec<u32>>>("[[1]]").unwrap_err();
+/// assert_eq!(
+///     err.to_string(),
+///     "LimitExceeded: recursion limit exceeded at line 1 column 2"
+/// );
+/// ```
+///
+/// The [`DeserializeDriver`](crate::de::DeserializeDriver) enforces the
+/// limits of its context (see
 /// [`set_context`](crate::de::DeserializeDriver::set_context)).  They see
 /// the events as the sinks receive them, after all [`Layer`]s, so their
 /// errors have the context that layers add (for instance the path).
-///
-/// ```
-/// use deser::de::{DeserializeDriver, Limits};
-/// use deser::{Context, Event};
-///
-/// let context = Context::with(Limits::builder().max_depth(1).build());
-///
-/// let mut out = None::<Vec<Vec<u32>>>;
-/// let mut driver = DeserializeDriver::new(&mut out);
-/// driver.set_context(context.clone());
-/// driver.emit(Event::seq_start()).unwrap();
-/// let err = driver.emit(Event::seq_start()).unwrap_err();
-/// assert_eq!(err.to_string(), "LimitExceeded: recursion limit exceeded");
-/// ```
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Limits {
     max_depth: Option<usize>,

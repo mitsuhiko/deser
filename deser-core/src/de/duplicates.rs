@@ -18,19 +18,19 @@ use alloc::string::String;
 ///
 /// ```
 /// use std::collections::BTreeMap;
-/// use deser::de::{DeserializeDriver, DuplicateKeys};
-/// use deser::Event;
+/// use deser::de::DuplicateKeys;
+/// use deser::Context;
 ///
-/// let mut out = None::<BTreeMap<String, u32>>;
-/// let mut driver = DeserializeDriver::new(&mut out);
-/// DuplicateKeys::Error.set(driver.state_mut());
-/// driver.emit(Event::map_start()).unwrap();
-/// for value in [1u64, 2] {
-///     driver.emit("a").unwrap();
-///     driver.emit(value).unwrap();
-/// }
-/// let err = driver.emit(Event::MapEnd).unwrap_err();
+/// type Map = BTreeMap<String, u32>;
+///
+/// let input = r#"{"a": 1, "a": 2}"#;
+/// let err = deser_json::from_str::<Map>(input).unwrap_err();
 /// assert_eq!(err.message(), "duplicate key in map");
+///
+/// let config = deser_json::DeserializerConfig::builder()
+///     .context(Context::with(DuplicateKeys::Last))
+///     .build();
+/// assert_eq!(config.from_str::<Map>(input).unwrap()["a"], 2);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[non_exhaustive]

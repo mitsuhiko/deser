@@ -17,34 +17,51 @@ type Entry = (TypeKey, Arc<dyn DebugAny>);
 /// untrusted input ([`Limits`](crate::de::Limits)), whether formats
 /// provide source locations ([`TrackLocations`](crate::TrackLocations)) or
 /// data that types need, such as the variants of open enums.  It's created
-/// once and given to every serialization or deserialization that uses it:
-/// the deserializer and serializer configurations of the formats hold one
-/// (for instance `deser_json::DeserializerConfig::builder().context(context)`),
-/// and the drivers, readers and writers have `set_context` methods:
+/// once and given to every serialization or deserialization that uses it,
+/// usually with the deserializer and serializer configurations of the
+/// formats (for instance `deser_json::DeserializerConfig::builder().context(context)`):
 ///
 /// ```
-/// use deser::de::{DeserializeDriver, DuplicateKeys};
-/// use deser::{Context, Event};
+/// use deser::de::DuplicateKeys;
+/// use deser::Context;
 /// use std::collections::BTreeMap;
 ///
 /// let context = Context::with(DuplicateKeys::Last);
 ///
-/// let mut out = None::<BTreeMap<String, u32>>;
-/// let mut driver = DeserializeDriver::new(&mut out);
-/// driver.set_context(context.clone());
-/// for event in [
-///     Event::map_start(),
-///     "a".into(),
-///     1u64.into(),
-///     "a".into(),
-///     2u64.into(),
-///     Event::MapEnd,
-/// ] {
-///     driver.emit(event).unwrap();
-/// }
-/// drop(driver);
-/// assert_eq!(out.unwrap()["a"], 2);
+/// let config = deser_json::DeserializerConfig::builder()
+///     .context(context.clone())
+///     .build();
+/// let map: BTreeMap<String, u32> = config.from_str(r#"{"a": 1, "a": 2}"#).unwrap();
+/// assert_eq!(map["a"], 2);
 /// ```
+///
+/// A single deserialization can be given a context of its own in the setup
+/// callback of [`Deserializer::deserialize_with`](crate::de::Deserializer::deserialize_with)
+/// (and serializations in the one of `serialize_with`).  Its values take
+/// precedence, the values of the format's context are added for the types
+/// it has no value for:
+///
+/// ```
+/// use deser::de::{Deserializer, DuplicateKeys, Limits};
+/// use deser::Context;
+/// use std::collections::BTreeMap;
+///
+/// let config = deser_json::DeserializerConfig::builder()
+///     .context(Context::with(DuplicateKeys::Last))
+///     .build();
+/// let limits = Context::with(Limits::builder().max_items(2).build());
+///
+/// let input = r#"{"a": 1, "a": 2, "b": 3}"#;
+/// let err = deser_json::Deserializer::from_str_with_config(input, config)
+///     .deserialize_with::<BTreeMap<String, u32>, _>(|driver| {
+///         driver.set_context(limits.clone())
+///     })
+///     .unwrap_err();
+/// assert_eq!(err.to_string(), "LimitExceeded: too many items at line 1 column 18");
+/// ```
+///
+/// The readers and writers of [`io`](crate::io) have `set_context` methods
+/// too.
 ///
 /// The values of the context are the defaults of the extension values of
 /// the [`State`](crate::State): [`State::get`](crate::State::get) returns
@@ -118,6 +135,37 @@ impl Context {
     pub fn is_empty(&self) -> bool {
         self.values.as_ref().is_none_or(|values| values.is_empty())
     }
+
+    /// Adds the values of `defaults` whose types this context has no value
+    /// for.
+    ///
+    /// Returns `false` if nothing was added.
+    pub(crate) fn fill_from(&mut self, defaults: &Context) -> bool {
+        let Some(ref defaults) = defaults.values else {
+            return false;
+        };
+        let own = match self.values {
+            Some(ref mut own) if !own.is_empty() => own,
+            _ => {
+                // the values are shared with the defaults
+                self.values = Some(defaults.clone());
+                return !defaults.is_empty();
+            }
+        };
+        if Arc::ptr_eq(own, defaults) {
+            return false;
+        }
+        let missing: Vec<Entry> = defaults
+            .iter()
+            .filter(|(key, _)| !own.iter().any(|(own_key, _)| own_key.0 == key.0))
+            .cloned()
+            .collect();
+        if missing.is_empty() {
+            return false;
+        }
+        Arc::make_mut(own).extend(missing);
+        true
+    }
 }
 
 /// Contexts are equal if they share their values (one is a clone of the
@@ -180,4 +228,28 @@ fn test_context() {
 
     fn unwind_safe<T: core::panic::UnwindSafe + core::panic::RefUnwindSafe>() {}
     unwind_safe::<Context>();
+}
+
+#[test]
+fn test_fill_from() {
+    let defaults = {
+        let mut context = Context::with(1u32);
+        context.set("x");
+        context
+    };
+
+    // an empty context shares the values of the defaults
+    let mut context = Context::new();
+    assert!(context.fill_from(&defaults));
+    assert_eq!(context, defaults);
+    assert!(!context.fill_from(&defaults));
+    assert!(!context.fill_from(&Context::new()));
+
+    // values of the context are kept, the others are added
+    let mut context = Context::with(2u32);
+    assert!(context.fill_from(&defaults));
+    assert_eq!(context.get::<u32>(), Some(&2));
+    assert_eq!(context.get::<&str>(), Some(&"x"));
+    assert!(!context.fill_from(&defaults));
+    assert_eq!(defaults.get::<u32>(), Some(&1));
 }
