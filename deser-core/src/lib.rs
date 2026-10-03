@@ -47,7 +47,7 @@ pub use self::error::{Error, ErrorAttachment, ErrorCategory, ErrorContext, Error
 pub use self::event::{Atom, Bytes, ContainerShape, Event, Implicit, ImplicitValue, Order};
 pub use self::extensions::EventData;
 #[cfg(feature = "open-enums")]
-pub use self::open_enum::{DuplicateVariant, OpenEnum, OpenEnums, OpenVariant};
+pub use self::open_enum::{OpenEnum, OpenEnums, OpenVariant};
 pub use self::position::Position;
 pub use self::source::{Source, TrackLocations};
 pub use self::state::State;

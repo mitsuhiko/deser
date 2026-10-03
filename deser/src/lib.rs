@@ -209,7 +209,7 @@ pub use deser_derive::{Deserialize, Serialize};
 
 #[cfg(feature = "open-enums")]
 #[doc(inline)]
-pub use deser_core::{DuplicateVariant, OpenEnum, OpenEnums, OpenVariant};
+pub use deser_core::{OpenEnum, OpenEnums, OpenVariant};
 
 #[cfg(feature = "open-enums")]
 #[doc(inline)]

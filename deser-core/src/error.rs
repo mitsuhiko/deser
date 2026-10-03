@@ -63,6 +63,10 @@ pub enum ErrorKind {
     /// stream that failed is used again or a serializer receives events
     /// that do not form a value.
     InvalidState,
+    /// deser is set up wrongly, for instance the variants of an open enum
+    /// are not registered or two of them have the same name.  These are
+    /// bugs in the program, not problems of the input.
+    Configuration,
     /// Reading or writing failed (see `deser::io`).  The IO error is
     /// the [`source`](std::error::Error::source) of the error.
     Io,
@@ -120,7 +124,8 @@ pub enum ErrorCategory {
     /// ([`ErrorKind::UnsupportedType`]).
     Unsupported,
     /// An API was used in a way that is not supported
-    /// ([`ErrorKind::InvalidState`]).
+    /// ([`ErrorKind::InvalidState`]) or deser is set up wrongly
+    /// ([`ErrorKind::Configuration`]).
     Usage,
     /// Reading or writing failed ([`ErrorKind::Io`]).
     Io,
@@ -525,7 +530,7 @@ impl Error {
             | ErrorKind::UnknownVariant
             | ErrorKind::DuplicateKey => ErrorCategory::Data,
             ErrorKind::UnsupportedType => ErrorCategory::Unsupported,
-            ErrorKind::InvalidState => ErrorCategory::Usage,
+            ErrorKind::InvalidState | ErrorKind::Configuration => ErrorCategory::Usage,
             ErrorKind::Io => ErrorCategory::Io,
             ErrorKind::Custom => {
                 if data.has_context {

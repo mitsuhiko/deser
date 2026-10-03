@@ -1,10 +1,10 @@
 //! Steps for the pipeline in another crate.  The steps are variants of
 //! `Step` like the ones of `pipeline`.
-use deser::{Deserialize, DuplicateVariant, OpenEnums, Serialize};
+use deser::{Deserialize, Error, OpenEnums, Serialize};
 use pipeline::Step;
 
 /// Registers the steps of this crate.
-pub fn register(variants: &mut OpenEnums) -> Result<(), DuplicateVariant> {
+pub fn register(variants: &mut OpenEnums) -> Result<(), Error> {
     variants
         .register::<dyn Step, Uppercase>()?
         .register::<dyn Step, Repeat>()?;

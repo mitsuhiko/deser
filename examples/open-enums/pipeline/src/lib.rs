@@ -1,10 +1,10 @@
 //! A text processing pipeline whose steps are an open enum: the steps
 //! of this crate are variants, other crates can add more (see
 //! `pipeline-extras`).  The program registers the steps it accepts.
-use deser::{Deserialize, DuplicateVariant, OpenEnums, Serialize};
+use deser::{Deserialize, Error, OpenEnums, Serialize};
 
 /// Registers the steps of this crate.
-pub fn register(variants: &mut OpenEnums) -> Result<(), DuplicateVariant> {
+pub fn register(variants: &mut OpenEnums) -> Result<(), Error> {
     variants
         .register::<dyn Step, Replace>()?
         .register::<dyn Step, Trim>()?;

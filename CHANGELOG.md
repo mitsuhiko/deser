@@ -93,6 +93,9 @@ All notable changes to deser are documented here.
   adjacently tagged, with `rename_all`, `alias_all`, aliases and names
   that are not strings).  The variants are registered explicitly in an
   `OpenEnums` registry which is given to deserializations in the context.
+  Registering two variants with the same name and deserializing without
+  registry fail with the new `ErrorKind::Configuration` (in the `Usage`
+  category).
   `Arc<T>` is deserialized through a hidden trait (`de::DeserializeArc`)
   so that it works for the trait objects of open enums.
 - **Breaking:** merged `DeserializeAs` into `Deserialize`, which has a

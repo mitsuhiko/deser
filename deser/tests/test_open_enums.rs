@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use deser::de::{DeserializeDriver, DeserializeOwned};
 use deser::ser::{Describe, SerializeDriver, SerializeRef, Variant, VariantKind, VariantRepr};
-use deser::{ContainerShape, Context, Deserialize, Error, Event, OpenEnums, Serialize};
+use deser::{ContainerShape, Context, Deserialize, Error, ErrorKind, Event, OpenEnums, Serialize};
 
 /// Returns a context with the variants of the open enums of the tests.
 fn context() -> Context {
@@ -398,20 +398,20 @@ fn test_duplicate_names() {
         .register::<dyn Plugin, second::Thing>()
         .err()
         .unwrap();
-    assert_eq!(err.open_enum(), "Plugin");
-    assert_eq!(err.name(), "Thing");
-    assert!(err.types()[0].ends_with("first::Thing"));
-    assert!(err.types()[1].ends_with("second::Thing"));
-    assert!(
-        err.to_string()
-            .starts_with("duplicate variant `Thing` of Plugin: `")
-    );
+    assert_eq!(err.kind(), ErrorKind::Configuration);
+    let msg = err.message();
+    assert!(msg.starts_with("duplicate variant `Thing` of Plugin: `"));
+    assert!(msg.contains("first::Thing` and `"));
+    assert!(msg.ends_with("second::Thing`"));
 
     // aliases are names as well
     let mut variants = OpenEnums::new();
     variants.register::<dyn Shape, Rect>().unwrap();
     let err = variants.register::<dyn Shape, Rectangle>().err().unwrap();
-    assert_eq!(err.name(), "rectangle");
+    assert!(
+        err.message()
+            .starts_with("duplicate variant `rectangle` of Shape: `")
+    );
     assert_eq!(format!("{:?}", variants), r#"{"Shape": ["Rect"]}"#);
 }
 
@@ -421,7 +421,7 @@ fn test_unregistered() {
     let err = deserialize_in::<Box<dyn Shape>>(vec!["Point".into()], &Context::new()).unwrap_err();
     assert_eq!(
         err.to_string(),
-        "UnsupportedType: no variants of Shape are registered (register them in a \
+        "Configuration: no variants of Shape are registered (register them in a \
          deser::OpenEnums that is given in the context)"
     );
 

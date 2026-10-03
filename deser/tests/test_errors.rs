@@ -60,6 +60,7 @@ fn test_categories_of_kinds() {
         (ErrorKind::DuplicateKey, ErrorCategory::Data),
         (ErrorKind::UnsupportedType, ErrorCategory::Unsupported),
         (ErrorKind::InvalidState, ErrorCategory::Usage),
+        (ErrorKind::Configuration, ErrorCategory::Usage),
         (ErrorKind::Io, ErrorCategory::Io),
         // errors without context come from the formats
         (ErrorKind::Custom, ErrorCategory::Syntax),

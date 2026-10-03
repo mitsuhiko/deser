@@ -1013,7 +1013,7 @@
 //!
 //! ```
 //! use deser::de::{DeserializeDriver, DeserializeOwned};
-//! use deser::{Context, Deserialize, DuplicateVariant, Event, OpenEnums, Serialize};
+//! use deser::{Context, Deserialize, Error, Event, OpenEnums, Serialize};
 //!
 //! #[deser::open_enum(tag = "type", rename_all = "snake_case")]
 //! pub trait Step: Send + Sync {
@@ -1051,7 +1051,7 @@
 //! }
 //!
 //! // crates with variants usually provide a function like this
-//! pub fn register(variants: &mut OpenEnums) -> Result<(), DuplicateVariant> {
+//! pub fn register(variants: &mut OpenEnums) -> Result<(), Error> {
 //!     variants
 //!         .register::<dyn Step, Replace>()?
 //!         .register::<dyn Step, Uppercase>()?;
@@ -1101,8 +1101,8 @@
 //! limits what untrusted input can create.  Deserializing an open enum
 //! without registry in the context is an error.  The names of the variants
 //! (including their aliases) are unique: registering a variant with the
-//! name of another one fails with
-//! [`DuplicateVariant`](crate::DuplicateVariant).
+//! name of another one fails.  Both are errors with the kind
+//! [`ErrorKind::Configuration`](crate::ErrorKind::Configuration).
 //!
 //! The variants are named after their type (the last segment of its path),
 //! in the style of `rename_all`.  Types with generic arguments need a name

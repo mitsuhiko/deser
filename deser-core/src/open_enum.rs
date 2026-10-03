@@ -282,10 +282,11 @@ impl OpenEnums {
     ///
     /// `O` is the trait object (`dyn Trait`).  Registering a type again
     /// does nothing.  Fails if the name of the variant (or one of its
-    /// aliases) is the one of another variant.
+    /// aliases) is the one of another variant (with
+    /// [`ErrorKind::Configuration`]).
     pub fn register<O: ?Sized + OpenEnum, T: OpenVariant<O>>(
         &mut self,
-    ) -> Result<&mut OpenEnums, DuplicateVariant> {
+    ) -> Result<&mut OpenEnums, Error> {
         let entry = T::ENTRY;
         let ty = TypeId::of::<T>();
         let registered = self
@@ -306,11 +307,16 @@ impl OpenEnums {
         let tags = entry.tags();
         for tag in &tags {
             if let Ok(index) = table.tags.binary_search_by(|(other, _, _)| other.cmp(tag)) {
-                return Err(DuplicateVariant {
-                    open_enum: O::INFO.name,
-                    name: tag_display(*tag),
-                    types: [(table.tags[index].2.type_name)(), (entry.type_name)()],
-                });
+                return Err(Error::new(
+                    ErrorKind::Configuration,
+                    alloc::format!(
+                        "duplicate variant `{}` of {}: `{}` and `{}`",
+                        tag_display(*tag),
+                        O::INFO.name,
+                        (table.tags[index].2.type_name)(),
+                        (entry.type_name)(),
+                    ),
+                ));
             }
         }
         for tag in tags {
@@ -355,45 +361,6 @@ impl fmt::Debug for OpenEnums {
             .finish()
     }
 }
-
-/// The error for a variant whose name is the one of another variant (see
-/// [`OpenEnums::register`]).
-#[derive(Debug, Clone)]
-pub struct DuplicateVariant {
-    open_enum: &'static str,
-    name: Cow<'static, str>,
-    types: [&'static str; 2],
-}
-
-impl DuplicateVariant {
-    /// Returns the name of the open enum.
-    pub fn open_enum(&self) -> &str {
-        self.open_enum
-    }
-
-    /// Returns the name that is used twice.
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    /// Returns the names of the types of the variant that was registered
-    /// before and the one that was registered now.
-    pub fn types(&self) -> [&str; 2] {
-        self.types
-    }
-}
-
-impl fmt::Display for DuplicateVariant {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "duplicate variant `{}` of {}: `{}` and `{}`",
-            self.name, self.open_enum, self.types[0], self.types[1]
-        )
-    }
-}
-
-impl core::error::Error for DuplicateVariant {}
 
 impl Serialize for Tag<'_> {
     fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Emit<'a>, Error> {
@@ -712,7 +679,7 @@ struct Unregistered<E> {
 impl<E> Unregistered<E> {
     fn error(&self) -> Error {
         Error::new(
-            ErrorKind::UnsupportedType,
+            ErrorKind::Configuration,
             alloc::format!(
                 "no variants of {} are registered (register them in a deser::OpenEnums \
                  that is given in the context)",
