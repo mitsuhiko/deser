@@ -13,12 +13,10 @@ autotests = false
 doc = false
 
 [features]
-default = ["std", "io", "zmij"]
+default = ["std", "io", "speedups"]
 std = ["deser-core/std", "deser-json/std", "simdutf8?/std"]
 io = ["std", "deser-core/io", "deser-json/io"]
-# formats floats with zmij, which is faster and makes binaries smaller than
-# the fallback (the text is the same)
-zmij = ["deser-json/zmij"]
+# formats floats with zmij and validates UTF-8 with simdutf8 (see deser-json)
 speedups = ["dep:simdutf8", "deser-json/speedups"]
 
 [dependencies]

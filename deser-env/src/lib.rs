@@ -196,6 +196,13 @@
 //! Values are serialized into name-value pairs (see [`to_vars`] and
 //! [`SerializerConfig`]), for instance to pass a configuration to a child
 //! process with [`Command::envs`](std::process::Command::envs).
+//!
+//! # Features
+//!
+//! * `speedups` (enabled by default): formats floats with
+//!   [`zmij`](https://docs.rs/zmij), which is faster and makes binaries
+//!   smaller.  Without it floats are formatted with the same text by a
+//!   fallback on top of the float formatting of `core`.
 #![doc(html_logo_url = "https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo.svg")]
 
 mod de;

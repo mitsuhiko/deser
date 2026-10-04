@@ -150,7 +150,7 @@ size_row() {
     $((small / 1024)) $(((small - hello_small) / 1024))
 }
 
-# Turns off the zmij feature of deser-json (the float formatting falls
+# Turns off the speedups feature of deser-json (the float formatting falls
 # back to the standard library) in a copy of a deser crate.
 without_zmij() {
   rm -rf $2

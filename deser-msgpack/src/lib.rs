@@ -76,7 +76,7 @@
 //!
 //! * `io` (enabled by default): reading and writing streams of the
 //!   standard library, see [streams](#streams).  Requires `std`.
-//! * `speedups`: validates UTF-8 with [`simdutf8`](https://docs.rs/simdutf8).
+//! * `speedups` (enabled by default): validates UTF-8 with [`simdutf8`](https://docs.rs/simdutf8).
 //! * `std` (enabled by default): uses the standard library.  Without it
 //!   this crate only needs `alloc` (see [`no_std`](https://docs.rs/deser/latest/deser/#no_std)).
 //!

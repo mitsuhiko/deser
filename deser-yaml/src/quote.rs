@@ -313,17 +313,17 @@ pub(crate) fn push_indent(out: &mut String, indent: usize) {
 }
 
 /// The floats that are written (`f32` and `f64`).
-#[cfg(feature = "zmij")]
+#[cfg(feature = "speedups")]
 pub(crate) trait Float: zmij::Float + crate::num::Float {}
 
-#[cfg(feature = "zmij")]
+#[cfg(feature = "speedups")]
 impl<F: zmij::Float + crate::num::Float> Float for F {}
 
 /// The floats that are written (`f32` and `f64`).
-#[cfg(not(feature = "zmij"))]
+#[cfg(not(feature = "speedups"))]
 pub(crate) trait Float: crate::num::Float {}
 
-#[cfg(not(feature = "zmij"))]
+#[cfg(not(feature = "speedups"))]
 impl<F: crate::num::Float> Float for F {}
 
 /// Writes a float so that readers of YAML 1.1 and 1.2 read it as float.
@@ -339,11 +339,11 @@ pub(crate) fn write_float<W: Write, F: Float>(out: &mut W, value: F) {
         out.write_str(if wide > 0.0 { ".inf" } else { "-.inf" })
             .unwrap();
     } else {
-        #[cfg(feature = "zmij")]
+        #[cfg(feature = "speedups")]
         let mut buffer = zmij::Buffer::new();
-        #[cfg(feature = "zmij")]
+        #[cfg(feature = "speedups")]
         let formatted = buffer.format_finite(value);
-        #[cfg(not(feature = "zmij"))]
+        #[cfg(not(feature = "speedups"))]
         let formatted = &crate::num::format_finite(value);
         // the exponent always has a sign, the mantissa needs a `.`.  The
         // exponent is at most `e-324`, so only the last five bytes can be

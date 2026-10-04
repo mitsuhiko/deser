@@ -816,17 +816,17 @@ impl<'d> Writer<'d> {
 }
 
 /// The floats that are written (`f32` and `f64`).
-#[cfg(feature = "zmij")]
+#[cfg(feature = "speedups")]
 trait Float: zmij::Float + crate::num::Float {}
 
-#[cfg(feature = "zmij")]
+#[cfg(feature = "speedups")]
 impl<F: zmij::Float + crate::num::Float> Float for F {}
 
 /// The floats that are written (`f32` and `f64`).
-#[cfg(not(feature = "zmij"))]
+#[cfg(not(feature = "speedups"))]
 trait Float: crate::num::Float {}
 
-#[cfg(not(feature = "zmij"))]
+#[cfg(not(feature = "speedups"))]
 impl<F: crate::num::Float> Float for F {}
 
 /// Writes a float with the shortest text that reads back as the same value
@@ -839,9 +839,9 @@ fn write_float<F: Float>(out: &mut String, value: F) {
     } else if wide.is_infinite() {
         out.push_small(if wide > 0.0 { "inf" } else { "-inf" });
     } else {
-        #[cfg(feature = "zmij")]
+        #[cfg(feature = "speedups")]
         out.push_small(zmij::Buffer::new().format_finite(value));
-        #[cfg(not(feature = "zmij"))]
+        #[cfg(not(feature = "speedups"))]
         out.push_small(&crate::num::format_finite(value));
     }
 }

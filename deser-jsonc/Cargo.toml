@@ -13,15 +13,12 @@ license = "Apache-2.0"
 documentation = "https://docs.rs/deser-jsonc"
 
 [features]
-default = ["std", "io", "zmij"]
+default = ["std", "io", "speedups"]
 # the standard library, without it only `alloc` is needed
 std = ["deser-core/std", "deser-json/std", "simdutf8?/std"]
 # reading and writing values from and to streams (with `deser::io`)
 io = ["std", "deser-core/io", "deser-json/io"]
-# formats floats with zmij, which is faster and makes binaries smaller than
-# the fallback (the text is the same)
-zmij = ["deser-json/zmij"]
-# faster UTF-8 validation (simdutf8), implies `zmij`
+# formats floats with zmij and validates UTF-8 with simdutf8 (see deser-json)
 speedups = ["dep:simdutf8", "deser-json/speedups"]
 
 [dependencies]

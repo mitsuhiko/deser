@@ -118,7 +118,8 @@ written as JSON (the library with a `main`).  They are built with the
 default release profile and a profile optimized for size (`lto = "fat"`,
 `codegen-units = 1`, `opt-level = "s"`, `panic = "abort"`).  In
 parentheses is how much larger they are than hello world (in KiB).
-`deser (without zmij)` turns off the `zmij` feature of `deser-json`.
+`deser (without zmij)` turns off the `speedups` feature of `deser-json`
+(`zmij` and `simdutf8`).
 
 | program                         | release          | size optimized  |
 |---------------------------------|------------------|-----------------|
@@ -174,7 +175,7 @@ parentheses is how much larger they are than hello world (in KiB).
   another 16 KiB was the pretty printer of JSON that constant compact
   configurations do not refer to anymore.  Layers of the deserializer
   are only linked into programs that add layers (16 KiB).
-* **Floats** are formatted with `zmij` (the `zmij` feature of the
+* **Floats** are formatted with `zmij` (the `speedups` feature of the
   formats, enabled by default).  Without it they are formatted with the
   standard library's `{:e}` and parsed again to pick the even digits of
   ties (`format_finite`).  This links the float formatting and parsing

@@ -4,7 +4,6 @@ use deser_core::ext::Number;
 use deser_core::ser::{self, SerializeDriver, SerializeRef};
 use deser_core::{Atom, BytesFormat, Error, ErrorKind, Event, Serialize, State};
 
-use crate::num::{Float, format_finite};
 use crate::parser::comment_start;
 use crate::{Continuation, InlineComments, Quotes, Syntax};
 
@@ -962,6 +961,20 @@ fn unsupported_key() -> Error {
     )
 }
 
+/// The floats that are written (`f32` and `f64`).
+#[cfg(feature = "speedups")]
+trait Float: zmij::Float + crate::num::Float {}
+
+#[cfg(feature = "speedups")]
+impl<F: zmij::Float + crate::num::Float> Float for F {}
+
+/// The floats that are written (`f32` and `f64`).
+#[cfg(not(feature = "speedups"))]
+trait Float: crate::num::Float {}
+
+#[cfg(not(feature = "speedups"))]
+impl<F: crate::num::Float> Float for F {}
+
 /// Returns the text of a float.
 ///
 /// Finite floats have the shortest text that reads back as the same value
@@ -969,7 +982,14 @@ fn unsupported_key() -> Error {
 /// and `-inf`.
 fn float_text<F: Float>(value: F) -> String {
     if value.is_finite() {
-        format_finite(value)
+        #[cfg(feature = "speedups")]
+        {
+            zmij::Buffer::new().format_finite(value).into()
+        }
+        #[cfg(not(feature = "speedups"))]
+        {
+            crate::num::format_finite(value)
+        }
     } else {
         value.to_f64().to_string()
     }

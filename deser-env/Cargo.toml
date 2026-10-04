@@ -13,8 +13,15 @@ license = "Apache-2.0"
 documentation = "https://docs.rs/deser-env"
 autotests = false
 
+[features]
+default = ["speedups"]
+# formats floats with zmij, which is faster and makes binaries smaller than
+# the fallback (the text is the same)
+speedups = ["dep:zmij"]
+
 [dependencies]
 deser-core = { version = "0.9.1", path = "../deser-core", default-features = false }
+zmij = { version = "1.0.23", optional = true }
 
 [dev-dependencies]
 # the float formatting is tested against it

@@ -1255,11 +1255,11 @@ impl Output {
     #[inline]
     fn write_float<F: Float>(&mut self, val: F) {
         if val.is_finite() {
-            #[cfg(feature = "zmij")]
+            #[cfg(feature = "speedups")]
             {
                 self.write_str(zmij::Buffer::new().format_finite(val))
             }
-            #[cfg(not(feature = "zmij"))]
+            #[cfg(not(feature = "speedups"))]
             {
                 self.write_str(&crate::num::format_finite(val))
             }
@@ -1477,17 +1477,17 @@ static ESCAPE: [u8; 256] = [
 ];
 
 /// The floats that are written (`f32` and `f64`).
-#[cfg(feature = "zmij")]
+#[cfg(feature = "speedups")]
 trait Float: zmij::Float + crate::num::Float {}
 
-#[cfg(feature = "zmij")]
+#[cfg(feature = "speedups")]
 impl<F: zmij::Float + crate::num::Float> Float for F {}
 
 /// The floats that are written (`f32` and `f64`).
-#[cfg(not(feature = "zmij"))]
+#[cfg(not(feature = "speedups"))]
 trait Float: crate::num::Float {}
 
-#[cfg(not(feature = "zmij"))]
+#[cfg(not(feature = "speedups"))]
 impl<F: crate::num::Float> Float for F {}
 
 /// Serializes a value to JSON.

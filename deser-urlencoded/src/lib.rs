@@ -174,6 +174,10 @@
 //!
 //! * `io` (enabled by default): reading and writing streams of the
 //!   standard library, see [streams](#streams).
+//! * `speedups` (enabled by default): formats floats with
+//!   [`zmij`](https://docs.rs/zmij), which is faster and makes binaries
+//!   smaller.  Without it floats are formatted with the same text by a
+//!   fallback on top of the float formatting of `core`.
 #![doc(html_logo_url = "https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo.svg")]
 
 mod de;
@@ -242,7 +246,6 @@ pub enum Nesting {
 /// assert_eq!(value["a"], [1, 2]);
 /// assert_eq!(value["b"], [3]);
 /// ```
-#[allow(clippy::should_implement_trait)]
 pub fn from_str<'de, T: Deserialize<'de>>(s: &'de str) -> Result<T, Error> {
     DeserializerConfig::new().from_str(s)
 }

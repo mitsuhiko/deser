@@ -6,8 +6,7 @@ use alloc::string::{String, ToString};
 
 use deser_core::{Error, ErrorKind};
 
-use crate::common::{encode_base64, format_xml_date};
-use crate::num::format_finite;
+use crate::common::{encode_base64, format_finite, format_xml_date};
 use crate::ser::Node;
 
 /// What precedes the value.

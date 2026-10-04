@@ -1560,7 +1560,7 @@ struct Scratch {
     /// Text that is not a number.
     bytes: Vec<u8>,
     int: IntBuffer,
-    #[cfg(feature = "zmij")]
+    #[cfg(feature = "speedups")]
     float: zmij::Buffer,
 }
 
@@ -1569,7 +1569,7 @@ impl Scratch {
         Scratch {
             bytes,
             int: IntBuffer::new(),
-            #[cfg(feature = "zmij")]
+            #[cfg(feature = "speedups")]
             float: zmij::Buffer::new(),
         }
     }
@@ -1584,11 +1584,11 @@ impl Scratch {
             let _ = write!(ByteWriter(&mut self.bytes), "{}", value.to_f64());
             return &self.bytes;
         }
-        #[cfg(feature = "zmij")]
+        #[cfg(feature = "speedups")]
         {
             self.float.format_finite(value).as_bytes()
         }
-        #[cfg(not(feature = "zmij"))]
+        #[cfg(not(feature = "speedups"))]
         {
             self.bytes.clear();
             self.bytes
@@ -1599,16 +1599,16 @@ impl Scratch {
 }
 
 /// The floats that can be formatted.
-#[cfg(feature = "zmij")]
+#[cfg(feature = "speedups")]
 trait FormatFloat: zmij::Float + Float {}
 
-#[cfg(feature = "zmij")]
+#[cfg(feature = "speedups")]
 impl<F: zmij::Float + Float> FormatFloat for F {}
 
-#[cfg(not(feature = "zmij"))]
+#[cfg(not(feature = "speedups"))]
 trait FormatFloat: Float {}
 
-#[cfg(not(feature = "zmij"))]
+#[cfg(not(feature = "speedups"))]
 impl<F: Float> FormatFloat for F {}
 
 /// Appends bytes to the output.

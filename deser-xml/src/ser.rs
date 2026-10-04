@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 use std::fmt::Write as _;
 
-use crate::num::{Float, format_finite};
 use deser_core::ext::Number;
 use deser_core::hints::Layout;
 use deser_core::ser::SerializeRef;
@@ -1653,7 +1652,20 @@ fn keeps_whitespace(state: &State) -> bool {
         .is_some_and(|keeps| keeps.0)
 }
 
-/// Writes a float like XML Schema (`INF`, `-INF` and `NaN`).
+/// The floats that are written (`f32` and `f64`).
+#[cfg(feature = "speedups")]
+trait Float: zmij::Float + crate::num::Float {}
+
+#[cfg(feature = "speedups")]
+impl<F: zmij::Float + crate::num::Float> Float for F {}
+
+/// The floats that are written (`f32` and `f64`).
+#[cfg(not(feature = "speedups"))]
+trait Float: crate::num::Float {}
+
+#[cfg(not(feature = "speedups"))]
+impl<F: crate::num::Float> Float for F {}
+
 /// Returns the text of a float.
 ///
 /// Finite floats have the shortest text that reads back as the same value
@@ -1666,7 +1678,14 @@ fn float_text<F: Float>(value: F) -> String {
     } else if wide.is_infinite() {
         if wide > 0.0 { "INF" } else { "-INF" }.into()
     } else {
-        format_finite(value)
+        #[cfg(feature = "speedups")]
+        {
+            zmij::Buffer::new().format_finite(value).into()
+        }
+        #[cfg(not(feature = "speedups"))]
+        {
+            crate::num::format_finite(value)
+        }
     }
 }
 

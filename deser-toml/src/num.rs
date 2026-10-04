@@ -1,10 +1,10 @@
 //! Formats numbers without the `fmt` machinery.
 //!
-//! Floats are formatted with `zmij` when the `zmij` feature is enabled (the
-//! default), otherwise with [`format_finite`] which produces the same text,
+//! Floats are formatted with `zmij` when the `speedups` feature is enabled
+//! (the default), otherwise with [`format_finite`] which produces the same text,
 //! so the output does not depend on the feature.
-// without `zmij` only the tests use the fallback of floats
-#![cfg_attr(feature = "zmij", allow(dead_code))]
+// with `speedups` only the tests use the fallback of floats
+#![cfg_attr(feature = "speedups", allow(dead_code))]
 use core::fmt::{self, Debug, LowerExp, Write};
 use core::str::FromStr;
 
@@ -296,7 +296,7 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "zmij")]
+    #[cfg(feature = "speedups")]
     fn check<F: Float + zmij::Float>(val: F) {
         assert_eq!(
             format_finite(val),
@@ -306,7 +306,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "zmij")]
+    #[cfg(feature = "speedups")]
     #[test]
     #[cfg_attr(miri, ignore = "slow, no unsafe code under test")]
     fn test_like_zmij_f64() {
@@ -352,7 +352,7 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "zmij")]
+    #[cfg(feature = "speedups")]
     #[test]
     #[cfg_attr(miri, ignore = "slow, no unsafe code under test")]
     fn test_like_zmij_f32() {
