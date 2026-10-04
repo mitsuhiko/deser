@@ -289,6 +289,18 @@ All notable changes to deser are documented here.
   shared values once and refers to them, so cycles survive a round trip
   through `deser_value::Value`.  Tested against CPython with inputs from
   its pickle tests.
+- Added `deser-ini`: INI files.  As INI has no specification, the default
+  dialect follows a survey of INI files on GitHub: `;` and `#` comments
+  (also after values, after whitespace), `=` and `:` delimiters, values
+  continued on indented lines, quoted values and keys without values.
+  Comments after values, delimiters, continuation lines, quotes, keys
+  without values and lowercased names can be configured, with presets for
+  Python's `configparser` and for git's config files (`Syntax::Git`, with
+  subsections, escapes and git's quoting).  Files are multimaps like query
+  strings: repeated keys are collected by collections, sections that repeat
+  are merged.  Tested against inih, Python's `configparser` and git with a
+  corpus of the test inputs of INI parsers and real world files
+  (`scripts/update-ini-test-data.sh`).
 - `deser-json`: added `SerializerConfig::non_finite_floats` which writes
   NaN and infinite floats as `NaN`, `Infinity` and `-Infinity` instead of
   `null`.  `deser_json5::to_string` and `deser_json5::to_writer` enable

@@ -12,6 +12,7 @@ members = [
   "deser-jsonc",
   "deser-json5",
   "deser-hj",
+  "deser-ini",
   "deser-location",
   "deser-path",
   "deser-php",

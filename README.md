@@ -11,12 +11,13 @@
 [![Documentation](https://docs.rs/deser/badge.svg)](https://docs.rs/deser)
 
 Deser is a serialization library for Rust for self describing formats such as
-JSON, YAML, TOML, CBOR, MessagePack, XML, property lists, PHP's `serialize`,
-Python's pickle, CSV and query strings.  It takes the user experience of serde,
-the problems that years of running serde in production turned up and the Rust
-of today, and tries to solve them with a different architecture.  If you know
-serde you will feel at home: you derive `Serialize` and `Deserialize`, pick a
-format crate, and most attributes have the names you already know.
+JSON, YAML, TOML, INI, CBOR, MessagePack, XML, property lists, PHP's
+`serialize`, Python's pickle, CSV and query strings.  It takes the user
+experience of serde, the problems that years of running serde in production
+turned up and the Rust of today, and tries to solve them with a different
+architecture.  If you know serde you will feel at home: you derive `Serialize`
+and `Deserialize`, pick a format crate, and most attributes have the names you
+already know.
 
 ```rust
 use deser::{Serialize, Deserialize};
@@ -61,6 +62,7 @@ The same type works unchanged with every format (CSV as long as it's flat).
   [deser-hj](https://github.com/mitsuhiko/deser/tree/main/deser-hj),
   [deser-yaml](https://github.com/mitsuhiko/deser/tree/main/deser-yaml),
   [deser-toml](https://github.com/mitsuhiko/deser/tree/main/deser-toml),
+  [deser-ini](https://github.com/mitsuhiko/deser/tree/main/deser-ini) (INI and git's config files),
   [deser-cbor](https://github.com/mitsuhiko/deser/tree/main/deser-cbor),
   [deser-msgpack](https://github.com/mitsuhiko/deser/tree/main/deser-msgpack),
   [deser-xml](https://github.com/mitsuhiko/deser/tree/main/deser-xml),

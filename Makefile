@@ -87,7 +87,7 @@ miri-test-full:
 
 check:
 	@$(RUN) "check" "cargo check --workspace --all-targets --all-features"
-	@$(RUN) "check:no-default-features" "cargo check -p deser -p deser-core -p deser-json -p deser-jsonc -p deser-json5 -p deser-hj -p deser-cbor -p deser-msgpack -p deser-yaml -p deser-toml -p deser-urlencoded -p deser-csv -p deser-php -p deser-pickle -p deser-plist -p deser-xml --all-targets --no-default-features"
+	@$(RUN) "check:no-default-features" "cargo check -p deser -p deser-core -p deser-json -p deser-jsonc -p deser-json5 -p deser-hj -p deser-cbor -p deser-msgpack -p deser-yaml -p deser-toml -p deser-ini -p deser-urlencoded -p deser-csv -p deser-php -p deser-pickle -p deser-plist -p deser-xml --all-targets --no-default-features"
 
 # builds without the standard library for a target that does not have one
 check-no-std:

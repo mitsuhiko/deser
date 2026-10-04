@@ -50,13 +50,14 @@ formats split a stream into values (YAML documents, CSV records, pickles)
 and read each value completely before it's parsed.  Pickles are graphs
 whose values can be shared and contain themselves, they are emitted as
 trees (see the documentation of `deser-pickle`).  XML documents, TOML documents,
-property lists and form data hold a single value and cannot be split, so
-the whole stream is read before it's parsed.
+INI files, property lists and form data hold a single value and cannot be
+split, so the whole stream is read before it's parsed.
 
 When writing, the output of large values is written in pieces while they are
-serialized, except for TOML and binary property lists which need the complete
-value (the values of a table come before its subtables, the object table of a
-binary property list needs all objects).  Containers whose length is not known
+serialized, except for TOML, INI files and binary property lists which need
+the complete value (the values of a table come before its subtables, the keys
+before the first section of an INI file can come last in the value, the object
+table of a binary property list needs all objects).  Containers whose length is not known
 upfront (and maps in canonical mode) are held back in CBOR and MessagePack
 until they are complete, as are XML elements whose attributes can still come.
 

@@ -46,6 +46,9 @@ pub struct Account {
 //!   serialization and deserialization.
 //! * [`deser-toml`](https://docs.rs/deser-toml): implements TOML serialization and
 //!   deserialization.
+//! * [`deser-ini`](https://docs.rs/deser-ini): implements INI file serialization
+//!   and deserialization (also the dialects of Python's `configparser` and of
+//!   git's config files).
 //! * [`deser-yaml`](https://docs.rs/deser-yaml): implements YAML serialization and
 //!   deserialization.
 //! * [`deser-urlencoded`](https://docs.rs/deser-urlencoded): implements query string

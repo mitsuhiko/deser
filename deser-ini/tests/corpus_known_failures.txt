@@ -1,0 +1,36 @@
+# Cases of the INI corpus that are expected to fail.
+# Format: <name> [# reason].  Regenerate with DESER_INI_BLESS=1.
+inih/suites/cpython-configparser/captured/0002.ini # a `#` after whitespace and text starts a comment (inih keeps it)
+inih/suites/cpython-configparser/captured/0018.ini # an empty key is an error (inih accepts it)
+inih/suites/cpython-configparser/captured/0019.ini # an empty key is an error (inih accepts it)
+inih/suites/cpython-configparser/captured/0042.ini # an empty key is an error (inih accepts it)
+inih/suites/cpython-configparser/captured/0043.ini # an empty key is an error (inih accepts it)
+inih/suites/cpython-configparser/captured/0063.ini # an empty key is an error (inih accepts it)
+inih/suites/cpython-configparser/captured/0064.ini # an empty key is an error (inih accepts it)
+inih/suites/cpython-configparser/captured/0084.ini # an empty key is an error (inih accepts it)
+inih/suites/cpython-configparser/captured/0085.ini # an empty key is an error (inih accepts it)
+inih/suites/cpython-configparser/captured/0106.ini # an empty key is an error (inih accepts it)
+inih/suites/cpython-configparser/captured/0120.ini # a `#` after whitespace and text starts a comment (inih keeps it)
+inih/suites/cpython-configparser/captured/0136.ini # an empty key is an error (inih accepts it)
+inih/suites/cpython-configparser/captured/0137.ini # an empty key is an error (inih accepts it)
+inih/suites/cpython-configparser/captured/0157.ini # an empty key is an error (inih accepts it)
+configparser/suites/cpython-configparser/captured/0164.ini # text after a section header is an error (the references ignore it)
+inih/suites/cpython-configparser/captured/0164.ini # text after a section header is an error (the references ignore it)
+configparser/suites/cpython-configparser/captured/0166.ini # text after a section header is an error (the references ignore it)
+inih/suites/cpython-configparser/captured/0166.ini # text after a section header is an error (the references ignore it)
+inih/suites/cpython-configparser/captured/0167.ini # `]` can be in section names (inih ends them at the first `]`)
+configparser/suites/cpython-configparser/captured/0168.ini # text after a section header is an error (the references ignore it)
+inih/suites/cpython-configparser/captured/0168.ini # text after a section header is an error (the references ignore it)
+configparser/suites/cpython-configparser/captured/0169.ini # a line with `[` but without `]` is an error (configparser reads it as a key)
+inih/suites/cpython-configparser/captured/0189.ini # an empty key is an error (inih accepts it)
+inih/suites/cpython-configparser/captured/0190.ini # an empty key is an error (inih accepts it)
+inih/suites/editorconfig/parser/comments.in # a `#` after whitespace and text starts a comment (inih keeps it)
+configparser/suites/ini4j/src/test/resources/org/ini4j/addon/dwarfs-py-bad.ini # a line with `[` but without `]` is an error (configparser reads it as a key)
+inih/suites/ini4j/src/test/resources/org/ini4j/spi/UTF-16BE.ini # UTF-16/32 without byte order mark is read as UTF-8 with NUL bytes
+configparser/suites/ini4j/src/test/resources/org/ini4j/spi/UTF-16LE.ini # UTF-16/32 without byte order mark is read as UTF-8 with NUL bytes
+inih/suites/ini4j/src/test/resources/org/ini4j/spi/UTF-32BE.ini # UTF-16/32 without byte order mark is read as UTF-8 with NUL bytes
+configparser/suites/ini4j/src/test/resources/org/ini4j/spi/UTF-32LE.ini # UTF-16/32 without byte order mark is read as UTF-8 with NUL bytes
+configparser/suites/inih/tests/bad_section.ini # a line with `[` but without `]` is an error (configparser reads it as a key)
+configparser/suites/inih/tests/name_only_after_error.ini # a line with `[` but without `]` is an error (configparser reads it as a key)
+git/suites/dulwich/captured/0036.config # git ends values at NUL bytes
+git/suites/gitoxide/captured/0013.config # a name cannot be a key and a section (git allows it)
