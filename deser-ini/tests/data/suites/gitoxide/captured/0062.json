@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "file::access::read_only::multi_line_value_outer_quotes_unescaped_inner_quotes"
+  ],
+  "git": {
+    "entries": [
+      ["alias", null, "save", "!f() {            git status;            git add -A;            git commit -m $1;            git push -f;            git log -1;          };         f;          unset f"]
+    ]
+  }
+}

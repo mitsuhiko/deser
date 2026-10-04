@@ -1,0 +1,16 @@
+{
+  "tests": [
+    "TestUnmarshalMarshal"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "repositoryformatversion", "1"],
+      ["core", null, "bare", "false"],
+      ["core", null, "filemode", "true"],
+      ["branch", "main", "remote", "origin"],
+      ["branch", "main", "merge", "refs/heads/main"],
+      ["branch", "main", "rebase", "true"],
+      ["extensions", null, "objectformat", "sha1"]
+    ]
+  }
+}

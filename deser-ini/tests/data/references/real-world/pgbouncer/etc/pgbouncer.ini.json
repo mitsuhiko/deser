@@ -1,0 +1,64 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 12, "databases"],
+        ["section", 37, "users"],
+        ["section", 42, "pgbouncer"],
+        ["value", 48, "pgbouncer", "logfile", "/var/log/pgbouncer/pgbouncer.log"],
+        ["value", 49, "pgbouncer", "pidfile", "/var/run/pgbouncer/pgbouncer.pid"],
+        ["value", 56, "pgbouncer", "listen_addr", "localhost"],
+        ["value", 57, "pgbouncer", "listen_port", "6432"],
+        ["value", 135, "pgbouncer", "auth_type", "md5"],
+        ["value", 136, "pgbouncer", "auth_file", "/etc/pgbouncer/userlist.txt"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "databases",
+        "users",
+        "pgbouncer"
+      ],
+      "entries": [
+        ["pgbouncer", "logfile", "/var/log/pgbouncer/pgbouncer.log"],
+        ["pgbouncer", "pidfile", "/var/run/pgbouncer/pgbouncer.pid"],
+        ["pgbouncer", "listen_addr", "localhost"],
+        ["pgbouncer", "listen_port", "6432"],
+        ["pgbouncer", "auth_type", "md5"],
+        ["pgbouncer", "auth_file", "/etc/pgbouncer/userlist.txt"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["databases"], []],
+        [["users"], []],
+        [["pgbouncer", "logfile"], "/var/log/pgbouncer/pgbouncer.log"],
+        [["pgbouncer", "pidfile"], "/var/run/pgbouncer/pgbouncer.pid"],
+        [["pgbouncer", "listen_addr"], "localhost"],
+        [["pgbouncer", "listen_port"], "6432"],
+        [["pgbouncer", "auth_type"], "md5"],
+        [["pgbouncer", "auth_file"], "/etc/pgbouncer/userlist.txt"]
+      ]
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

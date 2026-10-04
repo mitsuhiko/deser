@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "test-GitConfig.# after quoted values"
+  ],
+  "git": {
+    "entries": [
+      ["foo", null, "keyaaa", "valaaa"]
+    ]
+  }
+}

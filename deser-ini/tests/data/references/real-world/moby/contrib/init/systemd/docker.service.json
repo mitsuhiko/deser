@@ -1,0 +1,107 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 1, "Unit"],
+        ["value", 2, "Unit", "Description", "Docker Application Container Engine"],
+        ["value", 3, "Unit", "Documentation", "https://docs.docker.com"],
+        ["value", 4, "Unit", "After", "network-online.target nss-lookup.target docker.socket firewalld.service containerd.service time-set.target"],
+        ["value", 5, "Unit", "Wants", "network-online.target containerd.service"],
+        ["value", 6, "Unit", "Requires", "docker.socket"],
+        ["value", 7, "Unit", "StartLimitBurst", "3"],
+        ["value", 8, "Unit", "StartLimitIntervalSec", "60"],
+        ["section", 10, "Service"],
+        ["value", 11, "Service", "Type", "notify"],
+        ["value", 15, "Service", "ExecStart", "/usr/bin/dockerd -H fd:// --containerd=/run/containerd/containerd.sock"],
+        ["value", 16, "Service", "ExecReload", "/bin/kill -s HUP $MAINPID"],
+        ["value", 17, "Service", "TimeoutStartSec", "0"],
+        ["value", 18, "Service", "RestartSec", "2"],
+        ["value", 19, "Service", "Restart", "always"],
+        ["value", 23, "Service", "LimitNPROC", "infinity"],
+        ["value", 24, "Service", "LimitCORE", "infinity"],
+        ["value", 28, "Service", "TasksMax", "infinity"],
+        ["value", 31, "Service", "Delegate", "yes"],
+        ["value", 34, "Service", "KillMode", "process"],
+        ["value", 35, "Service", "OOMScoreAdjust", "-500"],
+        ["section", 37, "Install"],
+        ["value", 38, "Install", "WantedBy", "multi-user.target"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "Unit",
+        "Service",
+        "Install"
+      ],
+      "entries": [
+        ["Unit", "Description", "Docker Application Container Engine"],
+        ["Unit", "Documentation", "https://docs.docker.com"],
+        ["Unit", "After", "network-online.target nss-lookup.target docker.socket firewalld.service containerd.service time-set.target"],
+        ["Unit", "Wants", "network-online.target containerd.service"],
+        ["Unit", "Requires", "docker.socket"],
+        ["Unit", "StartLimitBurst", "3"],
+        ["Unit", "StartLimitIntervalSec", "60"],
+        ["Service", "Type", "notify"],
+        ["Service", "ExecStart", "/usr/bin/dockerd -H fd:// --containerd=/run/containerd/containerd.sock"],
+        ["Service", "ExecReload", "/bin/kill -s HUP $MAINPID"],
+        ["Service", "TimeoutStartSec", "0"],
+        ["Service", "RestartSec", "2"],
+        ["Service", "Restart", "always"],
+        ["Service", "LimitNPROC", "infinity"],
+        ["Service", "LimitCORE", "infinity"],
+        ["Service", "TasksMax", "infinity"],
+        ["Service", "Delegate", "yes"],
+        ["Service", "KillMode", "process"],
+        ["Service", "OOMScoreAdjust", "-500"],
+        ["Install", "WantedBy", "multi-user.target"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["Unit", "Description"], "Docker Application Container Engine"],
+        [["Unit", "Documentation"], "https://docs.docker.com"],
+        [["Unit", "After"], "network-online.target nss-lookup.target docker.socket firewalld.service containerd.service time-set.target"],
+        [["Unit", "Wants"], "network-online.target containerd.service"],
+        [["Unit", "Requires"], "docker.socket"],
+        [["Unit", "StartLimitBurst"], "3"],
+        [["Unit", "StartLimitIntervalSec"], "60"],
+        [["Service", "Type"], "notify"],
+        [["Service", "ExecStart"], "/usr/bin/dockerd -H fd:// --containerd=/run/containerd/containerd.sock"],
+        [["Service", "ExecReload"], "/bin/kill -s HUP $MAINPID"],
+        [["Service", "TimeoutStartSec"], "0"],
+        [["Service", "RestartSec"], "2"],
+        [["Service", "Restart"], "always"],
+        [["Service", "LimitNPROC"], "infinity"],
+        [["Service", "LimitCORE"], "infinity"],
+        [["Service", "TasksMax"], "infinity"],
+        [["Service", "Delegate"], "yes"],
+        [["Service", "KillMode"], "process"],
+        [["Service", "OOMScoreAdjust"], "-500"],
+        [["Install", "WantedBy"], "multi-user.target"]
+      ]
+    },
+    "normal": {
+      "error": {
+        "message": "syntax error, unexpected '='",
+        "line": 15
+      }
+    }
+  }
+}

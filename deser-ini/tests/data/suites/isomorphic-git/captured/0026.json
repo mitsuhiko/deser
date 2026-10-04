@@ -1,0 +1,14 @@
+{
+  "tests": [
+    "test-GitConfig.simple",
+    "test-GitConfig.simple (case insensitive)",
+    "test-GitConfig.simple (case sensitive key)"
+  ],
+  "git": {
+    "entries": [
+      ["foo", null, "keyaaa", "valfoo"],
+      ["bar", null, "keyaaa", "valbar"],
+      ["bar", null, "keybbb", "valbbb"]
+    ]
+  }
+}

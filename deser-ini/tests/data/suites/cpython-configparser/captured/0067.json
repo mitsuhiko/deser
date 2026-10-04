@@ -1,0 +1,22 @@
+{
+  "tests": [
+    "ConfigParserTestCaseNoValue.test_safe_interpolation"
+  ],
+  "parser": "ConfigParser",
+  "options": {
+    "allow_no_value": true,
+    "allow_unnamed_section": false,
+    "comment_prefixes": [";", "#"],
+    "default_section": "DEFAULT",
+    "defaults": null,
+    "delimiters": ["=", ":"],
+    "empty_lines_in_values": true,
+    "inline_comment_prefixes": [";", "#"],
+    "strict": false
+  },
+  "result": {
+    "sections": [
+      ["section", [["option1", "xxx"], ["option2", "%(option1)s/xxx"], ["ok", "%(option1)s/%%s"], ["not_ok", "%(option2)s/%%s"]]]
+    ]
+  }
+}

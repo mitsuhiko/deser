@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "TestUnmarshalPackReverseIndex"
+  ],
+  "git": {
+    "entries": [
+      ["pack", null, "readreverseindex", "false"],
+      ["pack", null, "writereverseindex", "false"]
+    ]
+  }
+}

@@ -1,0 +1,103 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 1, "common"],
+        ["value", 2, "common", "favourite Beatle", "Paul"],
+        ["value", 3, "common", "favourite color", "green"],
+        ["section", 5, "tom"],
+        ["value", 6, "tom", "favourite band", "${favourite color} day"],
+        ["value", 7, "tom", "favourite pope", "John ${favourite Beatle} II"],
+        ["value", 8, "tom", "sequel", "${favourite pope}I"],
+        ["section", 10, "ambv"],
+        ["value", 11, "ambv", "favourite Beatle", "George"],
+        ["value", 12, "ambv", "son of Edward VII", "${favourite Beatle} V"],
+        ["value", 13, "ambv", "son of George V", "${son of Edward VII}I"],
+        ["section", 15, "stanley"],
+        ["value", 16, "stanley", "favourite Beatle", "${ambv:favourite Beatle}"],
+        ["value", 17, "stanley", "favourite pope", "${tom:favourite pope}"],
+        ["value", 18, "stanley", "favourite color", "black"],
+        ["value", 19, "stanley", "favourite state of mind", "paranoid"],
+        ["value", 20, "stanley", "favourite movie", "soylent ${common:favourite color}"],
+        ["value", 21, "stanley", "favourite song", "${favourite color} sabbath - ${favourite state of mind}"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "common",
+        "tom",
+        "ambv",
+        "stanley"
+      ],
+      "entries": [
+        ["common", "favourite Beatle", "Paul"],
+        ["common", "favourite color", "green"],
+        ["tom", "favourite band", "${favourite color} day"],
+        ["tom", "favourite pope", "John ${favourite Beatle} II"],
+        ["tom", "sequel", "${favourite pope}I"],
+        ["ambv", "favourite Beatle", "George"],
+        ["ambv", "son of Edward VII", "${favourite Beatle} V"],
+        ["ambv", "son of George V", "${son of Edward VII}I"],
+        ["stanley", "favourite Beatle", "${ambv:favourite Beatle}"],
+        ["stanley", "favourite pope", "${tom:favourite pope}"],
+        ["stanley", "favourite color", "black"],
+        ["stanley", "favourite state of mind", "paranoid"],
+        ["stanley", "favourite movie", "soylent ${common:favourite color}"],
+        ["stanley", "favourite song", "${favourite color} sabbath - ${favourite state of mind}"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["common", "favourite Beatle"], "Paul"],
+        [["common", "favourite color"], "green"],
+        [["tom", "favourite band"], "${favourite color} day"],
+        [["tom", "favourite pope"], "John ${favourite Beatle} II"],
+        [["tom", "sequel"], "${favourite pope}I"],
+        [["ambv", "favourite Beatle"], "George"],
+        [["ambv", "son of Edward VII"], "${favourite Beatle} V"],
+        [["ambv", "son of George V"], "${son of Edward VII}I"],
+        [["stanley", "favourite Beatle"], "${ambv:favourite Beatle}"],
+        [["stanley", "favourite pope"], "${tom:favourite pope}"],
+        [["stanley", "favourite color"], "black"],
+        [["stanley", "favourite state of mind"], "paranoid"],
+        [["stanley", "favourite movie"], "soylent ${common:favourite color}"],
+        [["stanley", "favourite song"], "${favourite color} sabbath - ${favourite state of mind}"]
+      ]
+    },
+    "normal": {
+      "entries": [
+        [["common", "favourite Beatle"], "Paul"],
+        [["common", "favourite color"], "green"],
+        [["tom", "favourite band"], " day"],
+        [["tom", "favourite pope"], "John  II"],
+        [["tom", "sequel"], "I"],
+        [["ambv", "favourite Beatle"], "George"],
+        [["ambv", "son of Edward VII"], " V"],
+        [["ambv", "son of George V"], "I"],
+        [["stanley", "favourite Beatle"], ""],
+        [["stanley", "favourite pope"], ""],
+        [["stanley", "favourite color"], "black"],
+        [["stanley", "favourite state of mind"], "paranoid"],
+        [["stanley", "favourite movie"], "soylent "],
+        [["stanley", "favourite song"], " sabbath - "]
+      ]
+    }
+  }
+}

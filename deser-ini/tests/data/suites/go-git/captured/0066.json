@@ -1,0 +1,13 @@
+{
+  "tests": [
+    "(*URLSuite).TestApplyInsteadOfDuplicateInsteadOfValues"
+  ],
+  "git": {
+    "entries": [
+      ["url", "ssh://git@github.com/", "insteadof", "https://github.com/"],
+      ["url", "git@github.com:", "insteadof", "https://github.com/"],
+      ["remote", "origin", "url", "https://github.com/user/repo.git"],
+      ["remote", "origin", "fetch", "+refs/heads/*:refs/remotes/origin/*"]
+    ]
+  }
+}

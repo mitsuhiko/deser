@@ -1,0 +1,6 @@
+{
+  "tests": [
+    "test-GitConfig.section is only alphanum _ and . (get)"
+  ],
+  "git": {"error": {"message": "bad config line 1 in file <file>", "line": 1}}
+}

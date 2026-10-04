@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "file::access::raw::raw_value::last_one_wins_respected_across_section"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "a", "b"],
+      ["core", null, "a", "d"]
+    ]
+  }
+}

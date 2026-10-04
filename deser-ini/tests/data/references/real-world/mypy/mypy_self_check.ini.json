@@ -1,0 +1,105 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 1, "mypy"],
+        ["value", 3, "mypy", "python_version", "3.10"],
+        ["value", 4, "mypy", "exclude", "mypy/typeshed/|mypyc/test-data/|mypyc/lib-rt/"],
+        ["value", 7, "mypy", "strict", "True"],
+        ["value", 8, "mypy", "allow_redefinition_new", "True"],
+        ["value", 9, "mypy", "local_partial_types", "True"],
+        ["value", 10, "mypy", "disallow_any_unimported", "True"],
+        ["value", 11, "mypy", "warn_unreachable", "True"],
+        ["value", 12, "mypy", "enable_error_code", "ignore-without-code,redundant-expr"],
+        ["value", 13, "mypy", "enable_incomplete_feature", "PreciseTupleTypes"],
+        ["value", 16, "mypy", "always_false", "MYPYC"],
+        ["value", 17, "mypy", "plugins", "mypy.plugins.proper_plugin"],
+        ["value", 20, "mypy", "pretty", "True"],
+        ["value", 21, "mypy", "show_error_code_links", "True"],
+        ["value", 22, "mypy", "show_traceback", "True"],
+        ["value", 25, "mypy", "sqlite_cache", "True"],
+        ["value", 26, "mypy", "num_workers", "4"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "mypy"
+      ],
+      "entries": [
+        ["mypy", "python_version", "3.10"],
+        ["mypy", "exclude", "mypy/typeshed/|mypyc/test-data/|mypyc/lib-rt/"],
+        ["mypy", "strict", "True"],
+        ["mypy", "allow_redefinition_new", "True"],
+        ["mypy", "local_partial_types", "True"],
+        ["mypy", "disallow_any_unimported", "True"],
+        ["mypy", "warn_unreachable", "True"],
+        ["mypy", "enable_error_code", "ignore-without-code,redundant-expr"],
+        ["mypy", "enable_incomplete_feature", "PreciseTupleTypes"],
+        ["mypy", "always_false", "MYPYC"],
+        ["mypy", "plugins", "mypy.plugins.proper_plugin"],
+        ["mypy", "pretty", "True"],
+        ["mypy", "show_error_code_links", "True"],
+        ["mypy", "show_traceback", "True"],
+        ["mypy", "sqlite_cache", "True"],
+        ["mypy", "num_workers", "4"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["mypy", "python_version"], "3.10"],
+        [["mypy", "exclude"], "mypy/typeshed/|mypyc/test-data/|mypyc/lib-rt/"],
+        [["mypy", "strict"], "True"],
+        [["mypy", "allow_redefinition_new"], "True"],
+        [["mypy", "local_partial_types"], "True"],
+        [["mypy", "disallow_any_unimported"], "True"],
+        [["mypy", "warn_unreachable"], "True"],
+        [["mypy", "enable_error_code"], "ignore-without-code,redundant-expr"],
+        [["mypy", "enable_incomplete_feature"], "PreciseTupleTypes"],
+        [["mypy", "always_false"], "MYPYC"],
+        [["mypy", "plugins"], "mypy.plugins.proper_plugin"],
+        [["mypy", "pretty"], "True"],
+        [["mypy", "show_error_code_links"], "True"],
+        [["mypy", "show_traceback"], "True"],
+        [["mypy", "sqlite_cache"], "True"],
+        [["mypy", "num_workers"], "4"]
+      ]
+    },
+    "normal": {
+      "entries": [
+        [["mypy", "python_version"], "3.10"],
+        [["mypy", "exclude"], "0"],
+        [["mypy", "strict"], "1"],
+        [["mypy", "allow_redefinition_new"], "1"],
+        [["mypy", "local_partial_types"], "1"],
+        [["mypy", "disallow_any_unimported"], "1"],
+        [["mypy", "warn_unreachable"], "1"],
+        [["mypy", "enable_error_code"], "ignore-without-code,redundant-expr"],
+        [["mypy", "enable_incomplete_feature"], "PreciseTupleTypes"],
+        [["mypy", "always_false"], "MYPYC"],
+        [["mypy", "plugins"], "mypy.plugins.proper_plugin"],
+        [["mypy", "pretty"], "1"],
+        [["mypy", "show_error_code_links"], "1"],
+        [["mypy", "show_traceback"], "1"],
+        [["mypy", "sqlite_cache"], "1"],
+        [["mypy", "num_workers"], "4"]
+      ]
+    }
+  }
+}

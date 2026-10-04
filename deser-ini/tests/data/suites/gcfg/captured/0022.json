@@ -1,0 +1,13 @@
+{
+  "tests": [
+    "TestReadStringInto",
+    "TestReadStringIntoMultiBlankPreset"
+  ],
+  "git": {
+    "entries": [
+      ["m1", null, "multi", null],
+      ["m1", null, "multi", "value1"],
+      ["m1", null, "multi", "value2"]
+    ]
+  }
+}

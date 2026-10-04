@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "(*DecoderSuite).TestDecode"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "repositoryformatversion", "0"]
+    ]
+  }
+}

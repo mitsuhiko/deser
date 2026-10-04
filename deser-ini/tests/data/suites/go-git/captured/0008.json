@@ -1,0 +1,38 @@
+{
+  "tests": [
+    "(*ConfigSuite).TestUnmarshal"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "bare", "true"],
+      ["core", null, "worktree", "foo"],
+      ["core", null, "commentchar", "bar"],
+      ["core", null, "autocrlf", "true"],
+      ["core", null, "filemode", "false"],
+      ["core", null, "hookspath", "custom-hooks"],
+      ["user", null, "name", "John Doe"],
+      ["user", null, "email", "john@example.com"],
+      ["author", null, "name", "Jane Roe"],
+      ["author", null, "email", "jane@example.com"],
+      ["committer", null, "name", "Richard Roe"],
+      ["committer", null, "email", "richard@example.com"],
+      ["pack", null, "window", "20"],
+      ["remote", "origin", "url", "git@github.com:mcuadros/go-git.git"],
+      ["remote", "origin", "fetch", "+refs/heads/*:refs/remotes/origin/*"],
+      ["remote", "alt", "url", "git@github.com:mcuadros/go-git.git"],
+      ["remote", "alt", "url", "git@github.com:src-d/go-git.git"],
+      ["remote", "alt", "fetch", "+refs/heads/*:refs/remotes/origin/*"],
+      ["remote", "alt", "fetch", "+refs/pull/*:refs/remotes/origin/pull/*"],
+      ["remote", "insteadOf", "url", "https://github.com/kostyay/go-git.git"],
+      ["remote", "win-local", "url", "X:\\Git\\"],
+      ["submodule", "qux", "path", "qux"],
+      ["submodule", "qux", "url", "https://github.com/foo/qux.git"],
+      ["submodule", "qux", "branch", "bar"],
+      ["branch", "master", "remote", "origin"],
+      ["branch", "master", "merge", "refs/heads/master"],
+      ["branch", "master", "description", "Add support for branch description.\\n\\nEdit branch description: git branch --edit-description\\n"],
+      ["init", null, "defaultbranch", "main"],
+      ["url", "ssh://git@github.com/", "insteadof", "https://github.com/"]
+    ]
+  }
+}

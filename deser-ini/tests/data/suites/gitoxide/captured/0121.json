@@ -1,0 +1,17 @@
+{
+  "tests": [
+    "file::init::from_paths::includes::conditional::gitdir::absolute_worktree_dir_with_os_separators_does_not_match_if_trailing_slash_is_missing"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "repositoryformatversion", "0"],
+      ["core", null, "filemode", "true"],
+      ["core", null, "bare", "false"],
+      ["core", null, "logallrefupdates", "true"],
+      ["core", null, "ignorecase", "true"],
+      ["core", null, "precomposeunicode", "true"],
+      ["section", null, "value", "base-value"],
+      ["includeif", "gitdir:/tmp/.tmpXXXXXX/worktree", "path", "/tmp/.tmpXXXXXX/worktree/include.path"]
+    ]
+  }
+}

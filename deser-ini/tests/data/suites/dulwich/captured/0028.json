@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "ConfigFileTests.test_include_basic"
+  ],
+  "git": {
+    "entries": [
+      ["user", null, "name", "Main User"],
+      ["include", null, "path", "included.config"]
+    ]
+  }
+}

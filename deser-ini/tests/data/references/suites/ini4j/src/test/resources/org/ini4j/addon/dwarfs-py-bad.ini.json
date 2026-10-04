@@ -1,0 +1,47 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["value", 18, "", "age", "3"]
+      ],
+      "error_line": 17
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "error": {
+        "type": "MissingSectionHeaderError",
+        "line": 17
+      }
+    },
+    "lenient": {
+      "sections": [
+        null
+      ],
+      "entries": [
+        [null, "[bashful", null],
+        [null, "age", "3"]
+      ]
+    }
+  },
+  "php": {
+    "raw": {
+      "error": {
+        "message": "syntax error, unexpected end of file, expecting ']'",
+        "line": 17
+      }
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

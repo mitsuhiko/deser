@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "ConfigTest.testReadBoolean_TrueFalse1"
+  ],
+  "git": {
+    "entries": [
+      ["s", null, "a", "true"],
+      ["s", null, "b", "false"]
+    ]
+  }
+}

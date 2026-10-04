@@ -1,0 +1,12 @@
+{
+  "tests": [
+    "format::meaning_is_preserved"
+  ],
+  "git": {
+    "entries": [
+      ["a", null, "x", "1"],
+      ["a", null, "y", "2"],
+      ["b", null, "z", "3"]
+    ]
+  }
+}

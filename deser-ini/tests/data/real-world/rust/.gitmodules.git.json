@@ -1,0 +1,43 @@
+{
+  "git": {
+    "entries": [
+      ["submodule", "src/doc/nomicon", "path", "src/doc/nomicon"],
+      ["submodule", "src/doc/nomicon", "url", "https://github.com/rust-lang/nomicon.git"],
+      ["submodule", "src/doc/nomicon", "shallow", "true"],
+      ["submodule", "src/tools/cargo", "path", "src/tools/cargo"],
+      ["submodule", "src/tools/cargo", "url", "https://github.com/rust-lang/cargo.git"],
+      ["submodule", "src/tools/cargo", "shallow", "true"],
+      ["submodule", "src/doc/reference", "path", "src/doc/reference"],
+      ["submodule", "src/doc/reference", "url", "https://github.com/rust-lang/reference.git"],
+      ["submodule", "src/doc/reference", "shallow", "true"],
+      ["submodule", "src/doc/book", "path", "src/doc/book"],
+      ["submodule", "src/doc/book", "url", "https://github.com/rust-lang/book.git"],
+      ["submodule", "src/doc/book", "shallow", "true"],
+      ["submodule", "src/doc/rust-by-example", "path", "src/doc/rust-by-example"],
+      ["submodule", "src/doc/rust-by-example", "url", "https://github.com/rust-lang/rust-by-example.git"],
+      ["submodule", "src/doc/rust-by-example", "shallow", "true"],
+      ["submodule", "src/doc/edition-guide", "path", "src/doc/edition-guide"],
+      ["submodule", "src/doc/edition-guide", "url", "https://github.com/rust-lang/edition-guide.git"],
+      ["submodule", "src/doc/edition-guide", "shallow", "true"],
+      ["submodule", "src/llvm-project", "path", "src/llvm-project"],
+      ["submodule", "src/llvm-project", "url", "https://github.com/rust-lang/llvm-project.git"],
+      ["submodule", "src/llvm-project", "branch", "rustc/23.1-2026-07-22"],
+      ["submodule", "src/llvm-project", "shallow", "true"],
+      ["submodule", "src/doc/embedded-book", "path", "src/doc/embedded-book"],
+      ["submodule", "src/doc/embedded-book", "url", "https://github.com/rust-embedded/book.git"],
+      ["submodule", "src/doc/embedded-book", "shallow", "true"],
+      ["submodule", "library/backtrace", "path", "library/backtrace"],
+      ["submodule", "library/backtrace", "url", "https://github.com/rust-lang/backtrace-rs.git"],
+      ["submodule", "library/backtrace", "shallow", "true"],
+      ["submodule", "src/tools/rustc-perf", "path", "src/tools/rustc-perf"],
+      ["submodule", "src/tools/rustc-perf", "url", "https://github.com/rust-lang/rustc-perf.git"],
+      ["submodule", "src/tools/rustc-perf", "shallow", "true"],
+      ["submodule", "src/tools/enzyme", "path", "src/tools/enzyme"],
+      ["submodule", "src/tools/enzyme", "url", "https://github.com/rust-lang/enzyme.git"],
+      ["submodule", "src/tools/enzyme", "shallow", "true"],
+      ["submodule", "src/gcc", "path", "src/gcc"],
+      ["submodule", "src/gcc", "url", "https://github.com/rust-lang/gcc.git"],
+      ["submodule", "src/gcc", "shallow", "true"]
+    ]
+  }
+}

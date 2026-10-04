@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "ConfigTest.testGetInvalidEnum"
+  ],
+  "git": {
+    "entries": [
+      ["a", null, "b", "invalid"]
+    ]
+  }
+}

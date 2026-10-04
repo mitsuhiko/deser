@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "ConfigFileTests.test_closing_bracket_within_section_string"
+  ],
+  "git": {
+    "entries": [
+      ["branch", "foo]bar", "bar", "foo"]
+    ]
+  }
+}

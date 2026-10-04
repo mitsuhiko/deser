@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "file::access::read_only::value_names_are_case_insensitive"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "a", "true"],
+      ["core", null, "a", "false"]
+    ]
+  }
+}

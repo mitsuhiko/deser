@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "PushConfigTest.testConfig"
+  ],
+  "git": {
+    "entries": [
+      ["push", null, "default", "tracking"],
+      ["push", null, "recursesubmodules", "on-demand"]
+    ]
+  }
+}

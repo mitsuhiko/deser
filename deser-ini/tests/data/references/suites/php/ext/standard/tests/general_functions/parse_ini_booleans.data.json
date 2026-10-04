@@ -1,0 +1,133 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 1, "error_reporting values"],
+        ["value", 2, "error_reporting values", "foo", "E_ALL E_NOTICE"],
+        ["value", 3, "error_reporting values", "error_reporting", "E_ALL"],
+        ["value", 4, "error_reporting values", "error_reporting1", "E_COMPILE_ERROR|E_RECOVERABLE_ERROR\t|E_ERROR|E_CORE_ERROR"],
+        ["value", 5, "error_reporting values", "error_reporting2", "E_ALL&~E_NOTICE"],
+        ["value", 6, "error_reporting values", "error_reporting3", "E_ALL & ~E_NOTICE"],
+        ["value", 7, "error_reporting values", "error_reporting4", "E_ALL & ~E_NOTICE | E_PARSE"],
+        ["section", 9, "'true or false'"],
+        ["value", 10, "'true or false'", "bool_true", "true"],
+        ["value", 11, "'true or false'", "bool_yes", "yes"],
+        ["value", 12, "'true or false'", "bool_on", "on"],
+        ["value", 13, "'true or false'", "bool_false", "false"],
+        ["value", 14, "'true or false'", "bool_off", "Off"],
+        ["value", 15, "'true or false'", "bool_no", "No"],
+        ["value", 16, "'true or false'", "bool_none", "NoNe"],
+        ["value", 17, "'true or false'", "bool_null", "NULl"],
+        ["section", 19, "strings"],
+        ["value", 20, "strings", "string_true", "\"true\""],
+        ["value", 21, "strings", "string_yes", "\" yes\""],
+        ["value", 22, "strings", "string_on", "\"  on \""],
+        ["value", 23, "strings", "string_false", "\"false\""],
+        ["value", 24, "strings", "string_off", "\"Off \""],
+        ["value", 25, "strings", "string_no", "\"No\t \""],
+        ["value", 26, "strings", "string_none", "\" NoNe\""],
+        ["value", 27, "strings", "string_null", "\"NULl\""]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "error_reporting values",
+        "'true or false'",
+        "strings"
+      ],
+      "entries": [
+        ["error_reporting values", "foo", "E_ALL E_NOTICE"],
+        ["error_reporting values", "error_reporting", "E_ALL"],
+        ["error_reporting values", "error_reporting1", "E_COMPILE_ERROR|E_RECOVERABLE_ERROR\t|E_ERROR|E_CORE_ERROR"],
+        ["error_reporting values", "error_reporting2", "E_ALL&~E_NOTICE"],
+        ["error_reporting values", "error_reporting3", "E_ALL & ~E_NOTICE"],
+        ["error_reporting values", "error_reporting4", "E_ALL & ~E_NOTICE | E_PARSE"],
+        ["'true or false'", "bool_true", "true"],
+        ["'true or false'", "bool_yes", "yes"],
+        ["'true or false'", "bool_on", "on"],
+        ["'true or false'", "bool_false", "false"],
+        ["'true or false'", "bool_off", "Off"],
+        ["'true or false'", "bool_no", "No"],
+        ["'true or false'", "bool_none", "NoNe"],
+        ["'true or false'", "bool_null", "NULl"],
+        ["strings", "string_true", "\"true\""],
+        ["strings", "string_yes", "\" yes\""],
+        ["strings", "string_on", "\"  on \""],
+        ["strings", "string_false", "\"false\""],
+        ["strings", "string_off", "\"Off \""],
+        ["strings", "string_no", "\"No\t \""],
+        ["strings", "string_none", "\" NoNe\""],
+        ["strings", "string_null", "\"NULl\""]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["error_reporting values", "foo"], "E_ALL E_NOTICE"],
+        [["error_reporting values", "error_reporting"], "E_ALL"],
+        [["error_reporting values", "error_reporting1"], "E_COMPILE_ERROR|E_RECOVERABLE_ERROR\t|E_ERROR|E_CORE_ERROR"],
+        [["error_reporting values", "error_reporting2"], "E_ALL&~E_NOTICE"],
+        [["error_reporting values", "error_reporting3"], "E_ALL & ~E_NOTICE"],
+        [["error_reporting values", "error_reporting4"], "E_ALL & ~E_NOTICE | E_PARSE"],
+        [["'true or false'", "bool_true"], "true"],
+        [["'true or false'", "bool_yes"], "yes"],
+        [["'true or false'", "bool_on"], "on"],
+        [["'true or false'", "bool_false"], "false"],
+        [["'true or false'", "bool_off"], "Off"],
+        [["'true or false'", "bool_no"], "No"],
+        [["'true or false'", "bool_none"], "NoNe"],
+        [["'true or false'", "bool_null"], "NULl"],
+        [["strings", "string_true"], "true"],
+        [["strings", "string_yes"], " yes"],
+        [["strings", "string_on"], "  on "],
+        [["strings", "string_false"], "false"],
+        [["strings", "string_off"], "Off "],
+        [["strings", "string_no"], "No\t "],
+        [["strings", "string_none"], " NoNe"],
+        [["strings", "string_null"], "NULl"]
+      ]
+    },
+    "normal": {
+      "entries": [
+        [["error_reporting values", "foo"], "30719 8"],
+        [["error_reporting values", "error_reporting"], "30719"],
+        [["error_reporting values", "error_reporting1"], "4177"],
+        [["error_reporting values", "error_reporting2"], "30711"],
+        [["error_reporting values", "error_reporting3"], "30711"],
+        [["error_reporting values", "error_reporting4"], "30711"],
+        [["true or false", "bool_true"], "1"],
+        [["true or false", "bool_yes"], "1"],
+        [["true or false", "bool_on"], "1"],
+        [["true or false", "bool_false"], ""],
+        [["true or false", "bool_off"], ""],
+        [["true or false", "bool_no"], ""],
+        [["true or false", "bool_none"], ""],
+        [["true or false", "bool_null"], ""],
+        [["strings", "string_true"], "true"],
+        [["strings", "string_yes"], " yes"],
+        [["strings", "string_on"], "  on "],
+        [["strings", "string_false"], "false"],
+        [["strings", "string_off"], "Off "],
+        [["strings", "string_no"], "No\t "],
+        [["strings", "string_none"], " NoNe"],
+        [["strings", "string_null"], "NULl"]
+      ]
+    }
+  }
+}

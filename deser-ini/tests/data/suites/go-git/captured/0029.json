@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "(*DecoderSuite).TestDecode"
+  ],
+  "git": {
+    "entries": [
+      ["sect1", null, "opt1", "value1"],
+      ["sect1", null, "opt1", "value2"]
+    ]
+  }
+}

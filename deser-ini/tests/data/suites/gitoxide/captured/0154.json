@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "file::init::from_paths::includes::conditional::hasconfig::globs"
+  ],
+  "git": {
+    "entries": [
+      ["user", null, "dss", "yes"]
+    ]
+  }
+}

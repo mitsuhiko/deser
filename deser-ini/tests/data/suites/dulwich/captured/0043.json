@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "ConfigFileTests.test_single_backslash_at_line_end_shows_proper_escaping_needed"
+  ],
+  "git": {
+    "entries": [
+      ["remote", "origin", "url", "C:/Users/test\\"],
+      ["remote", "origin", "fetch", "+refs/heads/*:refs/remotes/origin/*"]
+    ]
+  }
+}

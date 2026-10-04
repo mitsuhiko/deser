@@ -1,0 +1,14 @@
+{
+  "tests": [
+    "BranchConfigTest.getRemoteTrackingBranchShouldHandleOtherMapping"
+  ],
+  "git": {
+    "entries": [
+      ["remote", "test", "fetch", "+refs/foo/*:refs/remotes/origin/foo/*"],
+      ["remote", "test", "fetch", "+refs/heads/*:refs/remotes/origin/*"],
+      ["remote", "test", "fetch", "+refs/other/*:refs/remotes/origin/other/*"],
+      ["branch", "master", "remote", "test"],
+      ["branch", "master", "merge", "refs/foo/master"]
+    ]
+  }
+}

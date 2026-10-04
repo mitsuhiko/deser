@@ -1,0 +1,8 @@
+{
+  "tests": [
+    "parse::from_bytes::tests::config::comments_do_not_consume_the_carriage_return_of_crlf"
+  ],
+  "git": {
+    "entries": []
+  }
+}

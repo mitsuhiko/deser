@@ -1,0 +1,13 @@
+{
+  "tests": [
+    "ConfigTest.testGetEnum"
+  ],
+  "git": {
+    "entries": [
+      ["s", null, "a", "ON"],
+      ["s", null, "b", "input"],
+      ["s", null, "c", "true"],
+      ["s", null, "d", "off"]
+    ]
+  }
+}

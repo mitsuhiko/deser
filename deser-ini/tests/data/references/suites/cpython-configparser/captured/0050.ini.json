@@ -1,0 +1,79 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 1, "Long Line"],
+        ["value", 2, "Long Line", "foo", "this line is much, much longer than my editor"],
+        ["value", 3, "Long Line", "foo", "likes it."],
+        ["section", 4, "common"],
+        ["value", 5, "common", "foo", "another very"],
+        ["value", 6, "common", "foo", "long line"],
+        ["section", 7, "Long Line - With Comments!"],
+        ["value", 8, "Long Line - With Comments!", "test", "we"],
+        ["value", 9, "Long Line - With Comments!", "test", "also"],
+        ["value", 10, "Long Line - With Comments!", "test", "comments"],
+        ["value", 11, "Long Line - With Comments!", "test", "multiline"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "events": [
+        ["section", 1, "Long Line"],
+        ["value", 2, "Long Line", "foo", "this line is much, much longer than my editor"],
+        ["section", 4, "common"],
+        ["value", 5, "common", "foo", "another very"],
+        ["section", 7, "Long Line - With Comments!"],
+        ["value", 8, "Long Line - With Comments!", "test", "we"]
+      ],
+      "error_line": 3
+    },
+    "no_inline_comments": {
+      "events": [
+        ["section", 1, "Long Line"],
+        ["value", 2, "Long Line", "foo", "this line is much, much longer than my editor"],
+        ["value", 3, "Long Line", "foo", "likes it."],
+        ["section", 4, "common"],
+        ["value", 5, "common", "foo", "another very"],
+        ["value", 6, "common", "foo", "long line"],
+        ["section", 7, "Long Line - With Comments!"],
+        ["value", 8, "Long Line - With Comments!", "test", "we        ; can"],
+        ["value", 9, "Long Line - With Comments!", "test", "also      ; place"],
+        ["value", 10, "Long Line - With Comments!", "test", "comments  ; in"],
+        ["value", 11, "Long Line - With Comments!", "test", "multiline ; values"]
+      ],
+      "error_line": null
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "Long Line",
+        "common",
+        "Long Line - With Comments!"
+      ],
+      "entries": [
+        ["Long Line", "foo", "this line is much, much longer than my editor\nlikes it."],
+        ["common", "foo", "another very\nlong line"],
+        ["Long Line - With Comments!", "test", "we        ; can\nalso      ; place\ncomments  ; in\nmultiline ; values"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["Long Line", "foo"], "this line is much, much longer than my editor"],
+        [["common"], []],
+        [["Long Line - With Comments!"], []]
+      ]
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "tests": [
+    "ConfigFileTests.test_empty_line_before_section"
+  ],
+  "git": {
+    "entries": []
+  }
+}

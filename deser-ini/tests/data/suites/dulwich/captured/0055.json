@@ -1,0 +1,12 @@
+{
+  "tests": [
+    "ConfigFileTests.test_windows_path_with_trailing_backslash_unquoted"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "repositoryformatversion", "0"],
+      ["remote", "origin", "url", "C:/Users/test\\"],
+      ["remote", "origin", "fetch", "+refs/heads/*:refs/remotes/origin/*"]
+    ]
+  }
+}

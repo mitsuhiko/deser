@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "ConfigTest.testCrLf"
+  ],
+  "git": {
+    "entries": [
+      ["foo", null, "bar", "true"]
+    ]
+  }
+}

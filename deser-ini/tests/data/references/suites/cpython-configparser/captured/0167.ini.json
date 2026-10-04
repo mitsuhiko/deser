@@ -1,0 +1,40 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 1, "badbad"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "badbad][badbad"
+      ],
+      "entries": []
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["badbad"], []]
+      ]
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

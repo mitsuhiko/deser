@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "file::access::read_only::typed_lookup_errors_can_be_erased"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "value", "invalid"]
+    ]
+  }
+}

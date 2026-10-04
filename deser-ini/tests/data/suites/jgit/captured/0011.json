@@ -1,0 +1,13 @@
+{
+  "tests": [
+    "CommitConfigTest.testCommentCharDefault",
+    "CommitConfigTest.testDefaults",
+    "GpgConfigTest.isSignCommits_defaultIsFalse",
+    "GpgConfigTest.testGetKeyFormat_defaultsToOpenpgp",
+    "GpgConfigTest.testGetSigningKey_defaultToNull",
+    "PushConfigTest.testEmptyConfig"
+  ],
+  "git": {
+    "entries": []
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "format::forced_newlines_apply_inside_continued_values"
+  ],
+  "git": {
+    "entries": [
+      ["alias", null, "save", "one  two"]
+    ]
+  }
+}

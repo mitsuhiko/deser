@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "ConfigTest.testEscapeLeadingSpace"
+  ],
+  "git": {
+    "entries": [
+      ["foo", null, "bar", " x"]
+    ]
+  }
+}

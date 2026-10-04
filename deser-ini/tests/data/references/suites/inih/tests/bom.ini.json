@@ -1,0 +1,46 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 1, "bom_section"],
+        ["value", 2, "bom_section", "bom_name", "bom_value"],
+        ["value", 3, "bom_section", "key“", "value“"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "bom_section"
+      ],
+      "entries": [
+        ["bom_section", "bom_name", "bom_value"],
+        ["bom_section", "key“", "value“"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["bom_section", "bom_name"], "bom_value"],
+        [["bom_section", "key“"], "value“"]
+      ]
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

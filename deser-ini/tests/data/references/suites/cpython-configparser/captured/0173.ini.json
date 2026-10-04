@@ -1,0 +1,58 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["value", 2, "", "a", "1"],
+        ["value", 3, "", "a", "b = 2"],
+        ["value", 4, "", "a", "[sect1]"],
+        ["value", 5, "", "a", "c = 3"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "events": [
+        ["value", 2, "", "a", "1"],
+        ["value", 3, "", "b", "2"],
+        ["section", 4, "sect1"],
+        ["value", 5, "sect1", "c", "3"]
+      ],
+      "error_line": null
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "error": {
+        "type": "MissingSectionHeaderError",
+        "line": 2
+      }
+    },
+    "lenient": {
+      "sections": [
+        null,
+        "sect1"
+      ],
+      "entries": [
+        [null, "a", "1"],
+        [null, "b", "2"],
+        ["sect1", "c", "3"]
+      ]
+    }
+  },
+  "php": {
+    "raw": {
+      "error": {
+        "message": "syntax error, unexpected END_OF_LINE, expecting '='",
+        "line": 5
+      }
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

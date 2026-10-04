@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "file::init::from_paths::includes::conditional::gitdir::dot_dot_slash_prefixes_are_not_special_and_are_not_what_you_want"
+  ],
+  "git": {
+    "entries": [
+      ["includeif", "gitdir:../", "path", "/tmp/.tmpXXXXXX/worktree/include.path"]
+    ]
+  }
+}

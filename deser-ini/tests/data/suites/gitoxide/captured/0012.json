@@ -1,0 +1,13 @@
+{
+  "tests": [
+    "file::access::raw::raw_multi_value::non_relevant_subsection_is_ignored"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "a", "b"],
+      ["core", null, "a", "c"],
+      ["core", null, "a", "d"],
+      ["core", null, "g", "g"]
+    ]
+  }
+}

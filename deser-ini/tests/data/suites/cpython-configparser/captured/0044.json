@@ -1,0 +1,25 @@
+{
+  "tests": [
+    "ConfigParserTestCaseExtendedInterpolation.test_popitem"
+  ],
+  "parser": "ConfigParser",
+  "options": {
+    "allow_no_value": false,
+    "allow_unnamed_section": false,
+    "comment_prefixes": [";", "#"],
+    "default_section": "common",
+    "defaults": {"default": "<default>"},
+    "delimiters": ["=", ":"],
+    "empty_lines_in_values": true,
+    "inline_comment_prefixes": [";", "#"],
+    "strict": true
+  },
+  "result": {
+    "sections": [
+      ["common", [["default", "<default>"]]],
+      ["section1", [["name1", "value1"]]],
+      ["section2", [["name2", "value2"]]],
+      ["section3", [["name3", "value3"]]]
+    ]
+  }
+}

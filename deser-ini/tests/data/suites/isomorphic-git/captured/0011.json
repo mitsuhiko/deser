@@ -1,0 +1,12 @@
+{
+  "tests": [
+    "test-GitConfig.ignore quoted # or ;"
+  ],
+  "git": {
+    "entries": [
+      ["foo", null, "keyaaa", "valaaa  #commentaaa"],
+      ["foo", null, "keybbb", "valbbb  ;commentbbb"],
+      ["foo", null, "keyccc", "valccc"]
+    ]
+  }
+}

@@ -1,0 +1,101 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 1, "Foo"],
+        ["value", 2, "Foo", "bar", "something %(with1)s interpolation (1 step)"],
+        ["value", 3, "Foo", "bar9", "something %(with9)s lots of interpolation (9 steps)"],
+        ["value", 4, "Foo", "bar10", "something %(with10)s lots of interpolation (10 steps)"],
+        ["value", 5, "Foo", "bar11", "something %(with11)s lots of interpolation (11 steps)"],
+        ["value", 6, "Foo", "with11", "%(with10)s"],
+        ["value", 7, "Foo", "with10", "%(with9)s"],
+        ["value", 8, "Foo", "with9", "%(with8)s"],
+        ["value", 9, "Foo", "with8", "%(With7)s"],
+        ["value", 10, "Foo", "with7", "%(WITH6)s"],
+        ["value", 11, "Foo", "with6", "%(with5)s"],
+        ["value", 12, "Foo", "With5", "%(with4)s"],
+        ["value", 13, "Foo", "WITH4", "%(with3)s"],
+        ["value", 14, "Foo", "with3", "%(with2)s"],
+        ["value", 15, "Foo", "with2", "%(with1)s"],
+        ["value", 16, "Foo", "with1", "with"],
+        ["section", 18, "Mutual Recursion"],
+        ["value", 19, "Mutual Recursion", "foo", "%(bar)s"],
+        ["value", 20, "Mutual Recursion", "bar", "%(foo)s"],
+        ["section", 22, "Interpolation Error"],
+        ["value", 23, "Interpolation Error", "name", "%(reference)s"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "Foo",
+        "Mutual Recursion",
+        "Interpolation Error"
+      ],
+      "entries": [
+        ["Foo", "bar", "something %(with1)s interpolation (1 step)"],
+        ["Foo", "bar9", "something %(with9)s lots of interpolation (9 steps)"],
+        ["Foo", "bar10", "something %(with10)s lots of interpolation (10 steps)"],
+        ["Foo", "bar11", "something %(with11)s lots of interpolation (11 steps)"],
+        ["Foo", "with11", "%(with10)s"],
+        ["Foo", "with10", "%(with9)s"],
+        ["Foo", "with9", "%(with8)s"],
+        ["Foo", "with8", "%(With7)s"],
+        ["Foo", "with7", "%(WITH6)s"],
+        ["Foo", "with6", "%(with5)s"],
+        ["Foo", "With5", "%(with4)s"],
+        ["Foo", "WITH4", "%(with3)s"],
+        ["Foo", "with3", "%(with2)s"],
+        ["Foo", "with2", "%(with1)s"],
+        ["Foo", "with1", "with"],
+        ["Mutual Recursion", "foo", "%(bar)s"],
+        ["Mutual Recursion", "bar", "%(foo)s"],
+        ["Interpolation Error", "name", "%(reference)s"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["Foo", "bar"], "something %(with1)s interpolation (1 step)"],
+        [["Foo", "bar9"], "something %(with9)s lots of interpolation (9 steps)"],
+        [["Foo", "bar10"], "something %(with10)s lots of interpolation (10 steps)"],
+        [["Foo", "bar11"], "something %(with11)s lots of interpolation (11 steps)"],
+        [["Foo", "with11"], "%(with10)s"],
+        [["Foo", "with10"], "%(with9)s"],
+        [["Foo", "with9"], "%(with8)s"],
+        [["Foo", "with8"], "%(With7)s"],
+        [["Foo", "with7"], "%(WITH6)s"],
+        [["Foo", "with6"], "%(with5)s"],
+        [["Foo", "With5"], "%(with4)s"],
+        [["Foo", "WITH4"], "%(with3)s"],
+        [["Foo", "with3"], "%(with2)s"],
+        [["Foo", "with2"], "%(with1)s"],
+        [["Foo", "with1"], "with"],
+        [["Mutual Recursion", "foo"], "%(bar)s"],
+        [["Mutual Recursion", "bar"], "%(foo)s"],
+        [["Interpolation Error", "name"], "%(reference)s"]
+      ]
+    },
+    "normal": {
+      "error": {
+        "message": "syntax error, unexpected '('",
+        "line": 2
+      }
+    }
+  }
+}

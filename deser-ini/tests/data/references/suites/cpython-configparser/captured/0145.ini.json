@@ -1,0 +1,120 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 1, "Foo Bar"],
+        ["value", 2, "Foo Bar", "foo", "=bar1"],
+        ["section", 3, "Spacey Bar"],
+        ["value", 4, "Spacey Bar", "foo", "= bar2"],
+        ["section", 5, "Spacey Bar From The Beginning"],
+        ["value", 6, "Spacey Bar From The Beginning", "foo", "= bar3"],
+        ["value", 7, "Spacey Bar From The Beginning", "foo", "baz := qwe"],
+        ["section", 8, "Commented Bar"],
+        ["value", 10, "Commented Bar", "baz", "=qwe //another one"],
+        ["section", 11, "Long Line"],
+        ["section", 14, "Section\\with$weird%characters[\t"],
+        ["section", 15, "Internationalized Stuff"],
+        ["value", 17, "Internationalized Stuff", "foo", "=Default"],
+        ["value", 18, "Internationalized Stuff", "foo[en]", "=English"],
+        ["value", 19, "Internationalized Stuff", "foo[de]", "=Deutsch"],
+        ["section", 20, "Spaces"],
+        ["value", 22, "Spaces", "another with spaces", "= splat!"],
+        ["section", 23, "Types"],
+        ["value", 25, "Types", "float", "= 0.44"],
+        ["value", 26, "Types", "boolean", "= NO"],
+        ["section", 28, "This One Has A "],
+        ["value", 29, "This One Has A ", "forks", "= spoons"]
+      ],
+      "error_line": 9
+    },
+    "no_multiline": {
+      "events": [
+        ["section", 1, "Foo Bar"],
+        ["value", 2, "Foo Bar", "foo", "=bar1"],
+        ["section", 3, "Spacey Bar"],
+        ["value", 4, "Spacey Bar", "foo", "= bar2"],
+        ["section", 5, "Spacey Bar From The Beginning"],
+        ["value", 6, "Spacey Bar From The Beginning", "foo", "= bar3"],
+        ["value", 7, "Spacey Bar From The Beginning", "baz", "= qwe"],
+        ["section", 8, "Commented Bar"],
+        ["value", 10, "Commented Bar", "baz", "=qwe //another one"],
+        ["section", 11, "Long Line"],
+        ["section", 14, "Section\\with$weird%characters[\t"],
+        ["section", 15, "Internationalized Stuff"],
+        ["value", 17, "Internationalized Stuff", "foo", "=Default"],
+        ["value", 18, "Internationalized Stuff", "foo[en]", "=English"],
+        ["value", 19, "Internationalized Stuff", "foo[de]", "=Deutsch"],
+        ["section", 20, "Spaces"],
+        ["value", 22, "Spaces", "another with spaces", "= splat!"],
+        ["section", 23, "Types"],
+        ["value", 25, "Types", "float", "= 0.44"],
+        ["value", 26, "Types", "boolean", "= NO"],
+        ["section", 28, "This One Has A "],
+        ["value", 29, "This One Has A ", "forks", "= spoons"]
+      ],
+      "error_line": 9
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "events": [
+        ["section", 1, "Foo Bar"],
+        ["value", 2, "Foo Bar", "foo", "=bar1"],
+        ["section", 3, "Spacey Bar"],
+        ["value", 4, "Spacey Bar", "foo", "= bar2"],
+        ["section", 5, "Spacey Bar From The Beginning"],
+        ["value", 6, "Spacey Bar From The Beginning", "foo", "= bar3"],
+        ["value", 7, "Spacey Bar From The Beginning", "foo", "baz := qwe"],
+        ["section", 8, "Commented Bar"],
+        ["value", 9, "Commented Bar", "foo$ bar4 \" comment", null],
+        ["value", 10, "Commented Bar", "baz", "=qwe //another one"],
+        ["section", 11, "Long Line"],
+        ["value", 12, "Long Line", "foo$ this line is much, much longer than my editor", null],
+        ["value", 13, "Long Line", "likes it.", null],
+        ["section", 14, "Section\\with$weird%characters[\t"],
+        ["section", 15, "Internationalized Stuff"],
+        ["value", 16, "Internationalized Stuff", "foo[bg]$ Bulgarian", null],
+        ["value", 17, "Internationalized Stuff", "foo", "=Default"],
+        ["value", 18, "Internationalized Stuff", "foo[en]", "=English"],
+        ["value", 19, "Internationalized Stuff", "foo[de]", "=Deutsch"],
+        ["section", 20, "Spaces"],
+        ["value", 21, "Spaces", "key with spaces $ value", null],
+        ["value", 22, "Spaces", "another with spaces", "= splat!"],
+        ["section", 23, "Types"],
+        ["value", 24, "Types", "int $ 42", null],
+        ["value", 25, "Types", "float", "= 0.44"],
+        ["value", 26, "Types", "boolean", "= NO"],
+        ["value", 27, "Types", "123 $ strange but acceptable", null],
+        ["section", 28, "This One Has A "],
+        ["value", 29, "This One Has A ", "forks", "= spoons"]
+      ],
+      "error_line": null
+    }
+  },
+  "configparser": {
+    "default": {
+      "error": {
+        "type": "ParsingError",
+        "line": 9
+      }
+    },
+    "lenient": {
+      "error": {
+        "type": "MultilineContinuationError",
+        "line": 13
+      }
+    }
+  },
+  "php": {
+    "raw": {
+      "error": {
+        "message": "syntax error, unexpected '$'",
+        "line": 9
+      }
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "ConfigTest.testParseLiteralBackspace"
+  ],
+  "git": {
+    "entries": [
+      ["foo", null, "bar", "x\by"]
+    ]
+  }
+}

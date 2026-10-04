@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "GpgConfigTest.testGetKeyFormat_failsForInvalidValue"
+  ],
+  "git": {
+    "entries": [
+      ["gpg", null, "format", "invalid"]
+    ]
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "TestGPGConfig"
+  ],
+  "git": {
+    "entries": [
+      ["commit", null, "gpgsign", "true"],
+      ["tag", null, "gpgsign", "true"]
+    ]
+  }
+}

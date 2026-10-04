@@ -1,0 +1,17 @@
+{
+  "tests": [
+    "file::init::from_paths::includes::conditional::hasconfig::simple"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "repositoryformatversion", "0"],
+      ["core", null, "filemode", "true"],
+      ["core", null, "bare", "true"],
+      ["core", null, "ignorecase", "true"],
+      ["core", null, "precomposeunicode", "true"],
+      ["includeif", "hasconfig:remote.*.url:foourl", "path", "include-this"],
+      ["includeif", "hasconfig:remote.*.url:barurl", "path", "dont-include-that"],
+      ["remote", "foo", "url", "foourl"]
+    ]
+  }
+}

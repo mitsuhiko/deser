@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "ConfigFileTests.test_comment_character_within_value_string"
+  ],
+  "git": {
+    "entries": [
+      ["section", null, "bar", "foo#bar"]
+    ]
+  }
+}

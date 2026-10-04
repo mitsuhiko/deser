@@ -1,0 +1,12 @@
+{
+  "tests": [
+    "file::access::raw::raw_value::global_property_uses_empty_section_name",
+    "file::access::raw::set_existing_raw_value::global_property_uses_empty_section_name"
+  ],
+  "git": {
+    "entries": [
+      [null, null, "a", "b"],
+      ["core", null, "a", "c"]
+    ]
+  }
+}

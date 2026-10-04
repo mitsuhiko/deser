@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "format::default_policy_is_git_compatible"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "editor", "vim"],
+      ["user", null, "name", "A"]
+    ]
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "tests": [
+    "file::impls::can_reconstruct_configs_without_whitespace_in_middle"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "autocrlf", "input"],
+      ["push", null, "default", "simple"],
+      ["commit", null, "gpgsign", "true"],
+      ["pull", null, "ff", "only"],
+      ["init", null, "defaultbranch", "master"]
+    ]
+  }
+}

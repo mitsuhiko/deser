@@ -1,0 +1,175 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 24, "dwarfs/bashful"],
+        ["value", 25, "dwarfs/bashful", "weight", "45.7"],
+        ["value", 26, "dwarfs/bashful", "height", "98.8"],
+        ["value", 27, "dwarfs/bashful", "age", "67"],
+        ["value", 28, "dwarfs/bashful", "homePage", "http://snowwhite.tale/~bashful"],
+        ["value", 29, "dwarfs/bashful", "homeDir", "/home/bashful"],
+        ["section", 32, "dwarfs/doc"],
+        ["value", 33, "dwarfs/doc", "weight", "49.5"],
+        ["value", 34, "dwarfs/doc", "height", "87.7"],
+        ["value", 35, "dwarfs/doc", "age", "63"],
+        ["value", 36, "dwarfs/doc", "homePage", "http://doc.dwarfs"],
+        ["value", 37, "dwarfs/doc", "homeDir", "c:\\Documents and Settings\\doc"],
+        ["section", 40, "dwarfs/dopey"],
+        ["value", 41, "dwarfs/dopey", "weight", "${dwarfs/bashful/weight}"],
+        ["value", 42, "dwarfs/dopey", "height", "${dwarfs/doc/height}"],
+        ["value", 43, "dwarfs/dopey", "age", "23"],
+        ["value", 44, "dwarfs/dopey", "homePage", "http://dopey.snowwhite.tale/"],
+        ["value", 45, "dwarfs/dopey", "homeDir", "c:\\\\Documents and Settings\\\\dopey"],
+        ["value", 46, "dwarfs/dopey", "fortuneNumber", "11"],
+        ["value", 47, "dwarfs/dopey", "fortuneNumber", "33"],
+        ["value", 48, "dwarfs/dopey", "fortuneNumber", "55"],
+        ["section", 51, "dwarfs/grumpy"],
+        ["value", 52, "dwarfs/grumpy", "weight", "65.3"],
+        ["value", 53, "dwarfs/grumpy", "height", "${dwarfs/dopey/height}"],
+        ["value", 54, "dwarfs/grumpy", "age", "76"],
+        ["value", 55, "dwarfs/grumpy", "homePage", "http://snowwhite.tale/~grumpy/"],
+        ["value", 56, "dwarfs/grumpy", "homeDir", "/home/grumpy"],
+        ["section", 59, "dwarfs/happy"],
+        ["value", 60, "dwarfs/happy", "weight", "56.4"],
+        ["value", 61, "dwarfs/happy", "height", "77.66"],
+        ["value", 62, "dwarfs/happy", "age", "99"],
+        ["value", 63, "dwarfs/happy", "homePage", "dummy"],
+        ["value", 64, "dwarfs/happy", "homeDir", "/home/happy"],
+        ["section", 67, "dwarfs/sleepy"],
+        ["value", 68, "dwarfs/sleepy", "weight", "76.11"],
+        ["value", 69, "dwarfs/sleepy", "height", "${dwarfs/doc/height}8"],
+        ["value", 70, "dwarfs/sleepy", "age", "121"],
+        ["value", 71, "dwarfs/sleepy", "homePage", "http://snowwhite.tale/~sleepy"],
+        ["value", 72, "dwarfs/sleepy", "homeDir", "/home/sleepy"],
+        ["value", 73, "dwarfs/sleepy", "fortuneNumber", "99"],
+        ["section", 76, "dwarfs/sneezy"],
+        ["value", 77, "dwarfs/sneezy", "weight", "69.7"],
+        ["value", 78, "dwarfs/sneezy", "height", "76.88"],
+        ["value", 79, "dwarfs/sneezy", "age", "64"],
+        ["value", 80, "dwarfs/sneezy", "homePage", "${dwarfs/happy/homePage}/~sneezy"],
+        ["value", 81, "dwarfs/sneezy", "homeDir", "/home/sneezy"],
+        ["value", 82, "dwarfs/sneezy", "fortuneNumber", "11"],
+        ["value", 83, "dwarfs/sneezy", "fortuneNumber", "22"],
+        ["value", 84, "dwarfs/sneezy", "fortuneNumber", "33"],
+        ["value", 85, "dwarfs/sneezy", "fortuneNumber", "44"],
+        ["section", 88, "dwarfs/happy"],
+        ["value", 89, "dwarfs/happy", "homePage", "http://happy.smurf"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "error": {
+        "type": "DuplicateOptionError",
+        "line": 47
+      }
+    },
+    "lenient": {
+      "sections": [
+        "dwarfs/bashful",
+        "dwarfs/doc",
+        "dwarfs/dopey",
+        "dwarfs/grumpy",
+        "dwarfs/happy",
+        "dwarfs/sleepy",
+        "dwarfs/sneezy"
+      ],
+      "entries": [
+        ["dwarfs/bashful", "weight", "45.7"],
+        ["dwarfs/bashful", "height", "98.8"],
+        ["dwarfs/bashful", "age", "67"],
+        ["dwarfs/bashful", "homePage", "http://snowwhite.tale/~bashful"],
+        ["dwarfs/bashful", "homeDir", "/home/bashful"],
+        ["dwarfs/doc", "weight", "49.5"],
+        ["dwarfs/doc", "height", "87.7"],
+        ["dwarfs/doc", "age", "63"],
+        ["dwarfs/doc", "homePage", "http://doc.dwarfs"],
+        ["dwarfs/doc", "homeDir", "c:\\Documents and Settings\\doc"],
+        ["dwarfs/dopey", "weight", "${dwarfs/bashful/weight}"],
+        ["dwarfs/dopey", "height", "${dwarfs/doc/height}"],
+        ["dwarfs/dopey", "age", "23"],
+        ["dwarfs/dopey", "homePage", "http://dopey.snowwhite.tale/"],
+        ["dwarfs/dopey", "homeDir", "c:\\\\Documents and Settings\\\\dopey"],
+        ["dwarfs/dopey", "fortuneNumber", "55"],
+        ["dwarfs/grumpy", "weight", "65.3"],
+        ["dwarfs/grumpy", "height", "${dwarfs/dopey/height}"],
+        ["dwarfs/grumpy", "age", "76"],
+        ["dwarfs/grumpy", "homePage", "http://snowwhite.tale/~grumpy/"],
+        ["dwarfs/grumpy", "homeDir", "/home/grumpy"],
+        ["dwarfs/happy", "weight", "56.4"],
+        ["dwarfs/happy", "height", "77.66"],
+        ["dwarfs/happy", "age", "99"],
+        ["dwarfs/happy", "homePage", "http://happy.smurf"],
+        ["dwarfs/happy", "homeDir", "/home/happy"],
+        ["dwarfs/sleepy", "weight", "76.11"],
+        ["dwarfs/sleepy", "height", "${dwarfs/doc/height}8"],
+        ["dwarfs/sleepy", "age", "121"],
+        ["dwarfs/sleepy", "homePage", "http://snowwhite.tale/~sleepy"],
+        ["dwarfs/sleepy", "homeDir", "/home/sleepy"],
+        ["dwarfs/sleepy", "fortuneNumber", "99"],
+        ["dwarfs/sneezy", "weight", "69.7"],
+        ["dwarfs/sneezy", "height", "76.88"],
+        ["dwarfs/sneezy", "age", "64"],
+        ["dwarfs/sneezy", "homePage", "${dwarfs/happy/homePage}/~sneezy"],
+        ["dwarfs/sneezy", "homeDir", "/home/sneezy"],
+        ["dwarfs/sneezy", "fortuneNumber", "44"]
+      ]
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["dwarfs/bashful", "weight"], "45.7"],
+        [["dwarfs/bashful", "height"], "98.8"],
+        [["dwarfs/bashful", "age"], "67"],
+        [["dwarfs/bashful", "homePage"], "http://snowwhite.tale/~bashful"],
+        [["dwarfs/bashful", "homeDir"], "/home/bashful"],
+        [["dwarfs/doc", "weight"], "49.5"],
+        [["dwarfs/doc", "height"], "87.7"],
+        [["dwarfs/doc", "age"], "63"],
+        [["dwarfs/doc", "homePage"], "http://doc.dwarfs"],
+        [["dwarfs/doc", "homeDir"], "c:\\Documents and Settings\\doc"],
+        [["dwarfs/dopey", "weight"], "${dwarfs/bashful/weight}"],
+        [["dwarfs/dopey", "height"], "${dwarfs/doc/height}"],
+        [["dwarfs/dopey", "age"], "23"],
+        [["dwarfs/dopey", "homePage"], "http://dopey.snowwhite.tale/"],
+        [["dwarfs/dopey", "homeDir"], "c:\\\\Documents and Settings\\\\dopey"],
+        [["dwarfs/dopey", "fortuneNumber"], "55"],
+        [["dwarfs/grumpy", "weight"], "65.3"],
+        [["dwarfs/grumpy", "height"], "${dwarfs/dopey/height}"],
+        [["dwarfs/grumpy", "age"], "76"],
+        [["dwarfs/grumpy", "homePage"], "http://snowwhite.tale/~grumpy/"],
+        [["dwarfs/grumpy", "homeDir"], "/home/grumpy"],
+        [["dwarfs/happy", "homePage"], "http://happy.smurf"],
+        [["dwarfs/sleepy", "weight"], "76.11"],
+        [["dwarfs/sleepy", "height"], "${dwarfs/doc/height}8"],
+        [["dwarfs/sleepy", "age"], "121"],
+        [["dwarfs/sleepy", "homePage"], "http://snowwhite.tale/~sleepy"],
+        [["dwarfs/sleepy", "homeDir"], "/home/sleepy"],
+        [["dwarfs/sleepy", "fortuneNumber"], "99"],
+        [["dwarfs/sneezy", "weight"], "69.7"],
+        [["dwarfs/sneezy", "height"], "76.88"],
+        [["dwarfs/sneezy", "age"], "64"],
+        [["dwarfs/sneezy", "homePage"], "${dwarfs/happy/homePage}/~sneezy"],
+        [["dwarfs/sneezy", "homeDir"], "/home/sneezy"],
+        [["dwarfs/sneezy", "fortuneNumber"], "44"]
+      ]
+    },
+    "normal": {
+      "error": {
+        "message": "syntax error, unexpected '~'",
+        "line": 28
+      }
+    }
+  }
+}

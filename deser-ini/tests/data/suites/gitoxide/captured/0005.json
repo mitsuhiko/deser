@@ -1,0 +1,13 @@
+{
+  "tests": [
+    "file::access::mutate::rename_section::all_matching_sections_are_renamed_and_target_collisions_are_preserved"
+  ],
+  "git": {
+    "entries": [
+      ["branch", "source", "key", "one"],
+      ["some", "gar", "key", "unrelated"],
+      ["branch", "dest", "key", "existing"],
+      ["branch", "source", "key", "two"]
+    ]
+  }
+}

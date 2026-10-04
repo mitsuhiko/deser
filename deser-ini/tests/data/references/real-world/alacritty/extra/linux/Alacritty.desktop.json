@@ -1,0 +1,99 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 1, "Desktop Entry"],
+        ["value", 2, "Desktop Entry", "Type", "Application"],
+        ["value", 3, "Desktop Entry", "TryExec", "alacritty"],
+        ["value", 4, "Desktop Entry", "Exec", "alacritty"],
+        ["value", 5, "Desktop Entry", "Icon", "Alacritty"],
+        ["value", 6, "Desktop Entry", "Terminal", "false"],
+        ["value", 7, "Desktop Entry", "Categories", "System;TerminalEmulator;"],
+        ["value", 9, "Desktop Entry", "Name", "Alacritty"],
+        ["value", 10, "Desktop Entry", "GenericName", "Terminal"],
+        ["value", 11, "Desktop Entry", "Comment", "A fast, cross-platform, OpenGL terminal emulator"],
+        ["value", 12, "Desktop Entry", "StartupNotify", "true"],
+        ["value", 13, "Desktop Entry", "StartupWMClass", "Alacritty"],
+        ["value", 14, "Desktop Entry", "Actions", "New;"],
+        ["section", 16, "Desktop Action New"],
+        ["value", 17, "Desktop Action New", "Name", "New Terminal"],
+        ["value", 18, "Desktop Action New", "Exec", "alacritty"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "Desktop Entry",
+        "Desktop Action New"
+      ],
+      "entries": [
+        ["Desktop Entry", "Type", "Application"],
+        ["Desktop Entry", "TryExec", "alacritty"],
+        ["Desktop Entry", "Exec", "alacritty"],
+        ["Desktop Entry", "Icon", "Alacritty"],
+        ["Desktop Entry", "Terminal", "false"],
+        ["Desktop Entry", "Categories", "System;TerminalEmulator;"],
+        ["Desktop Entry", "Name", "Alacritty"],
+        ["Desktop Entry", "GenericName", "Terminal"],
+        ["Desktop Entry", "Comment", "A fast, cross-platform, OpenGL terminal emulator"],
+        ["Desktop Entry", "StartupNotify", "true"],
+        ["Desktop Entry", "StartupWMClass", "Alacritty"],
+        ["Desktop Entry", "Actions", "New;"],
+        ["Desktop Action New", "Name", "New Terminal"],
+        ["Desktop Action New", "Exec", "alacritty"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["Desktop Entry", "Type"], "Application"],
+        [["Desktop Entry", "TryExec"], "alacritty"],
+        [["Desktop Entry", "Exec"], "alacritty"],
+        [["Desktop Entry", "Icon"], "Alacritty"],
+        [["Desktop Entry", "Terminal"], "false"],
+        [["Desktop Entry", "Categories"], "System"],
+        [["Desktop Entry", "Name"], "Alacritty"],
+        [["Desktop Entry", "GenericName"], "Terminal"],
+        [["Desktop Entry", "Comment"], "A fast, cross-platform, OpenGL terminal emulator"],
+        [["Desktop Entry", "StartupNotify"], "true"],
+        [["Desktop Entry", "StartupWMClass"], "Alacritty"],
+        [["Desktop Entry", "Actions"], "New"],
+        [["Desktop Action New", "Name"], "New Terminal"],
+        [["Desktop Action New", "Exec"], "alacritty"]
+      ]
+    },
+    "normal": {
+      "entries": [
+        [["Desktop Entry", "Type"], "Application"],
+        [["Desktop Entry", "TryExec"], "alacritty"],
+        [["Desktop Entry", "Exec"], "alacritty"],
+        [["Desktop Entry", "Icon"], "Alacritty"],
+        [["Desktop Entry", "Terminal"], ""],
+        [["Desktop Entry", "Categories"], "System"],
+        [["Desktop Entry", "Name"], "Alacritty"],
+        [["Desktop Entry", "GenericName"], "Terminal"],
+        [["Desktop Entry", "Comment"], "A fast, cross-platform, OpenGL terminal emulator"],
+        [["Desktop Entry", "StartupNotify"], "1"],
+        [["Desktop Entry", "StartupWMClass"], "Alacritty"],
+        [["Desktop Entry", "Actions"], "New"],
+        [["Desktop Action New", "Name"], "New Terminal"],
+        [["Desktop Action New", "Exec"], "alacritty"]
+      ]
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "tests": [
+    "file::access::raw::raw_value::mutable_value_filters_have_key_and_component_variants",
+    "file::access::raw::raw_value::value_with_section_filter_identifies_the_section_containing_the_resolved_value"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "a", "first"],
+      ["core", null, "a", "second"]
+    ]
+  }
+}

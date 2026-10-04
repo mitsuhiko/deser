@@ -1,0 +1,31 @@
+{
+  "tests": [
+    "ConfigParserTestCase.test_read_returns_file_list",
+    "ConfigParserTestCase.test_read_returns_file_list_with_bytestring_path",
+    "ConfigParserTestCaseNoInterpolation.test_read_returns_file_list",
+    "ConfigParserTestCaseNoInterpolation.test_read_returns_file_list_with_bytestring_path",
+    "ConvertersTestCase.test_read_returns_file_list",
+    "ConvertersTestCase.test_read_returns_file_list_with_bytestring_path",
+    "CopyTestCase.test_read_returns_file_list",
+    "CopyTestCase.test_read_returns_file_list_with_bytestring_path",
+    "MultilineValuesTestCase.test_read_returns_file_list",
+    "MultilineValuesTestCase.test_read_returns_file_list_with_bytestring_path"
+  ],
+  "parser": "ConfigParser",
+  "options": {
+    "allow_no_value": false,
+    "allow_unnamed_section": false,
+    "comment_prefixes": [";", "#"],
+    "default_section": "DEFAULT",
+    "defaults": null,
+    "delimiters": ["=", ":"],
+    "empty_lines_in_values": true,
+    "inline_comment_prefixes": [";", "#"],
+    "strict": false
+  },
+  "result": {
+    "sections": [
+      ["Foo Bar", [["foo", "newbar"]]]
+    ]
+  }
+}

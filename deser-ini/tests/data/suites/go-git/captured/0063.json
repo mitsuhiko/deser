@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "(*DecoderSuite).TestDecodeSucceedsWithEmptySubsectionName"
+  ],
+  "git": {
+    "entries": [
+      ["remote", "", "key", "value"]
+    ]
+  }
+}

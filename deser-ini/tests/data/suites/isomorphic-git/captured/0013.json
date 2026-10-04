@@ -1,0 +1,13 @@
+{
+  "tests": [
+    "test-GitConfig.last (when several)",
+    "test-GitConfig.multiple"
+  ],
+  "git": {
+    "entries": [
+      ["foo", null, "keyaaa", "valaaa"],
+      ["foo", null, "keybbb", "valbbb"],
+      ["foo", null, "keybbb", "valBBB"]
+    ]
+  }
+}

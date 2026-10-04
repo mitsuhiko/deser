@@ -1,0 +1,19 @@
+{
+  "tests": [
+    "file::access::raw::raw_multi_value::key_not_found",
+    "file::access::raw::raw_multi_value::section_not_found",
+    "file::access::raw::raw_multi_value::single_value_is_identical_to_single_value_query",
+    "file::access::raw::raw_multi_value::subsection_not_found",
+    "file::access::raw::raw_value::key_not_found",
+    "file::access::raw::raw_value::section_not_found",
+    "file::access::raw::raw_value::single_section",
+    "file::access::raw::raw_value::subsection_not_found",
+    "file::tests::try_from::single_section"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "a", "b"],
+      ["core", null, "c", "d"]
+    ]
+  }
+}

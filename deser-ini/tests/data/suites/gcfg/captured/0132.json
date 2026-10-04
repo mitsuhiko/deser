@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "TestReadStringIntoSubsectDefaults"
+  ],
+  "git": {
+    "entries": [
+      ["profile", "one", "orientation", "left"]
+    ]
+  }
+}

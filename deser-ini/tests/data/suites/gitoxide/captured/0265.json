@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "file::mutable::value::set_string::quoted_comment_markers_in_continued_values_are_value_content"
+  ],
+  "git": {
+    "entries": [
+      ["a", null, "k", "one#not;comments"],
+      ["a", null, "next", "value"]
+    ]
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "tests": [
+    "ConfigFileTests.test_include_with_custom_file_opener"
+  ],
+  "git": {
+    "entries": [
+      ["user", null, "name", "Test User"],
+      ["include", null, "path", "included.config"],
+      ["include", null, "path", "restricted.config"]
+    ]
+  }
+}

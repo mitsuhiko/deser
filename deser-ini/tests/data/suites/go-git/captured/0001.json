@@ -1,0 +1,13 @@
+{
+  "tests": [
+    "(*BranchSuite).TestUnmarshal"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "bare", "false"],
+      ["branch", "branch-tracking-on-clone", "remote", "fork"],
+      ["branch", "branch-tracking-on-clone", "merge", "refs/heads/branch-tracking-on-clone"],
+      ["branch", "branch-tracking-on-clone", "rebase", "interactive"]
+    ]
+  }
+}

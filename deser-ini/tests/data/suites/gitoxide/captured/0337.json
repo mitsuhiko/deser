@@ -1,0 +1,7 @@
+{
+  "tests": [
+    "parse::error::line_no_is_one_indexed",
+    "parse::error::malformed_input_retains_validation_and_bad_tokens"
+  ],
+  "git": {"error": {"message": "bad config line 2 in file <file>", "line": 2}}
+}

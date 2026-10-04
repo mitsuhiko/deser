@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "file::mutable::value::get::quoted_single_line_before_comment"
+  ],
+  "git": {
+    "entries": [
+      ["a", null, "k", " hello\tthere "]
+    ]
+  }
+}

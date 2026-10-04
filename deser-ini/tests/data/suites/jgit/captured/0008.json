@@ -1,0 +1,15 @@
+{
+  "tests": [
+    "BranchConfigTest.testRebaseMode"
+  ],
+  "git": {
+    "entries": [
+      ["branch", "false", "rebase", "false"],
+      ["branch", "true", "rebase", "true"],
+      ["branch", "interactive", "rebase", "interactive"],
+      ["branch", "merges", "rebase", "merges"],
+      ["branch", "preserve", "rebase", "preserve"],
+      ["branch", "illegal", "rebase", "illegal"]
+    ]
+  }
+}

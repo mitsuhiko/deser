@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "ConfigFileTests.test_expand_includes_disabled",
+    "ConfigFileTests.test_include_absolute_path"
+  ],
+  "git": {
+    "entries": [
+      ["include", null, "path", "/tmp/tmpXXXXXXXX/included.config"]
+    ]
+  }
+}

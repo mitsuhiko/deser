@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "file::access::raw::set_raw_value::single_line"
+  ],
+  "git": {
+    "entries": [
+      ["a", null, "k", "c"],
+      ["a", null, "k", "hello world"]
+    ]
+  }
+}

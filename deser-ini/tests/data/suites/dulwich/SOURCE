@@ -1,0 +1,6 @@
+https://github.com/jelmer/dulwich
+commit 86e7b46d4347ee3f54c9be84a2ac7d27f562a731
+
+captured/ has the inputs of the test suite (see scripts/ini/git-config),
+the .json files how git reads them (alpine/git:v2.54.0@sha256:832b1cd1a271509f3d5272a1a62d4cb2ab1a53426ebde1f6c2cb7349f907dc6f).
+Used under the Apache License 2.0 (dulwich is dual licensed).

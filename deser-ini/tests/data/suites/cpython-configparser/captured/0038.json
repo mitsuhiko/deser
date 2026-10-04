@@ -1,0 +1,22 @@
+{
+  "tests": [
+    "ConfigParserTestCaseExtendedInterpolation.test_other_errors"
+  ],
+  "parser": "ConfigParser",
+  "options": {
+    "allow_no_value": false,
+    "allow_unnamed_section": false,
+    "comment_prefixes": [";", "#"],
+    "default_section": "common",
+    "defaults": null,
+    "delimiters": ["=", ":"],
+    "empty_lines_in_values": true,
+    "inline_comment_prefixes": [";", "#"],
+    "strict": true
+  },
+  "result": {
+    "sections": [
+      ["interpolation fail", [["case1", "${where's the brace"], ["case2", "${does_not_exist}"], ["case3", "${wrong_section:wrong_value}"], ["case4", "${i:like:colon:characters}"], ["case5", "$100 for Fail No 5!"]]]
+    ]
+  }
+}

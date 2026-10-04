@@ -1,0 +1,15 @@
+{
+  "tests": [
+    "test-GitConfig.existing subsection",
+    "test-GitConfig.existing subsection (case insensitive)",
+    "test-GitConfig.new subsection",
+    "test-GitConfig.new subsection with dots in key",
+    "test-GitConfig.new value with #",
+    "test-GitConfig.new value with ;"
+  ],
+  "git": {
+    "entries": [
+      ["remote", "foo", "url", "https://foo.com/project.git"]
+    ]
+  }
+}

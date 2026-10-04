@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "parse::from_bytes::filters_receive_event_refs_for_content_access"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "keep", "keep"],
+      ["core", null, "drop", "drop"]
+    ]
+  }
+}

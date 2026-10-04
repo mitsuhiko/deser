@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "(*ConfigSuite).TestProtocol"
+  ],
+  "git": {
+    "entries": [
+      ["protocol", null, "version", "1"]
+    ]
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "tests": [
+    "ConfigTest.testRemoveBranchSection",
+    "ConfigTest.testUnsetBranchSection"
+  ],
+  "git": {
+    "entries": [
+      ["branch", "keep", "merge", "master.branch.to.keep.in.the.file"],
+      ["branch", "remove", "merge", "this.will.get.deleted"],
+      ["branch", "remove", "remote", "origin-for-some-long-gone-place"],
+      ["core-section-not-to-remove-in-test", null, "packedgitlimit", "14"],
+      ["other", null, "foo", "bar"]
+    ]
+  }
+}

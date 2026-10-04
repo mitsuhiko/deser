@@ -1,0 +1,69 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 1, "common"],
+        ["value", 2, "common", "optionlower", "value"],
+        ["value", 3, "common", "OptionUpper", "Value"],
+        ["section", 5, "Common"],
+        ["value", 6, "Common", "optionlower", "a better ${common:optionlower}"],
+        ["value", 7, "Common", "OptionUpper", "A Better ${common:OptionUpper}"],
+        ["section", 9, "random"],
+        ["value", 10, "random", "foolower", "${common:optionlower} redefined"],
+        ["value", 11, "random", "FooUpper", "${Common:OptionUpper} Redefined"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "common",
+        "Common",
+        "random"
+      ],
+      "entries": [
+        ["common", "optionlower", "value"],
+        ["common", "OptionUpper", "Value"],
+        ["Common", "optionlower", "a better ${common:optionlower}"],
+        ["Common", "OptionUpper", "A Better ${common:OptionUpper}"],
+        ["random", "foolower", "${common:optionlower} redefined"],
+        ["random", "FooUpper", "${Common:OptionUpper} Redefined"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["common", "optionlower"], "value"],
+        [["common", "OptionUpper"], "Value"],
+        [["Common", "optionlower"], "a better ${common:optionlower}"],
+        [["Common", "OptionUpper"], "A Better ${common:OptionUpper}"],
+        [["random", "foolower"], "${common:optionlower} redefined"],
+        [["random", "FooUpper"], "${Common:OptionUpper} Redefined"]
+      ]
+    },
+    "normal": {
+      "entries": [
+        [["common", "optionlower"], "value"],
+        [["common", "OptionUpper"], "Value"],
+        [["Common", "optionlower"], "a better "],
+        [["Common", "OptionUpper"], "A Better "],
+        [["random", "foolower"], " redefined"],
+        [["random", "FooUpper"], " Redefined"]
+      ]
+    }
+  }
+}

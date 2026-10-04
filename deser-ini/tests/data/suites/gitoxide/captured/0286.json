@@ -1,0 +1,15 @@
+{
+  "tests": [
+    "file::tests::try_from::plain_and_subsection_ids_have_one_direct_lookup"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "key", "plain-1"],
+      ["core", "a", "key", "a-1"],
+      ["other", null, "key", "other"],
+      ["core", null, "key", "plain-2"],
+      ["core", "b", "key", "b"],
+      ["core", "a", "key", "a-2"]
+    ]
+  }
+}

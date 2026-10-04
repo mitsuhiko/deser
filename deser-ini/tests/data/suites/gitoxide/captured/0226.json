@@ -1,0 +1,12 @@
+{
+  "tests": [
+    "file::mutable::value::delete::multi_line_value"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "a", "b100cb"],
+      ["core", null, "c", "d"],
+      ["core", null, "e", "f"]
+    ]
+  }
+}

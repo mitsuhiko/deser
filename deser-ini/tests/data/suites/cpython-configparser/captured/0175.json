@@ -1,0 +1,22 @@
+{
+  "tests": [
+    "SectionlessTestCase.test_no_section"
+  ],
+  "parser": "ConfigParser",
+  "options": {
+    "allow_no_value": false,
+    "allow_unnamed_section": true,
+    "comment_prefixes": ["#", ";"],
+    "default_section": "DEFAULT",
+    "defaults": null,
+    "delimiters": ["=", ":"],
+    "empty_lines_in_values": true,
+    "inline_comment_prefixes": null,
+    "strict": true
+  },
+  "result": {
+    "sections": [
+      [null, [["a", "1"], ["b", "2"]]]
+    ]
+  }
+}

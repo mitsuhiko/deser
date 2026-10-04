@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "file::init::from_paths::includes::unconditional::multiple"
+  ],
+  "git": {
+    "entries": [
+      ["diff", null, "renames", "true"]
+    ]
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "tests": [
+    "(*ConfigSuite).TestUnmarshalRemotes"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "bare", "true"],
+      ["core", null, "worktree", "foo"],
+      ["core", null, "custom", "ignored"],
+      ["user", null, "name", "John Doe"],
+      ["user", null, "email", "john@example.com"],
+      ["remote", "origin", "url", "https://git.sr.ht/~mcepl/go-git"],
+      ["remote", "origin", "pushurl", "git@git.sr.ht:~mcepl/go-git.git"],
+      ["remote", "origin", "fetch", "+refs/heads/*:refs/remotes/origin/*"],
+      ["remote", "origin", "mirror", "true"]
+    ]
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "tests": [
+    "ConfigParserTestCaseTrickyFile.test_cfgparser_dot_3"
+  ],
+  "parser": "ConfigParser",
+  "options": {
+    "allow_no_value": true,
+    "allow_unnamed_section": false,
+    "comment_prefixes": ["#"],
+    "default_section": "DEFAULT",
+    "defaults": null,
+    "delimiters": ["="],
+    "empty_lines_in_values": true,
+    "inline_comment_prefixes": [";", "#"],
+    "strict": false
+  },
+  "result": {
+    "sections": [
+      ["DEFAULT", [["go", "%(interpolate)s"]]],
+      ["strange", [["values", "that are indented"], ["other", "that do continue\nin\nother\nlines"]]],
+      ["corruption", [["value", "that is\n\n\nactually still here\n\n\nand holds all these weird newlines\n\n\nnor the indentation"], ["another value", ""], ["yet another", null]]],
+      ["yeah, sections can be indented as well", [["and that does not mean", "anything"], ["are they subsections", "False"], ["if you want subsections", "use XML"], ["lets use some Unicode", "片仮名"]]],
+      ["another one!", [["even if values are indented like this", "seriously"], ["yes, this still applies to", "section \"another one!\""], ["this too", "are there people with configurations broken as this?\nbeware, this is going to be a continuation\nof the value for\nkey \"this too\"\neven if it has a = character\nthis is still the continuation\nyour editor probably highlights it wrong\nbut that's life"], ["interpolate", "anything will do"]]],
+      ["no values here", []],
+      ["tricky interpolation", [["interpolate", "do this"], ["lets", "%(go)s"]]],
+      ["more interpolation", [["interpolate", "go shopping"], ["lets", "%(go)s"]]]
+    ]
+  }
+}

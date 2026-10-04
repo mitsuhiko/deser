@@ -1,0 +1,92 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 2, "section"],
+        ["value", 3, "section", "k1", "v1;still v1"],
+        ["value", 4, "section", "k1", "k2 = v2"],
+        ["value", 5, "section", "k1", "k3 = v3"],
+        ["value", 6, "section", "k1", "k4 = v4;still v4"],
+        ["value", 7, "section", "k1", "k5 = v5;still v5"],
+        ["value", 8, "section", "k1", "k6 = v6;still v6; and still v6"],
+        ["value", 9, "section", "k1", "k7 = v7;still v7; and still v7"],
+        ["value", 11, "section", "k1", "[multiprefix]"],
+        ["value", 12, "section", "k1", "k1 = v1;still v1 #a comment"],
+        ["value", 13, "section", "k1", "k2 = v2 // this already is a comment"],
+        ["value", 14, "section", "k1", "k3 = v3;#//still v3# and still v3"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "events": [
+        ["section", 2, "section"],
+        ["value", 3, "section", "k1", "v1;still v1"],
+        ["value", 4, "section", "k2", "v2"],
+        ["value", 5, "section", "k3", "v3"],
+        ["value", 6, "section", "k4", "v4;still v4"],
+        ["value", 7, "section", "k5", "v5;still v5"],
+        ["value", 8, "section", "k6", "v6;still v6; and still v6"],
+        ["value", 9, "section", "k7", "v7;still v7; and still v7"],
+        ["section", 11, "multiprefix"],
+        ["value", 12, "multiprefix", "k1", "v1;still v1 #a comment"],
+        ["value", 13, "multiprefix", "k2", "v2 // this already is a comment"],
+        ["value", 14, "multiprefix", "k3", "v3;#//still v3# and still v3"]
+      ],
+      "error_line": null
+    },
+    "no_inline_comments": {
+      "events": [
+        ["section", 2, "section"],
+        ["value", 3, "section", "k1", "v1;still v1"],
+        ["value", 4, "section", "k1", "k2 = v2 ;a comment"],
+        ["value", 5, "section", "k1", "k3 = v3 ; also a comment"],
+        ["value", 6, "section", "k1", "k4 = v4;still v4 ;a comment"],
+        ["value", 7, "section", "k1", "k5 = v5;still v5 ; also a comment"],
+        ["value", 8, "section", "k1", "k6 = v6;still v6; and still v6 ;a comment"],
+        ["value", 9, "section", "k1", "k7 = v7;still v7; and still v7 ; also a comment"],
+        ["value", 11, "section", "k1", "[multiprefix]"],
+        ["value", 12, "section", "k1", "k1 = v1;still v1 #a comment ; yeah, pretty much"],
+        ["value", 13, "section", "k1", "k2 = v2 // this already is a comment ; continued"],
+        ["value", 14, "section", "k1", "k3 = v3;#//still v3# and still v3 ; a comment"]
+      ],
+      "error_line": null
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "section",
+        "multiprefix"
+      ],
+      "entries": [
+        ["section", "k1", "v1;still v1"],
+        ["section", "k2", "v2 ;a comment"],
+        ["section", "k3", "v3 ; also a comment"],
+        ["section", "k4", "v4;still v4 ;a comment"],
+        ["section", "k5", "v5;still v5 ; also a comment"],
+        ["section", "k6", "v6;still v6; and still v6 ;a comment"],
+        ["section", "k7", "v7;still v7; and still v7 ; also a comment"],
+        ["multiprefix", "k1", "v1;still v1 #a comment ; yeah, pretty much"],
+        ["multiprefix", "k2", "v2 // this already is a comment ; continued"],
+        ["multiprefix", "k3", "v3;#//still v3# and still v3 ; a comment"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "error": {
+        "message": "syntax error, unexpected END_OF_LINE, expecting '='",
+        "line": 3
+      }
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

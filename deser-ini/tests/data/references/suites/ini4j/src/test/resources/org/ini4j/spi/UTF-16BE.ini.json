@@ -1,0 +1,42 @@
+{
+  "inih": {
+    "default": {
+      "events": [],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "error": {
+        "type": "MissingSectionHeaderError",
+        "line": 1
+      }
+    },
+    "lenient": {
+      "sections": [
+        null
+      ],
+      "entries": [
+        [null, "\u0000[\u0000s\u0000e\u0000c\u0000t\u0000i\u0000o\u0000n\u0000]\u0000", null],
+        [null, "\u0000o\u0000p\u0000t\u0000i\u0000o\u0000n\u0000 \u0000", "\u0000 \u0000v\u0000a\u0000l\u0000u\u0000e\u0000"]
+      ]
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": []
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

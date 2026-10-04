@@ -1,0 +1,31 @@
+{
+  "tests": [
+    "StrictTestCase.test_basic"
+  ],
+  "parser": "RawConfigParser",
+  "options": {
+    "allow_no_value": false,
+    "allow_unnamed_section": false,
+    "comment_prefixes": [";", "#"],
+    "default_section": "DEFAULT",
+    "defaults": null,
+    "delimiters": ["=", ":"],
+    "empty_lines_in_values": true,
+    "inline_comment_prefixes": [";", "#"],
+    "strict": true
+  },
+  "result": {
+    "sections": [
+      ["Foo Bar", [["foo", "bar1"]]],
+      ["Spacey Bar", [["foo", "bar2"]]],
+      ["Spacey Bar From The Beginning", [["foo", "bar3"], ["baz", "qwe"]]],
+      ["Commented Bar", [["foo", "bar4"], ["baz", "qwe"]]],
+      ["Long Line", [["foo", "this line is much, much longer than my editor\nlikes it."]]],
+      ["Section\\with$weird%characters[\t", []],
+      ["Internationalized Stuff", [["foo[bg]", "Bulgarian"], ["foo", "Default"], ["foo[en]", "English"], ["foo[de]", "Deutsch"]]],
+      ["Spaces", [["key with spaces", "value"], ["another with spaces", "splat!"]]],
+      ["Types", [["int", "42"], ["float", "0.44"], ["boolean", "NO"], ["123", "strange but acceptable"]]],
+      ["This One Has A ] In It", [["forks", "spoons"]]]
+    ]
+  }
+}

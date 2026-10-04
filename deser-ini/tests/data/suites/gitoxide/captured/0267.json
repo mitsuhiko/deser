@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "file::mutable::value::set_string::quotes_and_backslashes"
+  ],
+  "git": {
+    "entries": [
+      ["a", null, "k", "\"hello\"\\\"there\"\\\\\\b\\x"]
+    ]
+  }
+}

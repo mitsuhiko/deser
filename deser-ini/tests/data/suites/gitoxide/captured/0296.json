@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "format::blank_lines_left_alone_by_default"
+  ],
+  "git": {
+    "entries": [
+      ["a", null, "x", "1"],
+      ["b", null, "y", "2"]
+    ]
+  }
+}

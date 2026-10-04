@@ -1,0 +1,61 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["value", 1, "", "root", "true"],
+        ["section", 3, "test1"],
+        ["value", 5, "test1", "key1", ""],
+        ["value", 7, "test1", "key2", ""],
+        ["value", 9, "test1", "key3", ""]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "error": {
+        "type": "MissingSectionHeaderError",
+        "line": 1
+      }
+    },
+    "lenient": {
+      "sections": [
+        null,
+        "test1"
+      ],
+      "entries": [
+        [null, "root", "true"],
+        ["test1", "key1", ""],
+        ["test1", "key2", ""],
+        ["test1", "key3", ""]
+      ]
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["root"], "true"],
+        [["test1", "key1"], ""],
+        [["test1", "key2"], ""],
+        [["test1", "key3"], ""]
+      ]
+    },
+    "normal": {
+      "entries": [
+        [["root"], "1"],
+        [["test1", "key1"], ""],
+        [["test1", "key2"], ""],
+        [["test1", "key3"], ""]
+      ]
+    }
+  }
+}

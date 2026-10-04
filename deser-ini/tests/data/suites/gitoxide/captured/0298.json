@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "format::crlf_is_detected_and_normalized_without_accumulating_carriage_returns"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "editor", "x"]
+    ]
+  }
+}

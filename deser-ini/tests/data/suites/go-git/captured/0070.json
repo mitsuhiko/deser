@@ -1,0 +1,12 @@
+{
+  "tests": [
+    "(*URLSuite).TestUnmarshalMultipleInsteadOf"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "bare", "false"],
+      ["url", "ssh://git@github.com/", "insteadof", "https://github.com/"],
+      ["url", "ssh://git@github.com/", "insteadof", "https://google.com/"]
+    ]
+  }
+}

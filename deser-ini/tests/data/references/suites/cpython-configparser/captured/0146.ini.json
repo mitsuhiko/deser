@@ -1,0 +1,88 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 1, "BOOLTEST"],
+        ["value", 2, "BOOLTEST", "T1", "=1"],
+        ["value", 3, "BOOLTEST", "T2", "=TRUE"],
+        ["value", 4, "BOOLTEST", "T3", "=True"],
+        ["value", 5, "BOOLTEST", "T4", "=oN"],
+        ["value", 6, "BOOLTEST", "T5", "=yes"],
+        ["value", 7, "BOOLTEST", "F1", "=0"],
+        ["value", 8, "BOOLTEST", "F2", "=FALSE"],
+        ["value", 9, "BOOLTEST", "F3", "=False"],
+        ["value", 10, "BOOLTEST", "F4", "=oFF"],
+        ["value", 11, "BOOLTEST", "F5", "=nO"],
+        ["value", 12, "BOOLTEST", "E1", "=2"],
+        ["value", 13, "BOOLTEST", "E2", "=foo"],
+        ["value", 14, "BOOLTEST", "E3", "=-1"],
+        ["value", 15, "BOOLTEST", "E4", "=0.1"],
+        ["value", 16, "BOOLTEST", "E5", "=FALSE AND MORE"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "BOOLTEST"
+      ],
+      "entries": [
+        ["BOOLTEST", "T1", "=1"],
+        ["BOOLTEST", "T2", "=TRUE"],
+        ["BOOLTEST", "T3", "=True"],
+        ["BOOLTEST", "T4", "=oN"],
+        ["BOOLTEST", "T5", "=yes"],
+        ["BOOLTEST", "F1", "=0"],
+        ["BOOLTEST", "F2", "=FALSE"],
+        ["BOOLTEST", "F3", "=False"],
+        ["BOOLTEST", "F4", "=oFF"],
+        ["BOOLTEST", "F5", "=nO"],
+        ["BOOLTEST", "E1", "=2"],
+        ["BOOLTEST", "E2", "=foo"],
+        ["BOOLTEST", "E3", "=-1"],
+        ["BOOLTEST", "E4", "=0.1"],
+        ["BOOLTEST", "E5", "=FALSE AND MORE"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["BOOLTEST", "T1:"], "1"],
+        [["BOOLTEST", "T2:"], "TRUE"],
+        [["BOOLTEST", "T3:"], "True"],
+        [["BOOLTEST", "T4:"], "oN"],
+        [["BOOLTEST", "T5:"], "yes"],
+        [["BOOLTEST", "F1:"], "0"],
+        [["BOOLTEST", "F2:"], "FALSE"],
+        [["BOOLTEST", "F3:"], "False"],
+        [["BOOLTEST", "F4:"], "oFF"],
+        [["BOOLTEST", "F5:"], "nO"],
+        [["BOOLTEST", "E1:"], "2"],
+        [["BOOLTEST", "E2:"], "foo"],
+        [["BOOLTEST", "E3:"], "-1"],
+        [["BOOLTEST", "E4:"], "0.1"],
+        [["BOOLTEST", "E5:"], "FALSE AND MORE"]
+      ]
+    },
+    "normal": {
+      "error": {
+        "message": "syntax error, unexpected TC_CONSTANT",
+        "line": 16
+      }
+    }
+  }
+}

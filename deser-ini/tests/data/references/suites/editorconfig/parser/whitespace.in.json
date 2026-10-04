@@ -1,0 +1,127 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["value", 3, "", "root", "true"],
+        ["section", 6, "test1.c"],
+        ["value", 7, "test1.c", "key", "value"],
+        ["section", 10, "test2.c"],
+        ["value", 11, "test2.c", "key", "value"],
+        ["section", 14, "test3.c"],
+        ["value", 15, "test3.c", "key", "value"],
+        ["section", 18, "test4.c"],
+        ["value", 19, "test4.c", "key", "value"],
+        ["section", 22, "test5.c"],
+        ["value", 23, "test5.c", "key", "value"],
+        ["section", 26, "test6.c"],
+        ["value", 28, "test6.c", "key1", "value1"],
+        ["value", 30, "test6.c", "key2", "value2"],
+        ["section", 33, " test 7 "],
+        ["value", 34, " test 7 ", "key", "value"],
+        ["value", 37, " test 7 ", "key", "[test8.c]"],
+        ["value", 38, " test 7 ", "key", "value"],
+        ["section", 41, "test9.c"],
+        ["value", 42, "test9.c", "key", "value"],
+        ["section", 45, "test10.c"],
+        ["value", 46, "test10.c", "key1", "value1"],
+        ["value", 47, "test10.c", "key1", "key2=value2"],
+        ["value", 48, "test10.c", "key3", "value3"],
+        ["section", 51, "test11.c"],
+        ["value", 52, "test11.c", "key", "value with whitespace inside"],
+        ["section", 55, "test12.c"],
+        ["value", 56, "test12.c", "ke y", "value"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "events": [
+        ["value", 3, "", "root", "true"],
+        ["section", 6, "test1.c"],
+        ["value", 7, "test1.c", "key", "value"],
+        ["section", 10, "test2.c"],
+        ["value", 11, "test2.c", "key", "value"],
+        ["section", 14, "test3.c"],
+        ["value", 15, "test3.c", "key", "value"],
+        ["section", 18, "test4.c"],
+        ["value", 19, "test4.c", "key", "value"],
+        ["section", 22, "test5.c"],
+        ["value", 23, "test5.c", "key", "value"],
+        ["section", 26, "test6.c"],
+        ["value", 28, "test6.c", "key1", "value1"],
+        ["value", 30, "test6.c", "key2", "value2"],
+        ["section", 33, " test 7 "],
+        ["value", 34, " test 7 ", "key", "value"],
+        ["section", 37, "test8.c"],
+        ["value", 38, "test8.c", "key", "value"],
+        ["section", 41, "test9.c"],
+        ["value", 42, "test9.c", "key", "value"],
+        ["section", 45, "test10.c"],
+        ["value", 46, "test10.c", "key1", "value1"],
+        ["value", 47, "test10.c", "key2", "value2"],
+        ["value", 48, "test10.c", "key3", "value3"],
+        ["section", 51, "test11.c"],
+        ["value", 52, "test11.c", "key", "value with whitespace inside"],
+        ["section", 55, "test12.c"],
+        ["value", 56, "test12.c", "ke y", "value"]
+      ],
+      "error_line": null
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "error": {
+        "type": "MissingSectionHeaderError",
+        "line": 3
+      }
+    },
+    "lenient": {
+      "sections": [
+        null,
+        "test1.c",
+        "test2.c",
+        "test3.c",
+        "test4.c",
+        "test5.c",
+        "test6.c",
+        " test 7 ",
+        "test9.c",
+        "test10.c",
+        "test11.c",
+        "test12.c"
+      ],
+      "entries": [
+        [null, "root", "true"],
+        ["test1.c", "key", "value"],
+        ["test2.c", "key", "value"],
+        ["test3.c", "key", "value"],
+        ["test4.c", "key", "value"],
+        ["test5.c", "key", "value"],
+        ["test6.c", "key1", "value1"],
+        ["test6.c", "key2", "value2"],
+        [" test 7 ", "key", "value"],
+        ["test9.c", "key", "value"],
+        ["test10.c", "key1", "value1\nkey2=value2"],
+        ["test10.c", "key3", "value3"],
+        ["test11.c", "key", "value with whitespace inside"],
+        ["test12.c", "ke y", "value"]
+      ]
+    }
+  },
+  "php": {
+    "raw": {
+      "error": {
+        "message": "syntax error, unexpected END_OF_LINE, expecting '='",
+        "line": 38
+      }
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "ConfigTest.testWhitespaceContinuation"
+  ],
+  "git": {
+    "entries": [
+      ["foo", null, "bar", "tr   ue"]
+    ]
+  }
+}

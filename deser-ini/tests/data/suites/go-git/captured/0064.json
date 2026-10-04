@@ -1,0 +1,18 @@
+{
+  "tests": [
+    "(*ModulesSuite).TestUnmarshal"
+  ],
+  "git": {
+    "entries": [
+      ["submodule", "qux", "path", "qux"],
+      ["submodule", "qux", "url", "https://github.com/foo/qux.git"],
+      ["submodule", "foo/bar", "path", "foo/bar"],
+      ["submodule", "foo/bar", "url", "https://github.com/foo/bar.git"],
+      ["submodule", "foo/bar", "branch", "dev"],
+      ["submodule", "suspicious", "path", "../../foo/bar"],
+      ["submodule", "suspicious", "url", "https://github.com/foo/bar.git"],
+      ["submodule", "..", "path", "deps/x"],
+      ["submodule", "..", "url", "https://github.com/foo/bar.git"]
+    ]
+  }
+}

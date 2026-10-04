@@ -1,0 +1,57 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 1, "section1"],
+        ["value", 2, "section1", "name1", "value1"],
+        ["value", 5, "section1", "name2", "value2"]
+      ],
+      "error_line": 3
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "events": [
+        ["section", 1, "section1"],
+        ["value", 2, "section1", "name1", "value1"],
+        ["section", 4, "section3   ; comment "],
+        ["value", 5, "section3   ; comment ", "name2", "value2"]
+      ],
+      "error_line": 3
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "error": {
+        "type": "ParsingError",
+        "line": 3
+      }
+    },
+    "lenient": {
+      "sections": [
+        "section1",
+        "section3   ; comment "
+      ],
+      "entries": [
+        ["section1", "name1", "value1"],
+        ["section1", "[section2", null],
+        ["section3   ; comment ", "name2", "value2"]
+      ]
+    }
+  },
+  "php": {
+    "raw": {
+      "error": {
+        "message": "syntax error, unexpected end of file, expecting ']'",
+        "line": 3
+      }
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

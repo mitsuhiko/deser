@@ -1,0 +1,47 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 1, "Duplicate Options Here"],
+        ["value", 2, "Duplicate Options Here", "option", "with a value"],
+        ["value", 3, "Duplicate Options Here", "option", "with another value"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "error": {
+        "type": "DuplicateOptionError",
+        "line": 3
+      }
+    },
+    "lenient": {
+      "sections": [
+        "Duplicate Options Here"
+      ],
+      "entries": [
+        ["Duplicate Options Here", "option", "with another value"]
+      ]
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["Duplicate Options Here", "option"], "with a value"]
+      ]
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

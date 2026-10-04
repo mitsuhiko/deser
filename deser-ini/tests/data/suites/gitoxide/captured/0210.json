@@ -1,0 +1,12 @@
+{
+  "tests": [
+    "file::mutable::multi_value::set::values_are_escaped"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "a", " a b"],
+      ["core", null, "a", " a b"],
+      ["core", null, "a", " a b"]
+    ]
+  }
+}

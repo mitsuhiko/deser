@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "file::mutable::value::set_string::starts_with_whitespace"
+  ],
+  "git": {
+    "entries": [
+      ["a", null, "k", " a"]
+    ]
+  }
+}

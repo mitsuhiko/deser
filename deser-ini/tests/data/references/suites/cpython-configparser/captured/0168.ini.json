@@ -1,0 +1,43 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 1, "badbad"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "badbad"
+      ],
+      "entries": []
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["badbad", "bad"], "badbad = bad"]
+      ]
+    },
+    "normal": {
+      "error": {
+        "message": "syntax error, unexpected '='",
+        "line": 2
+      }
+    }
+  }
+}

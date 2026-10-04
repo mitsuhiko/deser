@@ -1,0 +1,55 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 2, "section"],
+        ["value", 3, "section", "name", "= %(value)s"],
+        ["value", 4, "section", "name", "key$ |%(name)s|"],
+        ["value", 5, "section", "name", "getdefault$ |%(default)s|"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "events": [
+        ["section", 2, "section"],
+        ["value", 3, "section", "name", "= %(value)s"]
+      ],
+      "error_line": 4
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "error": {
+        "type": "ParsingError",
+        "line": 4
+      }
+    },
+    "lenient": {
+      "sections": [
+        "section"
+      ],
+      "entries": [
+        ["section", "name", "= %(value)s"],
+        ["section", "key$ |%(name)s|", null],
+        ["section", "getdefault$ |%(default)s|", null]
+      ]
+    }
+  },
+  "php": {
+    "raw": {
+      "error": {
+        "message": "syntax error, unexpected END_OF_LINE, expecting '='",
+        "line": 3
+      }
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

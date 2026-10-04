@@ -1,0 +1,24 @@
+{
+  "tests": [
+    "ConfigParserTestCaseExtendedInterpolation.test_endless_loop"
+  ],
+  "parser": "ConfigParser",
+  "options": {
+    "allow_no_value": false,
+    "allow_unnamed_section": false,
+    "comment_prefixes": [";", "#"],
+    "default_section": "common",
+    "defaults": null,
+    "delimiters": ["=", ":"],
+    "empty_lines_in_values": true,
+    "inline_comment_prefixes": [";", "#"],
+    "strict": true
+  },
+  "result": {
+    "sections": [
+      ["one for you", [["ping", "${one for me:pong}"]]],
+      ["one for me", [["pong", "${one for you:ping}"]]],
+      ["selfish", [["me", "${me}"]]]
+    ]
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 2, "ascii"],
+        ["value", 3, "ascii", "key", "value"],
+        ["section", 5, "unicode"],
+        ["value", 6, "unicode", "greek", "κόσμε"],
+        ["value", 7, "unicode", "japanese", "テスト二"],
+        ["value", 8, "unicode", "mixed", "Hello 世界"],
+        ["section", 10, "検査"],
+        ["value", 11, "検査", "test2", "テスト2"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "ascii",
+        "unicode",
+        "検査"
+      ],
+      "entries": [
+        ["ascii", "key", "value"],
+        ["unicode", "greek", "κόσμε"],
+        ["unicode", "japanese", "テスト二"],
+        ["unicode", "mixed", "Hello 世界"],
+        ["検査", "test2", "テスト2"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["ascii", "key"], "value"],
+        [["unicode", "greek"], "κόσμε"],
+        [["unicode", "japanese"], "テスト二"],
+        [["unicode", "mixed"], "Hello 世界"],
+        [["検査", "test2"], "テスト2"]
+      ]
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

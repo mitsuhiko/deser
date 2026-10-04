@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "parse::from_bytes::skips_bom"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "a", "1"]
+    ]
+  }
+}

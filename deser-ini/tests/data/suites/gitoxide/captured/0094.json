@@ -1,0 +1,6 @@
+{
+  "tests": [
+    "file::fuzz_file_artifacts_can_be_parsed_without_panicking"
+  ],
+  "git": {"error": {"message": "bad config line 15 in file <file>", "line": 15}}
+}

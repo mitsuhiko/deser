@@ -1,0 +1,3 @@
+# The corpus has CRLF line endings, BOMs and UTF-16/32 files that have to
+# stay byte for byte as they are.
+* -text

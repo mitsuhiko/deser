@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "BranchConfigTest.getTrackingBranchShouldReturnNullWithoutMergeBranchForLocalBranch"
+  ],
+  "git": {
+    "entries": [
+      ["remote", "origin", "fetch", "+refs/heads/onlyone:refs/remotes/origin/onlyone"],
+      ["branch", "master", "remote", "."]
+    ]
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "file::access::raw::raw_value::invalid_value_names_are_reported_by_mutable_lookups"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "a", "b"]
+    ]
+  }
+}

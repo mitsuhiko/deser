@@ -1,0 +1,65 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 1, "section_list"],
+        ["section", 5, "section0"],
+        ["value", 6, "section0", "key0", "val0"],
+        ["section", 8, "section1"],
+        ["value", 9, "section1", "key1", "val1"]
+      ],
+      "error_line": 2
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "events": [
+        ["section", 1, "section_list"],
+        ["value", 2, "section_list", "section0", null],
+        ["value", 3, "section_list", "section1", null],
+        ["section", 5, "section0"],
+        ["value", 6, "section0", "key0", "val0"],
+        ["section", 8, "section1"],
+        ["value", 9, "section1", "key1", "val1"]
+      ],
+      "error_line": null
+    }
+  },
+  "configparser": {
+    "default": {
+      "error": {
+        "type": "ParsingError",
+        "line": 2
+      }
+    },
+    "lenient": {
+      "sections": [
+        "section_list",
+        "section0",
+        "section1"
+      ],
+      "entries": [
+        ["section_list", "section0", null],
+        ["section_list", "section1", null],
+        ["section0", "key0", "val0"],
+        ["section1", "key1", "val1"]
+      ]
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["section_list"], []],
+        [["section0", "key0"], "val0"],
+        [["section1", "key1"], "val1"]
+      ]
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

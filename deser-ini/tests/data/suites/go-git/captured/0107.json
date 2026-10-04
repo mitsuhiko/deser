@@ -1,0 +1,14 @@
+{
+  "tests": [
+    "TestUnmarshalRemotePartialClone"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "repositoryformatversion", "1"],
+      ["remote", "origin", "url", "https://github.com/go-git/go-git.git"],
+      ["remote", "origin", "fetch", "+refs/heads/*:refs/remotes/origin/*"],
+      ["remote", "origin", "promisor", "true"],
+      ["remote", "origin", "partialclonefilter", "blob:none"]
+    ]
+  }
+}

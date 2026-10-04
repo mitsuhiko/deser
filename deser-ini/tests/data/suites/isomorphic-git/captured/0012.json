@@ -1,0 +1,12 @@
+{
+  "tests": [
+    "test-GitConfig.implicit boolean value"
+  ],
+  "git": {
+    "entries": [
+      ["foo", null, "keyaaa", "valaaa"],
+      ["foo", null, "keybbb", null],
+      ["foo", null, "keyccc", "valccc"]
+    ]
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "inih": {
+    "default": {
+      "events": [],
+      "error_line": 1
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "error": {
+        "type": "ParsingError",
+        "line": 3
+      }
+    },
+    "lenient": {
+      "sections": [
+        "\u0000\u0000\u0000s\u0000\u0000\u0000e\u0000\u0000\u0000c\u0000\u0000\u0000t\u0000\u0000\u0000i\u0000\u0000\u0000o\u0000\u0000\u0000n\u0000\u0000\u0000"
+      ],
+      "entries": [
+        ["\u0000\u0000\u0000s\u0000\u0000\u0000e\u0000\u0000\u0000c\u0000\u0000\u0000t\u0000\u0000\u0000i\u0000\u0000\u0000o\u0000\u0000\u0000n\u0000\u0000\u0000", "\u0000\u0000\u0000o\u0000\u0000\u0000p\u0000\u0000\u0000t\u0000\u0000\u0000i\u0000\u0000\u0000o\u0000\u0000\u0000n\u0000\u0000\u0000 \u0000\u0000\u0000", "\u0000\u0000\u0000 \u0000\u0000\u0000v\u0000\u0000\u0000a\u0000\u0000\u0000l\u0000\u0000\u0000u\u0000\u0000\u0000e\u0000\u0000\u0000"],
+        ["\u0000\u0000\u0000s\u0000\u0000\u0000e\u0000\u0000\u0000c\u0000\u0000\u0000t\u0000\u0000\u0000i\u0000\u0000\u0000o\u0000\u0000\u0000n\u0000\u0000\u0000", "\u0000\u0000\u0000", null]
+      ]
+    }
+  },
+  "php": {
+    "raw": {
+      "error": {
+        "message": "syntax error, unexpected end of file, expecting ']'",
+        "line": 1
+      }
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

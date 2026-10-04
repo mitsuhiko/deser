@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "TestReadStringInto"
+  ],
+  "git": {
+    "entries": [
+      ["n3", null, "filemode", "0777"]
+    ]
+  }
+}

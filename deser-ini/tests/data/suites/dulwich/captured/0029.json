@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "ConfigFileTests.test_include_circular"
+  ],
+  "git": {
+    "entries": [
+      ["user", null, "name", "User1"],
+      ["include", null, "path", "config2"]
+    ]
+  }
+}

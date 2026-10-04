@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "file::write::crlf_after_a_comment_is_detected_and_used_for_insertions"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "key", "value"]
+    ]
+  }
+}

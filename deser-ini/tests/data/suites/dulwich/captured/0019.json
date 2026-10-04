@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "ConfigFileTests.test_from_file_subsection_not_quoted"
+  ],
+  "git": {
+    "entries": [
+      ["branch", "foo", "foo", "bar"]
+    ]
+  }
+}

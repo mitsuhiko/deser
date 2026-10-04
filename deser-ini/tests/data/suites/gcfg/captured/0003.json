@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "ExampleReadStringInto_hyphens"
+  ],
+  "git": {
+    "entries": [
+      ["section-name", null, "variable-name", "value"]
+    ]
+  }
+}

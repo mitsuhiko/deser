@@ -1,0 +1,52 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 4, "blanks"],
+        ["value", 16, "blanks", "a", "1"],
+        ["value", 17, "blanks", "b", "1;"],
+        ["value", 18, "blanks", "c", "1; comment"],
+        ["value", 19, "blanks", "d", "1# comment"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "blanks"
+      ],
+      "entries": [
+        ["blanks", "a", "1"],
+        ["blanks", "b", "1;"],
+        ["blanks", "c", "1; comment"],
+        ["blanks", "d", "1# comment"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["blanks", "a"], "1"],
+        [["blanks", "b"], "1"],
+        [["blanks", "c"], "1"],
+        [["blanks", "d"], "1# comment"]
+      ]
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

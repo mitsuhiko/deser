@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "ConfigTest.testNoFinalNewline"
+  ],
+  "git": {
+    "entries": [
+      ["a", null, "x", "0"],
+      ["a", null, "y", "1"]
+    ]
+  }
+}

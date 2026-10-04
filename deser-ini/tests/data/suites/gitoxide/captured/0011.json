@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "file::access::raw::raw_multi_value::multi_value_in_section"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "a", "b"],
+      ["core", null, "a", "c"]
+    ]
+  }
+}

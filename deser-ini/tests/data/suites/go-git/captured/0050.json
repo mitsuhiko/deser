@@ -1,0 +1,12 @@
+{
+  "tests": [
+    "(*DecoderSuite).TestDecodeIntoNonEmptyConfig"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "a", "1"],
+      ["remote", "origin", "url", "u"],
+      ["remote", "ORIGIN", "url", "v"]
+    ]
+  }
+}

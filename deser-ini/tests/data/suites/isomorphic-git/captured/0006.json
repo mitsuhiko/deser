@@ -1,0 +1,13 @@
+{
+  "tests": [
+    "test-GitConfig.existing section",
+    "test-GitConfig.existing section (case insensitive)",
+    "test-GitConfig.new section",
+    "test-GitConfig.variable name is only alphanum _ (set)"
+  ],
+  "git": {
+    "entries": [
+      ["foo", null, "keyaaa", "valaaa"]
+    ]
+  }
+}

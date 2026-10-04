@@ -1,0 +1,43 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 1, "sect"],
+        ["value", 2, "sect", "option1", "foo"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "sect"
+      ],
+      "entries": [
+        ["sect", "option1", "foo"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["sect", "option1"], "foo"]
+      ]
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

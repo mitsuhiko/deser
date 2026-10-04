@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "test-GitConfig.simple"
+  ],
+  "git": {
+    "entries": [
+      ["foo", null, "keyaaa", "valaaa"]
+    ]
+  }
+}

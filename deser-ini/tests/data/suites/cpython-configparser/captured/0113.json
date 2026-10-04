@@ -1,0 +1,22 @@
+{
+  "tests": [
+    "ConvertersTestCase.test_converters"
+  ],
+  "parser": "ConfigParser",
+  "options": {
+    "allow_no_value": false,
+    "allow_unnamed_section": false,
+    "comment_prefixes": [";", "#"],
+    "default_section": "DEFAULT",
+    "defaults": null,
+    "delimiters": ["=", ":"],
+    "empty_lines_in_values": true,
+    "inline_comment_prefixes": [";", "#"],
+    "strict": false
+  },
+  "result": {
+    "sections": [
+      ["s", [["str", "string"], ["int", "1"], ["float", "0.5"], ["list", "a b c d e f g"], ["bool", "yes"]]]
+    ]
+  }
+}

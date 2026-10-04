@@ -1,0 +1,32 @@
+{
+  "tests": [
+    "ConfigParserTestCase.test_case_sensitivity",
+    "ConfigParserTestCase.test_case_sensitivity_mapping_access",
+    "ConfigParserTestCaseNoInterpolation.test_case_sensitivity",
+    "ConfigParserTestCaseNoInterpolation.test_case_sensitivity_mapping_access",
+    "ConvertersTestCase.test_case_sensitivity",
+    "ConvertersTestCase.test_case_sensitivity_mapping_access",
+    "CopyTestCase.test_case_sensitivity",
+    "CopyTestCase.test_case_sensitivity_mapping_access",
+    "MultilineValuesTestCase.test_case_sensitivity",
+    "MultilineValuesTestCase.test_case_sensitivity_mapping_access"
+  ],
+  "parser": "ConfigParser",
+  "options": {
+    "allow_no_value": false,
+    "allow_unnamed_section": false,
+    "comment_prefixes": [";", "#"],
+    "default_section": "DEFAULT",
+    "defaults": {"key": "value"},
+    "delimiters": ["=", ":"],
+    "empty_lines_in_values": true,
+    "inline_comment_prefixes": [";", "#"],
+    "strict": false
+  },
+  "result": {
+    "sections": [
+      ["DEFAULT", [["key", "value"]]],
+      ["section", [["nekey", "nevalue"]]]
+    ]
+  }
+}

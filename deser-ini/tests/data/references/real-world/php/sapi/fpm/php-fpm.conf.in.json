@@ -1,0 +1,43 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 13, "global"],
+        ["value", 142, "global", "include", "@php_fpm_sysconfdir@/php-fpm.d/*.conf"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "global"
+      ],
+      "entries": [
+        ["global", "include", "@php_fpm_sysconfdir@/php-fpm.d/*.conf"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["global", "include"], "@php_fpm_sysconfdir@/php-fpm.d/*.conf"]
+      ]
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

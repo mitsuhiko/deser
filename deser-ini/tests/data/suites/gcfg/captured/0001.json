@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "ExampleReadStringInto"
+  ],
+  "git": {
+    "entries": [
+      ["section", null, "name", "value"]
+    ]
+  }
+}

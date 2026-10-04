@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "format::trailing_backslash_at_eof",
+    "parse::tests::event::write_to::value_with_trailing_backslash_at_eof"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "a", "hello"]
+    ]
+  }
+}

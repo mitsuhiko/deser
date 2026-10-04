@@ -1,0 +1,21 @@
+{
+  "tests": [
+    "file::init::from_paths::includes::conditional::gitdir::dot_dot_slash_prefixes_are_not_special_and_are_not_what_you_want",
+    "file::init::from_paths::includes::conditional::gitdir::dot_path_matching_symlink_with_icase",
+    "file::init::from_paths::includes::conditional::gitdir::dot_path_with_symlink",
+    "file::init::from_paths::includes::conditional::gitdir::dot_slash_path_is_replaced_with_directory_containing_the_including_config_file",
+    "file::init::from_paths::includes::conditional::gitdir::dot_slash_path_with_dot_git_suffix_matches",
+    "file::init::from_paths::includes::conditional::gitdir::globbing_and_wildcards",
+    "file::init::from_paths::includes::conditional::gitdir::relative_path_matching_symlink"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "repositoryformatversion", "0"],
+      ["core", null, "filemode", "true"],
+      ["core", null, "bare", "false"],
+      ["core", null, "logallrefupdates", "true"],
+      ["core", null, "ignorecase", "true"],
+      ["core", null, "precomposeunicode", "true"]
+    ]
+  }
+}

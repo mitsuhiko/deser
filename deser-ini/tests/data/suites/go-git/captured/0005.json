@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "(*ConfigSuite).TestProtocol"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "bare", "false"],
+      ["core", null, "filemode", "true"]
+    ]
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "file::access::raw::set_raw_value::starts_with_whitespace"
+  ],
+  "git": {
+    "entries": [
+      ["a", null, "k", "c"],
+      ["a", null, "k", " a"]
+    ]
+  }
+}

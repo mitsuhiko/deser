@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "ConfigFileTests.test_from_file_with_mixed_quoted"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "foo", "barla"]
+    ]
+  }
+}

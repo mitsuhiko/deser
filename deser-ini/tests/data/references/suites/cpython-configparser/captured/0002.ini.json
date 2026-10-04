@@ -1,0 +1,54 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 1, "Commented Bar"],
+        ["value", 2, "Commented Bar", "baz", "qwe"],
+        ["value", 3, "Commented Bar", "foo", "bar # not a comment!"],
+        ["value", 6, "Commented Bar", "quirk", "this;is not a comment"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "events": [
+        ["section", 1, "Commented Bar"],
+        ["value", 2, "Commented Bar", "baz", "qwe ; a comment"],
+        ["value", 3, "Commented Bar", "foo", "bar # not a comment!"],
+        ["value", 6, "Commented Bar", "quirk", "this;is not a comment"]
+      ],
+      "error_line": null
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "Commented Bar"
+      ],
+      "entries": [
+        ["Commented Bar", "baz", "qwe ; a comment"],
+        ["Commented Bar", "foo", "bar # not a comment!"],
+        ["Commented Bar", "quirk", "this;is not a comment"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "error": {
+        "message": "syntax error, unexpected '!'",
+        "line": 3
+      }
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

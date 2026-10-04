@@ -1,0 +1,64 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 5, "拉麺"],
+        ["value", 7, "拉麺", "叉焼", "no"],
+        ["value", 8, "拉麺", "味噌", "TRUE"],
+        ["value", 9, "拉麺", "海苔", "0"],
+        ["value", 10, "拉麺", "メンマ", "そうだね"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "events": [
+        ["section", 5, "拉麺"],
+        ["value", 7, "拉麺", "叉焼", "no ;"],
+        ["value", 8, "拉麺", "味噌", "TRUE ;"],
+        ["value", 9, "拉麺", "海苔", "0 ;"],
+        ["value", 10, "拉麺", "メンマ", "そうだね ;"]
+      ],
+      "error_line": null
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "拉麺"
+      ],
+      "entries": [
+        ["拉麺", "叉焼", "no ;"],
+        ["拉麺", "味噌", "TRUE ;"],
+        ["拉麺", "海苔", "0 ;"],
+        ["拉麺", "メンマ", "そうだね ;"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["拉麺", "叉焼"], "no"],
+        [["拉麺", "味噌"], "TRUE"],
+        [["拉麺", "海苔"], "0"],
+        [["拉麺", "メンマ"], "そうだね"]
+      ]
+    },
+    "normal": {
+      "entries": [
+        [["拉麺", "叉焼"], ""],
+        [["拉麺", "味噌"], "1"],
+        [["拉麺", "海苔"], "0"],
+        [["拉麺", "メンマ"], "そうだね"]
+      ]
+    }
+  }
+}

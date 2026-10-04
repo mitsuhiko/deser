@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "file::access::mutate::rename_section::an_empty_lookup_bucket_is_reported_as_missing",
+    "file::mutable::section::rename::invalid_names_leave_attached_sections_unchanged"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "key", "value"]
+    ]
+  }
+}

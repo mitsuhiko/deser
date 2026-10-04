@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "format::meaning_is_preserved"
+  ],
+  "git": {
+    "entries": [
+      ["remote", "origin", "url", "https://example.com/x.git"]
+    ]
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "EnvConfigTests.test_default_does_not_consult_env_count",
+    "EnvConfigTests.test_env_overrides_opt_in"
+  ],
+  "git": {
+    "entries": [
+      ["user", null, "name", "FromFile"]
+    ]
+  }
+}

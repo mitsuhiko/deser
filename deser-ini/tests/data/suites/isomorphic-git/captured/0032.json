@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "test-GitConfig.subsection case sensitive"
+  ],
+  "git": {
+    "entries": [
+      ["foo", "BAR", "keyaaa", "valaaa"]
+    ]
+  }
+}

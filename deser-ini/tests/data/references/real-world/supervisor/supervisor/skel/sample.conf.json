@@ -1,0 +1,113 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 22, "unix_http_server"],
+        ["value", 23, "unix_http_server", "file", "/tmp/supervisor.sock"],
+        ["section", 44, "supervisord"],
+        ["value", 45, "supervisord", "logfile", "/tmp/supervisord.log"],
+        ["value", 46, "supervisord", "logfile_maxbytes", "50MB"],
+        ["value", 47, "supervisord", "logfile_backups", "10"],
+        ["value", 48, "supervisord", "loglevel", "info"],
+        ["value", 49, "supervisord", "pidfile", "/tmp/supervisord.pid"],
+        ["value", 50, "supervisord", "nodaemon", "false"],
+        ["value", 51, "supervisord", "silent", "false"],
+        ["value", 52, "supervisord", "minfds", "1024"],
+        ["value", 53, "supervisord", "minprocs", "200"],
+        ["section", 67, "rpcinterface:supervisor"],
+        ["value", 68, "rpcinterface:supervisor", "supervisor.rpcinterface_factory", "supervisor.rpcinterface:make_main_rpcinterface"],
+        ["section", 74, "supervisorctl"],
+        ["value", 75, "supervisorctl", "serverurl", "unix:///tmp/supervisor.sock"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "events": [
+        ["section", 22, "unix_http_server"],
+        ["value", 23, "unix_http_server", "file", "/tmp/supervisor.sock   ; the path to the socket file"],
+        ["section", 44, "supervisord"],
+        ["value", 45, "supervisord", "logfile", "/tmp/supervisord.log ; main log file; default $CWD/supervisord.log"],
+        ["value", 46, "supervisord", "logfile_maxbytes", "50MB        ; max main logfile bytes b4 rotation; default 50MB"],
+        ["value", 47, "supervisord", "logfile_backups", "10           ; # of main logfile backups; 0 means none, default 10"],
+        ["value", 48, "supervisord", "loglevel", "info                ; log level; default info; others: debug,warn,trace"],
+        ["value", 49, "supervisord", "pidfile", "/tmp/supervisord.pid ; supervisord pidfile; default supervisord.pid"],
+        ["value", 50, "supervisord", "nodaemon", "false               ; start in foreground if true; default false"],
+        ["value", 51, "supervisord", "silent", "false                 ; no logs to stdout if true; default false"],
+        ["value", 52, "supervisord", "minfds", "1024                  ; min. avail startup file descriptors; default 1024"],
+        ["value", 53, "supervisord", "minprocs", "200                 ; min. avail process descriptors;default 200"],
+        ["section", 67, "rpcinterface:supervisor"],
+        ["value", 68, "rpcinterface:supervisor", "supervisor.rpcinterface_factory", "supervisor.rpcinterface:make_main_rpcinterface"],
+        ["section", 74, "supervisorctl"],
+        ["value", 75, "supervisorctl", "serverurl", "unix:///tmp/supervisor.sock ; use a unix:// URL  for a unix socket"]
+      ],
+      "error_line": null
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "unix_http_server",
+        "supervisord",
+        "rpcinterface:supervisor",
+        "supervisorctl"
+      ],
+      "entries": [
+        ["unix_http_server", "file", "/tmp/supervisor.sock   ; the path to the socket file"],
+        ["supervisord", "logfile", "/tmp/supervisord.log ; main log file; default $CWD/supervisord.log"],
+        ["supervisord", "logfile_maxbytes", "50MB        ; max main logfile bytes b4 rotation; default 50MB"],
+        ["supervisord", "logfile_backups", "10           ; # of main logfile backups; 0 means none, default 10"],
+        ["supervisord", "loglevel", "info                ; log level; default info; others: debug,warn,trace"],
+        ["supervisord", "pidfile", "/tmp/supervisord.pid ; supervisord pidfile; default supervisord.pid"],
+        ["supervisord", "nodaemon", "false               ; start in foreground if true; default false"],
+        ["supervisord", "silent", "false                 ; no logs to stdout if true; default false"],
+        ["supervisord", "minfds", "1024                  ; min. avail startup file descriptors; default 1024"],
+        ["supervisord", "minprocs", "200                 ; min. avail process descriptors;default 200"],
+        ["rpcinterface:supervisor", "supervisor.rpcinterface_factory", "supervisor.rpcinterface:make_main_rpcinterface"],
+        ["supervisorctl", "serverurl", "unix:///tmp/supervisor.sock ; use a unix:// URL  for a unix socket"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["unix_http_server", "file"], "/tmp/supervisor.sock"],
+        [["supervisord", "logfile"], "/tmp/supervisord.log"],
+        [["supervisord", "logfile_maxbytes"], "50MB"],
+        [["supervisord", "logfile_backups"], "10"],
+        [["supervisord", "loglevel"], "info"],
+        [["supervisord", "pidfile"], "/tmp/supervisord.pid"],
+        [["supervisord", "nodaemon"], "false"],
+        [["supervisord", "silent"], "false"],
+        [["supervisord", "minfds"], "1024"],
+        [["supervisord", "minprocs"], "200"],
+        [["rpcinterface:supervisor", "supervisor.rpcinterface_factory"], "supervisor.rpcinterface:make_main_rpcinterface"],
+        [["supervisorctl", "serverurl"], "unix:///tmp/supervisor.sock"]
+      ]
+    },
+    "normal": {
+      "entries": [
+        [["unix_http_server", "file"], "/tmp/supervisor.sock"],
+        [["supervisord", "logfile"], "/tmp/supervisord.log"],
+        [["supervisord", "logfile_maxbytes"], "50MB"],
+        [["supervisord", "logfile_backups"], "10"],
+        [["supervisord", "loglevel"], "info"],
+        [["supervisord", "pidfile"], "/tmp/supervisord.pid"],
+        [["supervisord", "nodaemon"], ""],
+        [["supervisord", "silent"], ""],
+        [["supervisord", "minfds"], "1024"],
+        [["supervisord", "minprocs"], "200"],
+        [["rpcinterface:supervisor", "supervisor.rpcinterface_factory"], "supervisor.rpcinterface:make_main_rpcinterface"],
+        [["supervisorctl", "serverurl"], "unix:///tmp/supervisor.sock"]
+      ]
+    }
+  }
+}

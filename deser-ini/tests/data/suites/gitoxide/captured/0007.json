@@ -1,0 +1,12 @@
+{
+  "tests": [
+    "file::access::mutate::rename_section::filter_renames_every_accepted_section"
+  ],
+  "git": {
+    "entries": [
+      ["branch", "source", "key", "one"],
+      ["branch", "source", "key", "two"],
+      ["branch", "source", "key", "three"]
+    ]
+  }
+}

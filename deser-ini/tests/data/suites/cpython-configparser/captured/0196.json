@@ -1,0 +1,24 @@
+{
+  "tests": [
+    "StrictTestCase.test_write"
+  ],
+  "parser": "RawConfigParser",
+  "options": {
+    "allow_no_value": false,
+    "allow_unnamed_section": false,
+    "comment_prefixes": [";", "#"],
+    "default_section": "DEFAULT",
+    "defaults": null,
+    "delimiters": ["=", ":"],
+    "empty_lines_in_values": true,
+    "inline_comment_prefixes": [";", "#"],
+    "strict": true
+  },
+  "result": {
+    "sections": [
+      ["DEFAULT", [["foo", "another very\nlong line"]]],
+      ["Long Line", [["foo", "this line is much, much longer than my editor\nlikes it."]]],
+      ["Long Line - With Comments!", [["test", "we\nalso\ncomments\nmultiline"]]]
+    ]
+  }
+}

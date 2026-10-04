@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "file::init::from_paths::multiple_paths_multi_value_and_filter"
+  ],
+  "git": {
+    "entries": [
+      ["include", null, "path", "e_path"]
+    ]
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "tests": [
+    "RawConfigParserTestCase.test_parse_errors",
+    "SortedTestCase.test_parse_errors"
+  ],
+  "parser": "RawConfigParser",
+  "options": {
+    "allow_no_value": false,
+    "allow_unnamed_section": false,
+    "comment_prefixes": [";", "#"],
+    "default_section": "DEFAULT",
+    "defaults": null,
+    "delimiters": ["=", ":"],
+    "empty_lines_in_values": true,
+    "inline_comment_prefixes": [";", "#"],
+    "strict": false
+  },
+  "error": {"type": "ParsingError", "errors": [[2, "=val-without-opt-name\n"]]}
+}

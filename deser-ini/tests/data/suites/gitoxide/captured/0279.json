@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "file::mutable::value::set_string::unquoted_comments_end_continued_values_and_survive_replacement"
+  ],
+  "git": {
+    "entries": [
+      ["a", null, "k", "one"],
+      ["a", null, "next", "value"]
+    ]
+  }
+}

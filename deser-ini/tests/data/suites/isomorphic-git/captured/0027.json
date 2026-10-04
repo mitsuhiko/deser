@@ -1,0 +1,13 @@
+{
+  "tests": [
+    "test-GitConfig.simple"
+  ],
+  "git": {
+    "entries": [
+      ["one", null, "keyaaa", "valaaa"],
+      ["remote", "foo", "url", "https://foo.com/project.git"],
+      ["remote", "bar", "url", "https://bar.com/project.git"],
+      ["two", null, "keyaaa", "valaaa"]
+    ]
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "file::init::from_paths::includes::conditional::include_and_includeif_correct_inclusion_order_and_delayed_resolve_include"
+  ],
+  "git": {
+    "entries": [
+      ["section", null, "value", "incl-if-path"]
+    ]
+  }
+}

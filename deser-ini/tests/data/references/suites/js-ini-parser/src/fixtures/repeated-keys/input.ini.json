@@ -1,0 +1,58 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["value", 1, "", "k1", "a"],
+        ["value", 2, "", "k2", "b"],
+        ["value", 3, "", "k1", "c"],
+        ["section", 5, "s"],
+        ["value", 6, "s", "k1", "d"],
+        ["value", 7, "s", "k2", "e"],
+        ["value", 8, "s", "k1", "f"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "error": {
+        "type": "MissingSectionHeaderError",
+        "line": 1
+      }
+    },
+    "lenient": {
+      "sections": [
+        null,
+        "s"
+      ],
+      "entries": [
+        [null, "k1", "c"],
+        [null, "k2", "b"],
+        ["s", "k1", "f"],
+        ["s", "k2", "e"]
+      ]
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["k1"], "c"],
+        [["k2"], "b"],
+        [["s", "k1"], "f"],
+        [["s", "k2"], "e"]
+      ]
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

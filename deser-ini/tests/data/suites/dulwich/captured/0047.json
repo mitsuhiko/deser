@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "ConfigFileTests.test_subsection_roundtrip_with_special_chars"
+  ],
+  "git": {
+    "entries": [
+      ["branch", "trailing\\", "k", "v"]
+    ]
+  }
+}

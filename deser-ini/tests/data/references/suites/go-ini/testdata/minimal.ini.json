@@ -1,0 +1,43 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 1, "author"],
+        ["value", 2, "author", "E-MAIL", "u@gogs.io"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "author"
+      ],
+      "entries": [
+        ["author", "E-MAIL", "u@gogs.io"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["author", "E-MAIL"], "u@gogs.io"]
+      ]
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

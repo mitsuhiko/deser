@@ -1,0 +1,22 @@
+{
+  "tests": [
+    "file::access::read_only::get_value_for_all_provided_values"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "other-quoted", "hello"],
+      ["core", null, "bool-explicit", "false"],
+      ["core", null, "bool-implicit", null],
+      ["core", null, "integer-no-prefix", "10"],
+      ["core", null, "integer-prefix", "10g"],
+      ["core", null, "color", "brightgreen red             bold"],
+      ["core", null, "other", "hello world"],
+      ["core", null, "other-quoted", "hello world"],
+      ["core", null, "location", "~/tmp"],
+      ["core", null, "location-quoted", "~/quoted"],
+      ["core", null, "empty-implicit", null],
+      ["core", null, "empty-equals", ""],
+      ["core", null, "empty-explicit", ""]
+    ]
+  }
+}

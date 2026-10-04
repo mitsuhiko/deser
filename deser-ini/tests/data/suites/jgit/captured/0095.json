@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "ConfigTest.testParsedEmptyString"
+  ],
+  "git": {
+    "entries": [
+      ["a", null, "x", "0"],
+      ["a", null, "y", ""]
+    ]
+  }
+}

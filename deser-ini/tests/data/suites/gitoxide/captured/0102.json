@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "file::impls::equality_ignores_section_and_value_name_case_but_not_subsection_case"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "mixedcase", "value"],
+      ["remote", "origin", "url", "location"]
+    ]
+  }
+}

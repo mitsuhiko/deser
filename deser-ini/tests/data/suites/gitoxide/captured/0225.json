@@ -1,0 +1,17 @@
+{
+  "tests": [
+    "file::mutable::value::delete::get_value_after_deleted",
+    "file::mutable::value::delete::idempotency",
+    "file::mutable::value::delete::set_string_after_deleted",
+    "file::mutable::value::delete::single_line_value",
+    "file::mutable::value::get::value_is_correct",
+    "file::mutable::value::set_string::simple_value_and_empty_string"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "a", "b100"],
+      ["core", null, "c", "d"],
+      ["core", null, "e", "f"]
+    ]
+  }
+}

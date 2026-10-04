@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "ConfigTest.testDropBackslashFromInvalidEscapeSequenceInSubsectionName"
+  ],
+  "git": {
+    "entries": [
+      ["foo", "xb", "bar", "value"]
+    ]
+  }
+}

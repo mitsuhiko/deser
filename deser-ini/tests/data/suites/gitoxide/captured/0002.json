@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "file::access::mutate::remove_section::removed_sections_can_be_mutated_and_reinserted"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "a", "b"]
+    ]
+  }
+}

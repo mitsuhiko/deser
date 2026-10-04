@@ -1,0 +1,13 @@
+{
+  "tests": [
+    "(*URLSuite).TestApplyInsteadOfLongestMatchIntegration"
+  ],
+  "git": {
+    "entries": [
+      ["url", "ssh://git@github.com/", "insteadof", "https://github.com/"],
+      ["url", "ssh://git@github.com/", "insteadof", "https://github.com/enterprise/"],
+      ["remote", "origin", "url", "https://github.com/enterprise/user/repo.git"],
+      ["remote", "origin", "fetch", "+refs/heads/*:refs/remotes/origin/*"]
+    ]
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "test-GitConfig.section is only alphanum _ and . (set)"
+  ],
+  "git": {
+    "entries": [
+      ["foo", null, "keyaaa", "valfoo"]
+    ]
+  }
+}

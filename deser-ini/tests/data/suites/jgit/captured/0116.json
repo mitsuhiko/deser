@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "GpgConfigTest.testGetSigningKey"
+  ],
+  "git": {
+    "entries": [
+      ["user", null, "signingkey", "0x2345"]
+    ]
+  }
+}

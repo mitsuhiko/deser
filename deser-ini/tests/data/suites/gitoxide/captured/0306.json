@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "format::idempotent"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "editor", "vim"],
+      ["remote", "o", "url", "x"]
+    ]
+  }
+}

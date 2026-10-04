@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "ConfigTest.testCrLfContinuation"
+  ],
+  "git": {
+    "entries": [
+      ["foo", null, "bar", "true"]
+    ]
+  }
+}

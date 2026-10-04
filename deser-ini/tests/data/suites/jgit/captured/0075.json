@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "ConfigTest.testNoEscapeSpecialCharacters"
+  ],
+  "git": {
+    "entries": [
+      ["foo", null, "bar", "x\"y"]
+    ]
+  }
+}

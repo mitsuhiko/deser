@@ -1,0 +1,14 @@
+{
+  "tests": [
+    "file::access::raw::raw_multi_value::multi_value_across_sections",
+    "file::access::raw::raw_multi_value::values_with_sections_filter_returns_values_from_accepted_sections",
+    "file::access::raw::raw_multi_value::values_with_sections_identify_each_values_section_in_file_order"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "a", "b"],
+      ["core", null, "a", "c"],
+      ["core", null, "a", "d"]
+    ]
+  }
+}

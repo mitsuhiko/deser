@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "GpgConfigTest.testGetKeyFormat_x509"
+  ],
+  "git": {
+    "entries": [
+      ["gpg", null, "format", "x509"]
+    ]
+  }
+}

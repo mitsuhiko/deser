@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "file::access::read_only::multi_line_value_starting_on_a_continuation_line_is_not_indented"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "k", "\u000b  a"]
+    ]
+  }
+}

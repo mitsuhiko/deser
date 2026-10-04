@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "test-GitConfig.lines starting with # or ;"
+  ],
+  "git": {
+    "entries": [
+      ["foo", null, "keyccc", "valccc"]
+    ]
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "inih": {
+    "default": {
+      "events": [],
+      "error_line": 1
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "events": [
+        ["value", 1, "", {"hex": "fffe5b"}, null]
+      ],
+      "error_line": null
+    }
+  },
+  "configparser": {
+    "default": {
+      "error": {
+        "type": "UnicodeDecodeError"
+      }
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "error": {
+        "message": "syntax error, unexpected end of file, expecting ']'",
+        "line": 1
+      }
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

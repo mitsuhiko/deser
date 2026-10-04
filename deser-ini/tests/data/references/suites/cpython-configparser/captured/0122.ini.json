@@ -1,0 +1,54 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 2, "dummy"],
+        ["value", 4, "dummy", "b", "${a}"]
+      ],
+      "error_line": 3
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "events": [
+        ["section", 2, "dummy"],
+        ["value", 3, "dummy", "a", null],
+        ["value", 4, "dummy", "b", "${a}"]
+      ],
+      "error_line": null
+    }
+  },
+  "configparser": {
+    "default": {
+      "error": {
+        "type": "ParsingError",
+        "line": 3
+      }
+    },
+    "lenient": {
+      "sections": [
+        "dummy"
+      ],
+      "entries": [
+        ["dummy", "a", null],
+        ["dummy", "b", "${a}"]
+      ]
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["dummy", "b"], "${a}"]
+      ]
+    },
+    "normal": {
+      "entries": [
+        [["dummy", "b"], ""]
+      ]
+    }
+  }
+}

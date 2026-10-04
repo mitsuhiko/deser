@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "file::mutable::value::get::single_line_before_comment"
+  ],
+  "git": {
+    "entries": [
+      ["a", null, "k", "hello there"]
+    ]
+  }
+}

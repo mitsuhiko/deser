@@ -1,0 +1,18 @@
+{
+  "tests": [
+    "file::mutable::value::set_string::comment_included",
+    "file::mutable::value::set_string::empty",
+    "file::mutable::value::set_string::ends_with_whitespace",
+    "file::mutable::value::set_string::just_whitespace",
+    "file::mutable::value::set_string::leading_whitespace_causes_double_quotes",
+    "file::mutable::value::set_string::multi_line",
+    "file::mutable::value::set_string::quotes_and_backslashes",
+    "file::mutable::value::set_string::single_line",
+    "file::mutable::value::set_string::starts_with_whitespace"
+  ],
+  "git": {
+    "entries": [
+      ["a", null, "k", null]
+    ]
+  }
+}

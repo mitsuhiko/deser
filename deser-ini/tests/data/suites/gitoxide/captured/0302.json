@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "format::force_lf_newline"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "editor", "vim"]
+    ]
+  }
+}

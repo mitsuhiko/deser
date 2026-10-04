@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "file::init::from_paths::includes::conditional::hasconfig::cycle_breaker",
+    "file::init::from_paths::includes::conditional::hasconfig::no_cycle"
+  ],
+  "git": {
+    "entries": [
+      ["remote", "bar", "url", "barurl"]
+    ]
+  }
+}

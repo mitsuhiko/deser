@@ -1,0 +1,67 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 6, "width = 18"],
+        ["value", 7, "width = 18", "_123456789", "1234567"],
+        ["section", 9, "width = 19"],
+        ["value", 10, "width = 19", "_123456789", "12345678"],
+        ["section", 12, "width = 20"],
+        ["value", 13, "width = 20", "_123456789", "123456789"],
+        ["section", 15, "2 assigns"],
+        ["value", 16, "2 assigns", "_123456789", "12345678name=value"],
+        ["section", 18, "no trailing \\n"],
+        ["value", 23, "no trailing \\n", "_123456782", "12345678"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "width = 18",
+        "width = 19",
+        "width = 20",
+        "2 assigns",
+        "no trailing \\n"
+      ],
+      "entries": [
+        ["width = 18", "_123456789", "1234567"],
+        ["width = 19", "_123456789", "12345678"],
+        ["width = 20", "_123456789", "123456789"],
+        ["2 assigns", "_123456789", "12345678name=value"],
+        ["no trailing \\n", "_123456782", "12345678"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["# INI_MAX_LINE"], "20"],
+        [["width = 18", "_123456789"], "1234567"],
+        [["width = 19", "_123456789"], "12345678"],
+        [["width = 20", "_123456789"], "123456789"],
+        [["2 assigns", "_123456789"], "12345678name=value"],
+        [["no trailing \\n", "_123456782"], "12345678"]
+      ]
+    },
+    "normal": {
+      "error": {
+        "message": "syntax error, unexpected '='",
+        "line": 16
+      }
+    }
+  }
+}

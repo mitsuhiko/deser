@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "GetGitProxyCommandTests.test_exact_domain_match"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "gitproxy", "proxy-cmd for org"]
+    ]
+  }
+}

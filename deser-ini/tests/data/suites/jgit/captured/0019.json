@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "ConfigTest.testBooleanWithNoValue"
+  ],
+  "git": {
+    "entries": [
+      ["my", null, "empty", null]
+    ]
+  }
+}

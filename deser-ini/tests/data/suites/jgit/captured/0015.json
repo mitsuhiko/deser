@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "ConfigTest.test001_ReadBareKey"
+  ],
+  "git": {
+    "entries": [
+      ["foo", null, "bar", null]
+    ]
+  }
+}

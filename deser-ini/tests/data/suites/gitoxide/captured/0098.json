@@ -1,0 +1,8 @@
+{
+  "tests": [
+    "file::impls::can_reconstruct_empty_config"
+  ],
+  "git": {
+    "entries": []
+  }
+}

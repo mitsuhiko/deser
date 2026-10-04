@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "file::init::from_paths::includes::unconditional::respect_max_depth"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "i", "3"],
+      ["include", null, "path", "/tmp/.tmpXXXXXX/4"]
+    ]
+  }
+}

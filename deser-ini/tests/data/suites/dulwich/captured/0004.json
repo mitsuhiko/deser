@@ -1,0 +1,8 @@
+{
+  "tests": [
+    "ConfigFileTests.test_comment_before_section"
+  ],
+  "git": {
+    "entries": []
+  }
+}

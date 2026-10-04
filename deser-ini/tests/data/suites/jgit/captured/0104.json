@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "ConfigTest.testTimeUnitDefaultValue"
+  ],
+  "git": {
+    "entries": [
+      ["a", null, "a", " "]
+    ]
+  }
+}

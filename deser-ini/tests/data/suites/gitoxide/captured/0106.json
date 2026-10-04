@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "file::init::comfort::from_git_dir"
+  ],
+  "git": {
+    "entries": [
+      ["a", null, "system-override", "from-b.config"]
+    ]
+  }
+}

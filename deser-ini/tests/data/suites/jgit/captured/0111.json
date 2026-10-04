@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "GpgConfigTest.isSignCommits_true"
+  ],
+  "git": {
+    "entries": [
+      ["commit", null, "gpgsign", "true"]
+    ]
+  }
+}

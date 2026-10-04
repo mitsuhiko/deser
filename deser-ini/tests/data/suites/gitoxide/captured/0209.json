@@ -1,0 +1,12 @@
+{
+  "tests": [
+    "file::mutable::multi_value::get::multi_line"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "a", "b100"],
+      ["core", null, "a", "db  c"],
+      ["core", null, "a", "f   a"]
+    ]
+  }
+}

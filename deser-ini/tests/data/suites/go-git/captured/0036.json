@@ -1,0 +1,19 @@
+{
+  "tests": [
+    "(*DecoderSuite).TestDecode"
+  ],
+  "git": {
+    "entries": [
+      ["section", null, "option1", "has # hash"],
+      ["section", null, "option2", "has \" quote"],
+      ["section", null, "option3", "has \\ backslash"],
+      ["section", null, "option4", "has ; semicolon"],
+      ["section", null, "option5", "has \n line-feed"],
+      ["section", null, "option6", "has \t tab"],
+      ["section", null, "option7", "  has leading spaces"],
+      ["section", null, "option8", "has trailing spaces  "],
+      ["section", null, "option9", "has no special characters"],
+      ["section", null, "option10", "has unusual \u0001Ȁ characters"]
+    ]
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "file::init::from_paths::from_path_no_includes::single_path"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "boolean", "true"]
+    ]
+  }
+}

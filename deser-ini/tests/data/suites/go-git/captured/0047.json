@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "(*DecoderSuite).TestDecodeFailsWithTrailingGarbage"
+  ],
+  "git": {
+    "entries": [
+      ["remote", "origin", "garbage", null],
+      ["remote", "origin", "key", "value"]
+    ]
+  }
+}

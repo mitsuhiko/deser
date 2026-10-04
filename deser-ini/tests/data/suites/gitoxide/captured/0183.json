@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "file::init::from_paths::includes::unconditional::cycle_detection"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "b", "1"],
+      ["include", null, "path", "/tmp/.tmpXXXXXX/a"]
+    ]
+  }
+}

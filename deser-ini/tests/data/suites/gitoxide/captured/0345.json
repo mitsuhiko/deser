@@ -1,0 +1,6 @@
+{
+  "tests": [
+    "parse::error::to_string_truncates_extra_values"
+  ],
+  "git": {"error": {"message": "bad config line 2 in file <file>", "line": 2}}
+}

@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "ConfigFileTests.test_from_file_section_case_insensitive_lower",
+    "ConfigFileTests.test_from_file_section_case_insensitive_mixed"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "foo", "bar"]
+    ]
+  }
+}

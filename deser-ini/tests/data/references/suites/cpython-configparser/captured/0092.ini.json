@@ -1,0 +1,55 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 1, "And Now For Something"],
+        ["value", 2, "And Now For Something", "completely different", "= True"],
+        ["section", 3, "And Now For Something"]
+      ],
+      "error_line": 4
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "events": [
+        ["section", 1, "And Now For Something"],
+        ["value", 2, "And Now For Something", "completely different", "= True"],
+        ["section", 3, "And Now For Something"],
+        ["value", 4, "And Now For Something", "the larch $ 1", null]
+      ],
+      "error_line": null
+    }
+  },
+  "configparser": {
+    "default": {
+      "error": {
+        "type": "DuplicateSectionError",
+        "line": 3
+      }
+    },
+    "lenient": {
+      "sections": [
+        "And Now For Something"
+      ],
+      "entries": [
+        ["And Now For Something", "completely different", "= True"],
+        ["And Now For Something", "the larch $ 1", null]
+      ]
+    }
+  },
+  "php": {
+    "raw": {
+      "error": {
+        "message": "syntax error, unexpected '$'",
+        "line": 4
+      }
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

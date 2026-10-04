@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "file::init::from_paths::multiple_paths_multi_value_and_filter"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "key", "c"]
+    ]
+  }
+}

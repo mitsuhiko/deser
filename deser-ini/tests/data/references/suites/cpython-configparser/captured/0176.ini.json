@@ -1,0 +1,48 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["value", 1, "", "a", "1"],
+        ["value", 2, "", "b", "2"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "error": {
+        "type": "MissingSectionHeaderError",
+        "line": 1
+      }
+    },
+    "lenient": {
+      "sections": [
+        null
+      ],
+      "entries": [
+        [null, "a", "1"],
+        [null, "b", "2"]
+      ]
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["a"], "1"],
+        [["b"], "2"]
+      ]
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "format::force_crlf_newline",
+    "format::spaces_around_separator_can_be_disabled"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "editor", "vim"]
+    ]
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "file::access::read_only::parsed_section_header_legacy_check_uses_backing_buffer"
+  ],
+  "git": {
+    "entries": [
+      ["remote", "origin", "url", "https://example.com"],
+      ["remote", "upstream", "url", "https://example.com"]
+    ]
+  }
+}

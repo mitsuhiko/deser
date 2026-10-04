@@ -1,0 +1,17 @@
+{
+  "tests": [
+    "file::init::from_paths::includes::conditional::gitdir::tilde_alone_does_not_match_even_if_home_is_git_directory"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "repositoryformatversion", "0"],
+      ["core", null, "filemode", "true"],
+      ["core", null, "bare", "false"],
+      ["core", null, "logallrefupdates", "true"],
+      ["core", null, "ignorecase", "true"],
+      ["core", null, "precomposeunicode", "true"],
+      ["section", null, "value", "base-value"],
+      ["includeif", "gitdir:~", "path", "/tmp/.tmpXXXXXX/include.path"]
+    ]
+  }
+}

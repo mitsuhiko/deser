@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "ConfigFileTests.test_write_to_file_preserves_quoted_trailing_whitespace"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "foo", " "],
+      ["core", null, "bar", "\t"]
+    ]
+  }
+}

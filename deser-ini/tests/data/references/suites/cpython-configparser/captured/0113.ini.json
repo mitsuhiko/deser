@@ -1,0 +1,60 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 2, "s"],
+        ["value", 3, "s", "str", "string"],
+        ["value", 4, "s", "str", "int = 1"],
+        ["value", 5, "s", "str", "float = 0.5"],
+        ["value", 6, "s", "str", "list = a b c d e f g"],
+        ["value", 7, "s", "str", "bool = yes"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "events": [
+        ["section", 2, "s"],
+        ["value", 3, "s", "str", "string"],
+        ["value", 4, "s", "int", "1"],
+        ["value", 5, "s", "float", "0.5"],
+        ["value", 6, "s", "list", "a b c d e f g"],
+        ["value", 7, "s", "bool", "yes"]
+      ],
+      "error_line": null
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "s"
+      ],
+      "entries": [
+        ["s", "str", "string"],
+        ["s", "int", "1"],
+        ["s", "float", "0.5"],
+        ["s", "list", "a b c d e f g"],
+        ["s", "bool", "yes"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "error": {
+        "message": "syntax error, unexpected END_OF_LINE, expecting '='",
+        "line": 3
+      }
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

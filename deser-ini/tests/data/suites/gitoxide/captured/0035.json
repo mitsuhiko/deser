@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "file::access::raw::set_raw_value::multi_line"
+  ],
+  "git": {
+    "entries": [
+      ["a", null, "k", "c"],
+      ["a", null, "k", "a\nb   \n\t   c"]
+    ]
+  }
+}

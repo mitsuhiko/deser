@@ -1,0 +1,102 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 51, "General"],
+        ["value", 52, "General", "editor-on-startup", "0"],
+        ["value", 53, "General", "autosave", "0"],
+        ["value", 54, "General", "print-command-posix", "lpr %%s"],
+        ["value", 55, "General", "print-command-win", "start /min notepad /p %%s"],
+        ["value", 56, "General", "delete-exitfunc", "1"],
+        ["section", 58, "EditorWindow"],
+        ["value", 59, "EditorWindow", "width", "80"],
+        ["value", 60, "EditorWindow", "height", "40"],
+        ["value", 61, "EditorWindow", "cursor-blink", "1"],
+        ["value", 62, "EditorWindow", "font", "TkFixedFont"],
+        ["value", 65, "EditorWindow", "font-size", "10"],
+        ["value", 66, "EditorWindow", "font-bold", "0"],
+        ["value", 67, "EditorWindow", "encoding", "none"],
+        ["value", 68, "EditorWindow", "line-numbers-default", "0"],
+        ["section", 70, "PyShell"],
+        ["value", 71, "PyShell", "auto-squeeze-min-lines", "50"],
+        ["section", 73, "Indent"],
+        ["value", 74, "Indent", "use-spaces", "1"],
+        ["value", 75, "Indent", "num-spaces", "4"],
+        ["section", 77, "Theme"],
+        ["value", 78, "Theme", "default", "1"],
+        ["value", 79, "Theme", "name", "IDLE Classic"],
+        ["value", 80, "Theme", "name2", ""],
+        ["section", 83, "Keys"],
+        ["value", 84, "Keys", "default", "1"],
+        ["value", 85, "Keys", "name", ""],
+        ["value", 86, "Keys", "name2", ""],
+        ["section", 89, "History"],
+        ["value", 90, "History", "cyclic", "1"],
+        ["section", 92, "HelpFiles"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "General",
+        "EditorWindow",
+        "PyShell",
+        "Indent",
+        "Theme",
+        "Keys",
+        "History",
+        "HelpFiles"
+      ],
+      "entries": [
+        ["General", "editor-on-startup", "0"],
+        ["General", "autosave", "0"],
+        ["General", "print-command-posix", "lpr %%s"],
+        ["General", "print-command-win", "start /min notepad /p %%s"],
+        ["General", "delete-exitfunc", "1"],
+        ["EditorWindow", "width", "80"],
+        ["EditorWindow", "height", "40"],
+        ["EditorWindow", "cursor-blink", "1"],
+        ["EditorWindow", "font", "TkFixedFont"],
+        ["EditorWindow", "font-size", "10"],
+        ["EditorWindow", "font-bold", "0"],
+        ["EditorWindow", "encoding", "none"],
+        ["EditorWindow", "line-numbers-default", "0"],
+        ["PyShell", "auto-squeeze-min-lines", "50"],
+        ["Indent", "use-spaces", "1"],
+        ["Indent", "num-spaces", "4"],
+        ["Theme", "default", "1"],
+        ["Theme", "name", "IDLE Classic"],
+        ["Theme", "name2", ""],
+        ["Keys", "default", "1"],
+        ["Keys", "name", ""],
+        ["Keys", "name2", ""],
+        ["History", "cyclic", "1"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "error": {
+        "message": "syntax error, unexpected '~'",
+        "line": 14
+      }
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

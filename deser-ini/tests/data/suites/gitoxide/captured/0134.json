@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "file::init::from_paths::includes::conditional::gitdir::failed_user_expansion_matches_the_literal_pattern"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "bare", "true"],
+      ["includeif", "gitdir:~gix-config-.tmpXXXXXX", "path", "included.config"]
+    ]
+  }
+}

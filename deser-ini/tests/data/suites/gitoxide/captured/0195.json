@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "file::init::from_paths::includes::unconditional::simple"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "b", "false"]
+    ]
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "tests": [
+    "SubmodulesTests.test_read_submodules_ignores_includes"
+  ],
+  "git": {
+    "entries": [
+      ["submodule", "real", "path", "sub"],
+      ["submodule", "real", "url", "./sub"],
+      ["include", null, "path", "evil.config"]
+    ]
+  }
+}

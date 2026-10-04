@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "ConfigFileTests.test_unknown_includeif_condition_logging"
+  ],
+  "git": {
+    "entries": [
+      ["user", null, "name", "Test User"],
+      ["includeif", "futurefeature:value", "path", "other.config"]
+    ]
+  }
+}

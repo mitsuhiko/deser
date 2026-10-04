@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "TestUnmarshalIndexSkipHash"
+  ],
+  "git": {
+    "entries": [
+      ["index", null, "skiphash", "true"]
+    ]
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "TestGPGConfig"
+  ],
+  "git": {
+    "entries": [
+      ["gpg", null, "format", "ssh"],
+      ["gpg", "ssh", "allowedsignersfile", "/home/user/.ssh/allowed_signers"]
+    ]
+  }
+}

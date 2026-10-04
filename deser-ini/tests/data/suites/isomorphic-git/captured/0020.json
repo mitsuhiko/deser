@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "test-GitConfig.numeric suffix"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "bigfilethreshold", "2m"]
+    ]
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "tests": [
+    "ConfigParserTestCaseNoValue.test_read_returns_file_list",
+    "ConfigParserTestCaseNoValue.test_read_returns_file_list_with_bytestring_path"
+  ],
+  "parser": "ConfigParser",
+  "options": {
+    "allow_no_value": true,
+    "allow_unnamed_section": false,
+    "comment_prefixes": [";", "#"],
+    "default_section": "DEFAULT",
+    "defaults": null,
+    "delimiters": ["=", ":"],
+    "empty_lines_in_values": true,
+    "inline_comment_prefixes": [";", "#"],
+    "strict": false
+  },
+  "result": {
+    "sections": [
+      ["Foo Bar", [["foo", "newbar"]]]
+    ]
+  }
+}

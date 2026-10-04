@@ -1,0 +1,22 @@
+{
+  "tests": [
+    "ConfigParserTestCase.test_invalid_multiline_value",
+    "ConfigParserTestCaseNoInterpolation.test_invalid_multiline_value",
+    "ConvertersTestCase.test_invalid_multiline_value",
+    "CopyTestCase.test_invalid_multiline_value",
+    "MultilineValuesTestCase.test_invalid_multiline_value"
+  ],
+  "parser": "ConfigParser",
+  "options": {
+    "allow_no_value": false,
+    "allow_unnamed_section": false,
+    "comment_prefixes": [";", "#"],
+    "default_section": "DEFAULT",
+    "defaults": null,
+    "delimiters": ["=", ":"],
+    "empty_lines_in_values": true,
+    "inline_comment_prefixes": [";", "#"],
+    "strict": false
+  },
+  "error": {"type": "ParsingError", "errors": [[3, "invalid"]]}
+}

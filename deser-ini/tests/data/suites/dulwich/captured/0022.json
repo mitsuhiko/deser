@@ -1,0 +1,6 @@
+{
+  "tests": [
+    "ConfigFileTests.test_from_file_value_with_open_quoted"
+  ],
+  "git": {"error": {"message": "bad config line 2 in file <file>", "line": 2}}
+}

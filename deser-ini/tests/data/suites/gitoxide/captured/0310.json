@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "format::line_continuation_value_is_untouched"
+  ],
+  "git": {
+    "entries": [
+      ["alias", null, "save", "!f() {     git status; }; f"]
+    ]
+  }
+}

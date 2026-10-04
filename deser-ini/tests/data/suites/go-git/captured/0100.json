@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "TestUnmarshalProtectNTFSAcceptsGitStyleBooleans"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "protectntfs", "false"],
+      ["core", null, "protecthfs", "false"]
+    ]
+  }
+}

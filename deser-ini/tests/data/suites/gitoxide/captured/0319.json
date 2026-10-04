@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "format::root_and_section_comment_indentation_are_independent"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "editor", "vim"]
+    ]
+  }
+}

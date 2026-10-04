@@ -1,0 +1,102 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 1, "section1"],
+        ["value", 2, "section1", "single1", "abc"],
+        ["value", 3, "section1", "multi", "this is a"],
+        ["value", 4, "section1", "multi", "multi-line value"],
+        ["value", 5, "section1", "single2", "xyz"],
+        ["section", 6, "section2"],
+        ["value", 7, "section2", "multi", "a"],
+        ["value", 8, "section2", "multi", "b"],
+        ["value", 9, "section2", "multi", "c"],
+        ["section", 10, "section3"],
+        ["value", 11, "section3", "single", "ghi"],
+        ["value", 12, "section3", "multi", "the quick"],
+        ["value", 13, "section3", "multi", "brown fox"],
+        ["value", 14, "section3", "name", "bob smith"],
+        ["value", 16, "section3", "foo", "bar"],
+        ["value", 17, "section3", "foo", "Hi World"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "events": [
+        ["section", 1, "section1"],
+        ["value", 2, "section1", "single1", "abc"],
+        ["value", 3, "section1", "multi", "this is a"],
+        ["value", 5, "section1", "single2", "xyz"],
+        ["section", 6, "section2"],
+        ["value", 7, "section2", "multi", "a"],
+        ["section", 10, "section3"],
+        ["value", 11, "section3", "single", "ghi"],
+        ["value", 12, "section3", "multi", "the quick"],
+        ["value", 14, "section3", "name", "bob smith"],
+        ["value", 16, "section3", "foo", "bar"]
+      ],
+      "error_line": 4
+    },
+    "no_inline_comments": {
+      "events": [
+        ["section", 1, "section1"],
+        ["value", 2, "section1", "single1", "abc"],
+        ["value", 3, "section1", "multi", "this is a"],
+        ["value", 4, "section1", "multi", "multi-line value"],
+        ["value", 5, "section1", "single2", "xyz"],
+        ["section", 6, "section2"],
+        ["value", 7, "section2", "multi", "a"],
+        ["value", 8, "section2", "multi", "b"],
+        ["value", 9, "section2", "multi", "c"],
+        ["section", 10, "section3"],
+        ["value", 11, "section3", "single", "ghi"],
+        ["value", 12, "section3", "multi", "the quick"],
+        ["value", 13, "section3", "multi", "brown fox"],
+        ["value", 14, "section3", "name", "bob smith  ; comment line 1"],
+        ["value", 16, "section3", "foo", "bar ;c1"],
+        ["value", 17, "section3", "foo", "Hi World ;c2"]
+      ],
+      "error_line": null
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "section1",
+        "section2",
+        "section3"
+      ],
+      "entries": [
+        ["section1", "single1", "abc"],
+        ["section1", "multi", "this is a\nmulti-line value"],
+        ["section1", "single2", "xyz"],
+        ["section2", "multi", "a\nb\nc"],
+        ["section3", "single", "ghi"],
+        ["section3", "multi", "the quick\nbrown fox"],
+        ["section3", "name", "bob smith  ; comment line 1"],
+        ["section3", "foo", "bar ;c1\nHi World ;c2"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["section1", "single1"], "abc"],
+        [["section1", "multi"], "this is a"],
+        [["section1", "single2"], "xyz"],
+        [["section2", "multi"], "a"],
+        [["section3", "name"], "bob smith"],
+        [["section3", "foo"], "bar"]
+      ]
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

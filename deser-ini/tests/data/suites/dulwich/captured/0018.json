@@ -1,0 +1,6 @@
+{
+  "tests": [
+    "ConfigFileTests.test_from_file_subsection_invalid"
+  ],
+  "git": {"error": {"message": "bad config line 1 in file <file>", "line": 1}}
+}

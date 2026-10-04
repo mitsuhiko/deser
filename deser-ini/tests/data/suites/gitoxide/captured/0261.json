@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "file::mutable::value::set_string::leading_whitespace_causes_double_quotes"
+  ],
+  "git": {
+    "entries": [
+      ["a", null, "k", " v"]
+    ]
+  }
+}

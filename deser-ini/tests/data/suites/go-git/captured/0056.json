@@ -1,0 +1,12 @@
+{
+  "tests": [
+    "(*DecoderSuite).TestDecodeMatchesPublicLookups"
+  ],
+  "git": {
+    "entries": [
+      ["remote", "origin", "url", "u"],
+      ["core", null, "bare", "true"],
+      ["remote", "origin", "fetch", "f"]
+    ]
+  }
+}

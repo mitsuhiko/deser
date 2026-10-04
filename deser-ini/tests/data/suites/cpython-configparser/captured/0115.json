@@ -1,0 +1,22 @@
+{
+  "tests": [
+    "CoverageOneHundredTestCase.test_interpolation_validation"
+  ],
+  "parser": "ConfigParser",
+  "options": {
+    "allow_no_value": false,
+    "allow_unnamed_section": false,
+    "comment_prefixes": ["#", ";"],
+    "default_section": "DEFAULT",
+    "defaults": null,
+    "delimiters": ["=", ":"],
+    "empty_lines_in_values": true,
+    "inline_comment_prefixes": null,
+    "strict": true
+  },
+  "result": {
+    "sections": [
+      ["section", [["invalid_percent", "%"], ["invalid_reference", "%(()"], ["invalid_variable", "%(does_not_exist)s"]]]
+    ]
+  }
+}

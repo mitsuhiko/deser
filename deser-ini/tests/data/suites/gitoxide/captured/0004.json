@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "file::access::mutate::rename_section::accepts_borrowed_new_subsection_names",
+    "file::access::mutate::rename_section::section_renaming_validates_new_name"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "a", "b"]
+    ]
+  }
+}

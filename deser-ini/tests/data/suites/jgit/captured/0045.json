@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "ConfigTest.testEscapeSubsection"
+  ],
+  "git": {
+    "entries": [
+      ["foo", "", "bar", "value"]
+    ]
+  }
+}

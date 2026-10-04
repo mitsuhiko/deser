@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "format::trailing_backslash_at_eof"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "a", "hello"]
+    ]
+  }
+}

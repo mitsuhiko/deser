@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "ExampleReadStringInto_multivalue"
+  ],
+  "git": {
+    "entries": [
+      ["section", null, "multi", "value1"],
+      ["section", null, "multi", "value2"]
+    ]
+  }
+}

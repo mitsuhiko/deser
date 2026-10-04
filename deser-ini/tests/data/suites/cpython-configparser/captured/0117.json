@@ -1,0 +1,22 @@
+{
+  "tests": [
+    "ExceptionContextTestCase.test_get_basic_interpolation"
+  ],
+  "parser": "ConfigParser",
+  "options": {
+    "allow_no_value": false,
+    "allow_unnamed_section": false,
+    "comment_prefixes": ["#", ";"],
+    "default_section": "DEFAULT",
+    "defaults": null,
+    "delimiters": ["=", ":"],
+    "empty_lines_in_values": true,
+    "inline_comment_prefixes": null,
+    "strict": true
+  },
+  "result": {
+    "sections": [
+      ["Paths", [["home_dir", "/Users"], ["my_dir", "%(home_dir1)s/lumberjack"], ["my_pictures", "%(my_dir)s/Pictures"]]]
+    ]
+  }
+}

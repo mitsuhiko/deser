@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "parse::from_bytes::tests::config::key_value_before_first_section_is_accepted",
+    "parse::tests::event::write_to::key_value_before_first_section"
+  ],
+  "git": {
+    "entries": [
+      [null, null, "a", "b"]
+    ]
+  }
+}

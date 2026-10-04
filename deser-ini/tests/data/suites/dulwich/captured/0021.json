@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "ConfigFileTests.test_from_file_utf8_bom"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "foo", "bär"]
+    ]
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "file::init::from_paths::includes::conditional::onbranch::simple_glob_patterns"
+  ],
+  "git": {
+    "entries": [
+      ["section", null, "value", "base-value"],
+      ["includeif", "onbranch:*suffix", "path", "./include.config"]
+    ]
+  }
+}

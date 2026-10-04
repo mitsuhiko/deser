@@ -1,0 +1,57 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 1, "numbers"],
+        ["value", 2, "numbers", "one", "1"],
+        ["value", 3, "numbers", "two", "%(one)s * 2"],
+        ["value", 4, "numbers", "three", "${common:one} * 3"],
+        ["section", 6, "hexen"],
+        ["value", 7, "hexen", "sixteen", "${numbers:two} * 8"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "numbers",
+        "hexen"
+      ],
+      "entries": [
+        ["numbers", "one", "1"],
+        ["numbers", "two", "%(one)s * 2"],
+        ["numbers", "three", "${common:one} * 3"],
+        ["hexen", "sixteen", "${numbers:two} * 8"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["numbers", "one"], "1"],
+        [["numbers", "two"], "%(one)s * 2"],
+        [["numbers", "three"], "${common:one} * 3"],
+        [["hexen", "sixteen"], "${numbers:two} * 8"]
+      ]
+    },
+    "normal": {
+      "error": {
+        "message": "syntax error, unexpected '('",
+        "line": 3
+      }
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "format::comments_are_preserved"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "editor", "vim"]
+    ]
+  }
+}

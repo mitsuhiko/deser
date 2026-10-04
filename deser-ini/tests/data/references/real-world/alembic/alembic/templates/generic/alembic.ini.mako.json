@@ -1,0 +1,104 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 3, "alembic"],
+        ["value", 8, "alembic", "script_location", "${script_location}"],
+        ["value", 21, "alembic", "prepend_sys_path", "."],
+        ["value", 75, "alembic", "path_separator", "os"],
+        ["value", 89, "alembic", "sqlalchemy.url", "driver://user:pass@localhost/dbname"],
+        ["section", 92, "post_write_hooks"],
+        ["section", 117, "loggers"],
+        ["value", 118, "loggers", "keys", "root,sqlalchemy,alembic"],
+        ["section", 120, "handlers"],
+        ["value", 121, "handlers", "keys", "console"],
+        ["section", 123, "formatters"],
+        ["value", 124, "formatters", "keys", "generic"],
+        ["section", 126, "logger_root"],
+        ["value", 127, "logger_root", "level", "WARNING"],
+        ["value", 128, "logger_root", "handlers", "console"],
+        ["value", 129, "logger_root", "qualname", ""],
+        ["section", 131, "logger_sqlalchemy"],
+        ["value", 132, "logger_sqlalchemy", "level", "WARNING"],
+        ["value", 133, "logger_sqlalchemy", "handlers", ""],
+        ["value", 134, "logger_sqlalchemy", "qualname", "sqlalchemy.engine"],
+        ["section", 136, "logger_alembic"],
+        ["value", 137, "logger_alembic", "level", "INFO"],
+        ["value", 138, "logger_alembic", "handlers", ""],
+        ["value", 139, "logger_alembic", "qualname", "alembic"],
+        ["section", 141, "handler_console"],
+        ["value", 142, "handler_console", "class", "StreamHandler"],
+        ["value", 143, "handler_console", "args", "(sys.stderr,)"],
+        ["value", 144, "handler_console", "level", "NOTSET"],
+        ["value", 145, "handler_console", "formatter", "generic"],
+        ["section", 147, "formatter_generic"],
+        ["value", 148, "formatter_generic", "format", "%(levelname)-5.5s [%(name)s] %(message)s"],
+        ["value", 149, "formatter_generic", "datefmt", "%H:%M:%S"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "alembic",
+        "post_write_hooks",
+        "loggers",
+        "handlers",
+        "formatters",
+        "logger_root",
+        "logger_sqlalchemy",
+        "logger_alembic",
+        "handler_console",
+        "formatter_generic"
+      ],
+      "entries": [
+        ["alembic", "script_location", "${script_location}"],
+        ["alembic", "prepend_sys_path", "."],
+        ["alembic", "path_separator", "os"],
+        ["alembic", "sqlalchemy.url", "driver://user:pass@localhost/dbname"],
+        ["loggers", "keys", "root,sqlalchemy,alembic"],
+        ["handlers", "keys", "console"],
+        ["formatters", "keys", "generic"],
+        ["logger_root", "level", "WARNING"],
+        ["logger_root", "handlers", "console"],
+        ["logger_root", "qualname", ""],
+        ["logger_sqlalchemy", "level", "WARNING"],
+        ["logger_sqlalchemy", "handlers", ""],
+        ["logger_sqlalchemy", "qualname", "sqlalchemy.engine"],
+        ["logger_alembic", "level", "INFO"],
+        ["logger_alembic", "handlers", ""],
+        ["logger_alembic", "qualname", "alembic"],
+        ["handler_console", "class", "StreamHandler"],
+        ["handler_console", "args", "(sys.stderr,)"],
+        ["handler_console", "level", "NOTSET"],
+        ["handler_console", "formatter", "generic"],
+        ["formatter_generic", "format", "%(levelname)-5.5s [%(name)s] %(message)s"],
+        ["formatter_generic", "datefmt", "%H:%M:%S"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "error": {
+        "message": "syntax error, unexpected '('",
+        "line": 5
+      }
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

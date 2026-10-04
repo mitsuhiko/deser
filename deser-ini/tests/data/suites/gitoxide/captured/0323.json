@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "format::whitespace_only_blank_lines_are_counted_in_the_same_run"
+  ],
+  "git": {
+    "entries": [
+      ["a", null, "x", "1"],
+      ["b", null, "y", "2"]
+    ]
+  }
+}

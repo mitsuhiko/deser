@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "file::init::from_str::empty_yields_default_file",
+    "file::tests::try_from::empty",
+    "parse::empty"
+  ],
+  "git": {
+    "entries": []
+  }
+}

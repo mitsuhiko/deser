@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "ConfigFileTests.test_include_depth_limit"
+  ],
+  "git": {
+    "entries": [
+      ["user", null, "name", "User0"],
+      ["include", null, "path", "config1"]
+    ]
+  }
+}

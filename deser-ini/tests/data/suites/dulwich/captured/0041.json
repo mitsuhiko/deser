@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "ConfigFileTests.test_same_line"
+  ],
+  "git": {
+    "entries": [
+      ["branch", "foo", "foo", "bar"]
+    ]
+  }
+}

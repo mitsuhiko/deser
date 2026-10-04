@@ -1,0 +1,13 @@
+{
+  "tests": [
+    "ConfigFileTests.test_default_config"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "repositoryformatversion", "0"],
+      ["core", null, "filemode", "true"],
+      ["core", null, "bare", "false"],
+      ["core", null, "logallrefupdates", "true"]
+    ]
+  }
+}

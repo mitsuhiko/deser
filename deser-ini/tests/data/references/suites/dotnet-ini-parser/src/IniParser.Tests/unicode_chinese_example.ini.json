@@ -1,0 +1,71 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 1, "HSK3.Grammar.Complex sentence with 先…然后…"],
+        ["value", 2, "HSK3.Grammar.Complex sentence with 先…然后…", "structure", "先 + %sentence1% + 然后 + %sentence2%"],
+        ["value", 3, "HSK3.Grammar.Complex sentence with 先…然后…", "example 1", "我们先 %sentence1:坐二号线%，然后 %sentence2:换一号线%"],
+        ["value", 4, "HSK3.Grammar.Complex sentence with 先…然后…", "example 2", "我们先 %sentence1:看电影%，然后 %sentence2:喝咖啡%"],
+        ["section", 6, "HSK1.Grammar.Adverb 太"],
+        ["value", 7, "HSK1.Grammar.Adverb 太", "structure", "太 + %adjective% + 了"],
+        ["value", 8, "HSK1.Grammar.Adverb 太", "example 1", "打车太 %adjective:贵% 了！"],
+        ["value", 9, "HSK1.Grammar.Adverb 太", "example 2", "我家的网太 %adjective:慢% 了！"],
+        ["section", 11, "HSK1.Grammar.Negative adverb 不太"],
+        ["value", 12, "HSK1.Grammar.Negative adverb 不太", "structure", "不太 + %adjective%"],
+        ["value", 13, "HSK1.Grammar.Negative adverb 不太", "example 1", "今天天气不太 %adjective:好%"],
+        ["value", 14, "HSK1.Grammar.Negative adverb 不太", "example 2", "我的钱不太 %adjective:多%"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "HSK3.Grammar.Complex sentence with 先…然后…",
+        "HSK1.Grammar.Adverb 太",
+        "HSK1.Grammar.Negative adverb 不太"
+      ],
+      "entries": [
+        ["HSK3.Grammar.Complex sentence with 先…然后…", "structure", "先 + %sentence1% + 然后 + %sentence2%"],
+        ["HSK3.Grammar.Complex sentence with 先…然后…", "example 1", "我们先 %sentence1:坐二号线%，然后 %sentence2:换一号线%"],
+        ["HSK3.Grammar.Complex sentence with 先…然后…", "example 2", "我们先 %sentence1:看电影%，然后 %sentence2:喝咖啡%"],
+        ["HSK1.Grammar.Adverb 太", "structure", "太 + %adjective% + 了"],
+        ["HSK1.Grammar.Adverb 太", "example 1", "打车太 %adjective:贵% 了！"],
+        ["HSK1.Grammar.Adverb 太", "example 2", "我家的网太 %adjective:慢% 了！"],
+        ["HSK1.Grammar.Negative adverb 不太", "structure", "不太 + %adjective%"],
+        ["HSK1.Grammar.Negative adverb 不太", "example 1", "今天天气不太 %adjective:好%"],
+        ["HSK1.Grammar.Negative adverb 不太", "example 2", "我的钱不太 %adjective:多%"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["HSK3.Grammar.Complex sentence with 先…然后…", "structure"], "先 + %sentence1% + 然后 + %sentence2%"],
+        [["HSK3.Grammar.Complex sentence with 先…然后…", "example 1"], "我们先 %sentence1:坐二号线%，然后 %sentence2:换一号线%"],
+        [["HSK3.Grammar.Complex sentence with 先…然后…", "example 2"], "我们先 %sentence1:看电影%，然后 %sentence2:喝咖啡%"],
+        [["HSK1.Grammar.Adverb 太", "structure"], "太 + %adjective% + 了"],
+        [["HSK1.Grammar.Adverb 太", "example 1"], "打车太 %adjective:贵% 了！"],
+        [["HSK1.Grammar.Adverb 太", "example 2"], "我家的网太 %adjective:慢% 了！"],
+        [["HSK1.Grammar.Negative adverb 不太", "structure"], "不太 + %adjective%"],
+        [["HSK1.Grammar.Negative adverb 不太", "example 1"], "今天天气不太 %adjective:好%"],
+        [["HSK1.Grammar.Negative adverb 不太", "example 2"], "我的钱不太 %adjective:多%"]
+      ]
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

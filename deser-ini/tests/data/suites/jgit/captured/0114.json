@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "GpgConfigTest.testGetKeyFormat_ssh"
+  ],
+  "git": {
+    "entries": [
+      ["gpg", null, "format", "ssh"]
+    ]
+  }
+}

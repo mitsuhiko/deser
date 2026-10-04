@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "ConfigTest.testEscapeSpacesOnly"
+  ],
+  "git": {
+    "entries": [
+      ["foo", null, "bar", " "]
+    ]
+  }
+}

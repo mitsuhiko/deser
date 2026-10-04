@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "file::mutable::value::set_string::comment_included"
+  ],
+  "git": {
+    "entries": [
+      ["a", null, "k", ";hello "]
+    ]
+  }
+}

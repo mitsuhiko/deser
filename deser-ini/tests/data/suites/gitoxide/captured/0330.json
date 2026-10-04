@@ -1,0 +1,12 @@
+{
+  "tests": [
+    "main"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "editor", "vim"],
+      ["core", null, "bare", "false"],
+      ["remote", "origin", "url", "https://example.com/gitoxide.git"]
+    ]
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "CommitConfigTest.testCommentChar"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "commentchar", "_"]
+    ]
+  }
+}

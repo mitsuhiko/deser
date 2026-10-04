@@ -1,0 +1,65 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["value", 1, "", "root", "true"],
+        ["section", 3, "/test1/file.{java,js,rb}"],
+        ["value", 5, "/test1/file.{java,js,rb}", "key1", "val1"],
+        ["section", 6, "test1/file.{java,js,rb}"],
+        ["value", 8, "test1/file.{java,js,rb}", "key2", "val2"],
+        ["section", 9, "*.{java,js,rb}"],
+        ["value", 11, "*.{java,js,rb}", "key3", "val3"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "error": {
+        "type": "MissingSectionHeaderError",
+        "line": 1
+      }
+    },
+    "lenient": {
+      "sections": [
+        null,
+        "/test1/file.{java,js,rb}",
+        "test1/file.{java,js,rb}",
+        "*.{java,js,rb}"
+      ],
+      "entries": [
+        [null, "root", "true"],
+        ["/test1/file.{java,js,rb}", "key1", "val1"],
+        ["test1/file.{java,js,rb}", "key2", "val2"],
+        ["*.{java,js,rb}", "key3", "val3"]
+      ]
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["root"], "true"],
+        [["/test1/file.{java,js,rb}", "key1"], "val1"],
+        [["test1/file.{java,js,rb}", "key2"], "val2"],
+        [["*.{java,js,rb}", "key3"], "val3"]
+      ]
+    },
+    "normal": {
+      "entries": [
+        [["root"], "1"],
+        [["/test1/file.{java,js,rb}", "key1"], "val1"],
+        [["test1/file.{java,js,rb}", "key2"], "val2"],
+        [["*.{java,js,rb}", "key3"], "val3"]
+      ]
+    }
+  }
+}

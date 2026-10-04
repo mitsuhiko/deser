@@ -1,0 +1,48 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 1, "MySection"],
+        ["value", 2, "MySection", "Option", "first line"],
+        ["value", 3, "MySection", "Option", "second line"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "events": [
+        ["section", 1, "MySection"],
+        ["value", 2, "MySection", "Option", "first line"]
+      ],
+      "error_line": 3
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "MySection"
+      ],
+      "entries": [
+        ["MySection", "Option", "first line\nsecond line"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["MySection", "Option"], "first line"]
+      ]
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

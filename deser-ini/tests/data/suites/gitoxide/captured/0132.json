@@ -1,0 +1,17 @@
+{
+  "tests": [
+    "file::init::from_paths::includes::conditional::gitdir::explicit_star_star_prefix_and_suffix_match_zero_or_more_path_components"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "repositoryformatversion", "0"],
+      ["core", null, "filemode", "true"],
+      ["core", null, "bare", "false"],
+      ["core", null, "logallrefupdates", "true"],
+      ["core", null, "ignorecase", "true"],
+      ["core", null, "precomposeunicode", "true"],
+      ["section", null, "value", "base-value"],
+      ["includeif", "gitdir:**/worktree/**", "path", "/tmp/.tmpXXXXXX/worktree/include.path"]
+    ]
+  }
+}

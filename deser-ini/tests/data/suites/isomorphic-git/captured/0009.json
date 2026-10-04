@@ -1,0 +1,14 @@
+{
+  "tests": [
+    "test-GitConfig.get unknown key",
+    "test-GitConfig.get unknown section",
+    "test-GitConfig.simple",
+    "test-GitConfig.simple (case insensitive)"
+  ],
+  "git": {
+    "entries": [
+      ["foo", null, "keyaaa", "valaaa"],
+      ["foo", null, "keybbb", "valbbb"]
+    ]
+  }
+}

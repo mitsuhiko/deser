@@ -1,0 +1,11 @@
+root = true
+
+[/test1/file.{java,js,rb}]
+; Has a leading slash along with a slash in between
+key1=val1
+[test1/file.{java,js,rb}]
+; Has no leading slash but has a slash in between
+key2=val2
+[*.{java,js,rb}]
+; Has no slash at all but still should match
+key3=val3

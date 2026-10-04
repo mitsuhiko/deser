@@ -1,0 +1,12 @@
+{
+  "tests": [
+    "file::tests::try_from::multiple_duplicate_sections"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "a", "b"],
+      ["core", null, "c", "d"],
+      ["core", null, "e", "f"]
+    ]
+  }
+}

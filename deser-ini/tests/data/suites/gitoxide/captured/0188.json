@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "file::init::from_paths::includes::unconditional::nested"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "b", "true"],
+      ["include", null, "path", "/tmp/.tmpXXXXXX/a"]
+    ]
+  }
+}

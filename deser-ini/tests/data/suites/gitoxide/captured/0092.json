@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "file::access::read_only::unknown_section"
+  ],
+  "git": {
+    "entries": [
+      ["present", null, "key", "false"]
+    ]
+  }
+}

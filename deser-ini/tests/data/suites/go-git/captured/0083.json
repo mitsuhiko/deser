@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "TestMerge"
+  ],
+  "git": {
+    "entries": [
+      ["user", null, "name", "wt-user"]
+    ]
+  }
+}

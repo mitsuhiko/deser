@@ -1,0 +1,8 @@
+{
+  "tests": [
+    "ConfigFileTests.test_from_file_empty"
+  ],
+  "git": {
+    "entries": []
+  }
+}

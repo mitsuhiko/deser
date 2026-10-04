@@ -1,0 +1,8 @@
+{
+  "tests": [
+    "ConfigTest.test008_readSectionNames"
+  ],
+  "git": {
+    "entries": []
+  }
+}

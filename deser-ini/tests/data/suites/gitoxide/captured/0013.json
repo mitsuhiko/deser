@@ -1,0 +1,12 @@
+{
+  "tests": [
+    "file::access::raw::raw_multi_value::subsection_must_be_respected",
+    "file::access::raw::raw_value::subsection_must_be_respected"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "a", "b"],
+      ["core", "a", "a", "c"]
+    ]
+  }
+}

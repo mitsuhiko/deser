@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "file::tests::try_from::single_subsection"
+  ],
+  "git": {
+    "entries": [
+      ["core", "sub", "a", "b"],
+      ["core", "sub", "c", "d"]
+    ]
+  }
+}

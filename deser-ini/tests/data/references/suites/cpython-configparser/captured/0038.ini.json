@@ -1,0 +1,60 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 2, "interpolation fail"],
+        ["value", 3, "interpolation fail", "case1", "${where's the brace"],
+        ["value", 4, "interpolation fail", "case1", "case2 = ${does_not_exist}"],
+        ["value", 5, "interpolation fail", "case1", "case3 = ${wrong_section:wrong_value}"],
+        ["value", 6, "interpolation fail", "case1", "case4 = ${i:like:colon:characters}"],
+        ["value", 7, "interpolation fail", "case1", "case5 = $100 for Fail No 5!"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "events": [
+        ["section", 2, "interpolation fail"],
+        ["value", 3, "interpolation fail", "case1", "${where's the brace"],
+        ["value", 4, "interpolation fail", "case2", "${does_not_exist}"],
+        ["value", 5, "interpolation fail", "case3", "${wrong_section:wrong_value}"],
+        ["value", 6, "interpolation fail", "case4", "${i:like:colon:characters}"],
+        ["value", 7, "interpolation fail", "case5", "$100 for Fail No 5!"]
+      ],
+      "error_line": null
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "interpolation fail"
+      ],
+      "entries": [
+        ["interpolation fail", "case1", "${where's the brace"],
+        ["interpolation fail", "case2", "${does_not_exist}"],
+        ["interpolation fail", "case3", "${wrong_section:wrong_value}"],
+        ["interpolation fail", "case4", "${i:like:colon:characters}"],
+        ["interpolation fail", "case5", "$100 for Fail No 5!"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "error": {
+        "message": "syntax error, unexpected END_OF_LINE, expecting '='",
+        "line": 3
+      }
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

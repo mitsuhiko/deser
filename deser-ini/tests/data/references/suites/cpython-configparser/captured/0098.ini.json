@@ -1,0 +1,50 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 1, "Foo"],
+        ["value", 2, "Foo", "x", "=1"],
+        ["value", 3, "Foo", "y", "=2"],
+        ["value", 4, "Foo", "y", "=3"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "error": {
+        "type": "DuplicateOptionError",
+        "line": 4
+      }
+    },
+    "lenient": {
+      "sections": [
+        "Foo"
+      ],
+      "entries": [
+        ["Foo", "x", "=1"],
+        ["Foo", "y", "=3"]
+      ]
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["Foo", "x:"], "1"],
+        [["Foo", "y:"], "3"]
+      ]
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

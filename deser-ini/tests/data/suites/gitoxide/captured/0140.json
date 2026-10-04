@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "file::init::from_paths::includes::conditional::gitdir::relative_path_matching_symlink"
+  ],
+  "git": {
+    "entries": [
+      ["includeif", "gitdir:symlink-worktree/", "path", "/tmp/.tmpXXXXXX/symlink-worktree/include.path"]
+    ]
+  }
+}

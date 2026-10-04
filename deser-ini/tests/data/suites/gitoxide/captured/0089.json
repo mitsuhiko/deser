@@ -1,0 +1,14 @@
+{
+  "tests": [
+    "file::access::read_only::sections_by_name_ignores_subsections_and_preserves_file_order"
+  ],
+  "git": {
+    "entries": [
+      ["remote", null, "marker", "plain"],
+      ["other", null, "marker", "unrelated"],
+      ["remote", "origin", "marker", "origin"],
+      ["remote", "upstream", "marker", "upstream"],
+      ["remote", null, "marker", "last"]
+    ]
+  }
+}

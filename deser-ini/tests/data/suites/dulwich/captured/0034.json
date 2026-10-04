@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "ConfigFileTests.test_includeif_hasconfig_no_match"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "autocrlf", "false"],
+      ["includeif", "hasconfig:core.autocrlf:true", "path", "included.config"]
+    ]
+  }
+}

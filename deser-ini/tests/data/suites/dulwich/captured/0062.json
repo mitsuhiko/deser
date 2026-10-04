@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "StackedConfigTests.test_git_config_nosystem_precedence"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "test", "value"]
+    ]
+  }
+}

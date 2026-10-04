@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "RepositoryCacheConfigTest.testFromConfig"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "repositorycacheexpireafter", "1000"],
+      ["core", null, "repositorycachecleanupdelay", "500"]
+    ]
+  }
+}

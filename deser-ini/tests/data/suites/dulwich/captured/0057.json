@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "ConfigFileTests.test_write_to_path_pathlib",
+    "StackedConfigTests.test_git_config_global"
+  ],
+  "git": {
+    "entries": [
+      ["user", null, "name", "Test User"]
+    ]
+  }
+}

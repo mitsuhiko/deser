@@ -1,0 +1,13 @@
+{
+  "tests": [
+    "(*ConfigSuite).TestLoadConfigXDG"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "bare", "false"],
+      ["core", null, "filemode", "true"],
+      ["user", null, "name", "foo"],
+      ["user", null, "email", "foo@foo.com"]
+    ]
+  }
+}

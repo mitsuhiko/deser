@@ -1,0 +1,13 @@
+{
+  "tests": [
+    "file::mutable::section::rename::attached_sections_are_renamed_unambiguously_and_update_lookups"
+  ],
+  "git": {
+    "entries": [
+      ["target", "same", "key", "first"],
+      ["source", "old", "key", "selected"],
+      ["target", "same", "key", "middle"],
+      ["source", "old", "key", "last"]
+    ]
+  }
+}

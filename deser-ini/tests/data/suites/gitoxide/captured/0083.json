@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "file::access::read_only::overrides_with_implicit_booleans_work_across_sections"
+  ],
+  "git": {
+    "entries": [
+      ["a", null, "b", "false"],
+      ["a", null, "b", null]
+    ]
+  }
+}

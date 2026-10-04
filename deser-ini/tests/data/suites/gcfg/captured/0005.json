@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "ExampleReadStringInto_subsections"
+  ],
+  "git": {
+    "entries": [
+      ["profile", "A", "color", "white"],
+      ["profile", "B", "color", "black"]
+    ]
+  }
+}

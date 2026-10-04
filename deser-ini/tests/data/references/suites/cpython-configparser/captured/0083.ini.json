@@ -1,0 +1,49 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 1, "Foo"]
+      ],
+      "error_line": 2
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "events": [
+        ["section", 1, "Foo"],
+        ["value", 2, "Foo", "wrong-indent", null]
+      ],
+      "error_line": null
+    }
+  },
+  "configparser": {
+    "default": {
+      "error": {
+        "type": "ParsingError",
+        "line": 2
+      }
+    },
+    "lenient": {
+      "sections": [
+        "Foo"
+      ],
+      "entries": [
+        ["Foo", "wrong-indent", null]
+      ]
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["Foo"], []]
+      ]
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

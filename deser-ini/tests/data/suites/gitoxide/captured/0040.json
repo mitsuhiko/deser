@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "file::access::read_only::complex_quoted_values"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "escape-sequence", "hi\nho\n\tthere\bi\\\" \""]
+    ]
+  }
+}

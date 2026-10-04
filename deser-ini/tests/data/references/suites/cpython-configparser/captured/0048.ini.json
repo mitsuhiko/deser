@@ -1,0 +1,63 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 2, "dollars"],
+        ["value", 3, "dollars", "$var", "$$value"],
+        ["value", 4, "dollars", "$var", "$var2 = ${$var}"],
+        ["value", 5, "dollars", "$var", "${sick} = cannot interpolate me"],
+        ["value", 7, "dollars", "$var", "[interpolated]"],
+        ["value", 8, "dollars", "$var", "$other = ${dollars:$var}"],
+        ["value", 9, "dollars", "$var", "$trying = ${dollars:${sick}}"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "events": [
+        ["section", 2, "dollars"],
+        ["value", 3, "dollars", "$var", "$$value"],
+        ["value", 4, "dollars", "$var2", "${$var}"],
+        ["value", 5, "dollars", "${sick}", "cannot interpolate me"],
+        ["section", 7, "interpolated"],
+        ["value", 8, "interpolated", "$other", "${dollars:$var}"],
+        ["value", 9, "interpolated", "$trying", "${dollars:${sick}}"]
+      ],
+      "error_line": null
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "dollars",
+        "interpolated"
+      ],
+      "entries": [
+        ["dollars", "$var", "$$value"],
+        ["dollars", "$var2", "${$var}"],
+        ["dollars", "${sick}", "cannot interpolate me"],
+        ["interpolated", "$other", "${dollars:$var}"],
+        ["interpolated", "$trying", "${dollars:${sick}}"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "error": {
+        "message": "syntax error, unexpected END_OF_LINE, expecting '='",
+        "line": 3
+      }
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

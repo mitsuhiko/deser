@@ -1,0 +1,12 @@
+{
+  "tests": [
+    "BranchConfigTest.getTrackingBranchShouldReturnMergeBranchForLocalBranch"
+  ],
+  "git": {
+    "entries": [
+      ["remote", "origin", "fetch", "+refs/heads/*:refs/remotes/origin/*"],
+      ["branch", "master", "remote", "."],
+      ["branch", "master", "merge", "refs/heads/master"]
+    ]
+  }
+}

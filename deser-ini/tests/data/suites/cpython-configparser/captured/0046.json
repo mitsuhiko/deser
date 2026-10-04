@@ -1,0 +1,22 @@
+{
+  "tests": [
+    "ConfigParserTestCaseExtendedInterpolation.test_set_string_types"
+  ],
+  "parser": "ConfigParser",
+  "options": {
+    "allow_no_value": false,
+    "allow_unnamed_section": false,
+    "comment_prefixes": [";", "#"],
+    "default_section": "common",
+    "defaults": null,
+    "delimiters": ["=", ":"],
+    "empty_lines_in_values": true,
+    "inline_comment_prefixes": [";", "#"],
+    "strict": true
+  },
+  "result": {
+    "sections": [
+      ["sect", [["option1", "foo"]]]
+    ]
+  }
+}

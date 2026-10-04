@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "format::blank_lines_collapsed_when_requested"
+  ],
+  "git": {
+    "entries": [
+      ["a", null, "x", "1"],
+      ["b", null, "y", "2"]
+    ]
+  }
+}

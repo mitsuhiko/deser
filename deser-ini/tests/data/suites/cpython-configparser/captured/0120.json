@@ -1,0 +1,23 @@
+{
+  "tests": [
+    "InlineCommentStrippingTestCase.test_stripping"
+  ],
+  "parser": "ConfigParser",
+  "options": {
+    "allow_no_value": false,
+    "allow_unnamed_section": false,
+    "comment_prefixes": ["#", ";"],
+    "default_section": "DEFAULT",
+    "defaults": null,
+    "delimiters": ["=", ":"],
+    "empty_lines_in_values": true,
+    "inline_comment_prefixes": [";", "#", "//"],
+    "strict": true
+  },
+  "result": {
+    "sections": [
+      ["section", [["k1", "v1;still v1"], ["k2", "v2"], ["k3", "v3"], ["k4", "v4;still v4"], ["k5", "v5;still v5"], ["k6", "v6;still v6; and still v6"], ["k7", "v7;still v7; and still v7"]]],
+      ["multiprefix", [["k1", "v1;still v1"], ["k2", "v2"], ["k3", "v3;#//still v3# and still v3"]]]
+    ]
+  }
+}

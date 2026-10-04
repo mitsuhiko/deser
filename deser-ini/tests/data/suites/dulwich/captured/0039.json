@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "ConfigFileTests.test_quoted_multiline"
+  ],
+  "git": {
+    "entries": [
+      ["alias", null, "who", "!who() {  git log --no-merges --pretty=format:'%an - %ae' $@ | uniq -c | sort -rn;};who"]
+    ]
+  }
+}

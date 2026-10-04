@@ -1,0 +1,60 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 2, "section1"],
+        ["value", 3, "section1", "name1", "= value1"],
+        ["value", 4, "section1", "name1", "[section2]"],
+        ["value", 5, "section1", "name1", "name2 := value2"],
+        ["value", 6, "section1", "name1", "[section3]"],
+        ["value", 7, "section1", "name1", "name3 := value3"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "events": [
+        ["section", 2, "section1"],
+        ["value", 3, "section1", "name1", "= value1"],
+        ["section", 4, "section2"],
+        ["value", 5, "section2", "name2", "= value2"],
+        ["section", 6, "section3"],
+        ["value", 7, "section3", "name3", "= value3"]
+      ],
+      "error_line": null
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "section1",
+        "section2",
+        "section3"
+      ],
+      "entries": [
+        ["section1", "name1", "= value1"],
+        ["section2", "name2", "= value2"],
+        ["section3", "name3", "= value3"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "error": {
+        "message": "syntax error, unexpected END_OF_LINE, expecting '='",
+        "line": 3
+      }
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

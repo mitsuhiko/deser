@@ -1,0 +1,6 @@
+{
+  "tests": [
+    "parse::error::to_string"
+  ],
+  "git": {"error": {"message": "bad config line 3 in file <file>", "line": 3}}
+}

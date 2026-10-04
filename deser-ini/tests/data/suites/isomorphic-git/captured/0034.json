@@ -1,0 +1,13 @@
+{
+  "tests": [
+    "test-GitConfig.variable lines with # or ; at the end (get)",
+    "test-GitConfig.variable lines with # or ; at the end (set)"
+  ],
+  "git": {
+    "entries": [
+      ["foo", null, "keyaaa", "valaaa"],
+      ["foo", null, "keybbb", "valbbb"],
+      ["foo", null, "keyccc", "valccc"]
+    ]
+  }
+}

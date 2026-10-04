@@ -1,0 +1,14 @@
+{
+  "tests": [
+    "BranchConfigTest.isRebase"
+  ],
+  "git": {
+    "entries": [
+      ["branch", "false", "rebase", "false"],
+      ["branch", "true", "rebase", "true"],
+      ["branch", "interactive", "rebase", "interactive"],
+      ["branch", "merges", "rebase", "merges"],
+      ["branch", "preserve", "rebase", "preserve"]
+    ]
+  }
+}

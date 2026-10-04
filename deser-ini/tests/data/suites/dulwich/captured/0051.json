@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "ConfigFileTests.test_value_roundtrip_with_carriage_return"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "k", "a\r\nb"]
+    ]
+  }
+}

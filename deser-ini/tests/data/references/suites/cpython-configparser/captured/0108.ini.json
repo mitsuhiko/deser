@@ -1,0 +1,55 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 1, "section"],
+        ["value", 2, "section", "option1", "=xxx"],
+        ["value", 3, "section", "option2", "=%(option1)s/xxx"],
+        ["value", 4, "section", "ok", "=%(option1)s/%%s"],
+        ["value", 5, "section", "not_ok", "=%(option2)s/%%s"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "section"
+      ],
+      "entries": [
+        ["section", "option1", "=xxx"],
+        ["section", "option2", "=%(option1)s/xxx"],
+        ["section", "ok", "=%(option1)s/%%s"],
+        ["section", "not_ok", "=%(option2)s/%%s"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["section", "option1:"], "xxx"],
+        [["section", "option2:"], "%(option1)s/xxx"],
+        [["section", "ok:"], "%(option1)s/%%s"],
+        [["section", "not_ok:"], "%(option2)s/%%s"]
+      ]
+    },
+    "normal": {
+      "error": {
+        "message": "syntax error, unexpected '('",
+        "line": 3
+      }
+    }
+  }
+}

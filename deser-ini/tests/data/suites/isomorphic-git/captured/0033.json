@@ -1,0 +1,16 @@
+{
+  "tests": [
+    "test-GitConfig.using schema"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "repositoryformatversion", "0"],
+      ["core", null, "filemode", "true"],
+      ["core", null, "bare", "false"],
+      ["core", null, "logallrefupdates", "true"],
+      ["core", null, "symlinks", "false"],
+      ["core", null, "ignorecase", "true"],
+      ["core", null, "bigfilethreshold", "2"]
+    ]
+  }
+}

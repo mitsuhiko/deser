@@ -1,0 +1,202 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["value", 1, "", "o", "p"],
+        ["value", 3, "", "o", "a with spaces   =     b  c"],
+        ["value", 6, "", "\" xa  n          p \"", "\"\\\"\\r\\nyoyoyo\\r\\r\\n\""],
+        ["value", 9, "", "\"[disturbing]\"", "hey you never know"],
+        ["value", 12, "", "s", "'something'"],
+        ["value", 16, "", "s1", "\"something'"],
+        ["value", 19, "", "s2", "\"something else\""],
+        ["value", 22, "", "s3", ""],
+        ["value", 25, "", "s4", ""],
+        ["value", 28, "", "s5", "'   '"],
+        ["value", 31, "", "s6", "' a '"],
+        ["value", 37, "", "true", "true"],
+        ["value", 40, "", "false", "false"],
+        ["value", 43, "", "null", "null"],
+        ["value", 46, "", "undefined", "undefined"],
+        ["value", 49, "", "zr[]", "deedee"],
+        ["value", 50, "", "ar[]", "one"],
+        ["value", 51, "", "ar[]", "three"],
+        ["value", 53, "", "ar", "this is included"],
+        ["value", 56, "", "br", "cold"],
+        ["value", 57, "", "br", "warm"],
+        ["value", 59, "", "eq", "\"eq=eq\""],
+        ["section", 62, "a"],
+        ["value", 63, "a", "av", "a val"],
+        ["value", 64, "a", "e", "{ o: p, a: { av: a val, b: { c: { e: \"this [value]\" } } } }"],
+        ["value", 65, "a", "j", "\"{ o: \"p\", a: { av: \"a val\", b: { c: { e: \"this [value]\" } } } }\""],
+        ["value", 66, "a", "\"[]\"", "a square?"],
+        ["value", 69, "a", "cr[]", "four"],
+        ["value", 70, "a", "cr[]", "eight"],
+        ["section", 73, "b"],
+        ["section", 77, "a.b.c"],
+        ["value", 78, "a.b.c", "e", "1"],
+        ["value", 79, "a.b.c", "j", "2"],
+        ["section", 82, "x\\.y\\.z"],
+        ["value", 83, "x\\.y\\.z", "x.y.z", "xyz"],
+        ["section", 85, "x\\.y\\.z.a\\.b\\.c"],
+        ["value", 86, "x\\.y\\.z.a\\.b\\.c", "a.b.c", "abc"],
+        ["value", 89, "x\\.y\\.z.a\\.b\\.c", "nocomment", "this\\; this is not a comment"],
+        ["value", 95, "x\\.y\\.z.a\\.b\\.c", "noHashComment", "this\\# this is not a comment"]
+      ],
+      "error_line": 34
+    },
+    "no_multiline": {
+      "events": [
+        ["value", 1, "", "o", "p"],
+        ["value", 3, "", "a with spaces", "b  c"],
+        ["value", 6, "", "\" xa  n          p \"", "\"\\\"\\r\\nyoyoyo\\r\\r\\n\""],
+        ["value", 9, "", "\"[disturbing]\"", "hey you never know"],
+        ["value", 12, "", "s", "'something'"],
+        ["value", 16, "", "s1", "\"something'"],
+        ["value", 19, "", "s2", "\"something else\""],
+        ["value", 22, "", "s3", ""],
+        ["value", 25, "", "s4", ""],
+        ["value", 28, "", "s5", "'   '"],
+        ["value", 31, "", "s6", "' a '"],
+        ["value", 37, "", "true", "true"],
+        ["value", 40, "", "false", "false"],
+        ["value", 43, "", "null", "null"],
+        ["value", 46, "", "undefined", "undefined"],
+        ["value", 49, "", "zr[]", "deedee"],
+        ["value", 50, "", "ar[]", "one"],
+        ["value", 51, "", "ar[]", "three"],
+        ["value", 53, "", "ar", "this is included"],
+        ["value", 56, "", "br", "cold"],
+        ["value", 57, "", "br", "warm"],
+        ["value", 59, "", "eq", "\"eq=eq\""],
+        ["section", 62, "a"],
+        ["value", 63, "a", "av", "a val"],
+        ["value", 64, "a", "e", "{ o: p, a: { av: a val, b: { c: { e: \"this [value]\" } } } }"],
+        ["value", 65, "a", "j", "\"{ o: \"p\", a: { av: \"a val\", b: { c: { e: \"this [value]\" } } } }\""],
+        ["value", 66, "a", "\"[]\"", "a square?"],
+        ["value", 69, "a", "cr[]", "four"],
+        ["value", 70, "a", "cr[]", "eight"],
+        ["section", 73, "b"],
+        ["section", 77, "a.b.c"],
+        ["value", 78, "a.b.c", "e", "1"],
+        ["value", 79, "a.b.c", "j", "2"],
+        ["section", 82, "x\\.y\\.z"],
+        ["value", 83, "x\\.y\\.z", "x.y.z", "xyz"],
+        ["section", 85, "x\\.y\\.z.a\\.b\\.c"],
+        ["value", 86, "x\\.y\\.z.a\\.b\\.c", "a.b.c", "abc"],
+        ["value", 89, "x\\.y\\.z.a\\.b\\.c", "nocomment", "this\\; this is not a comment"],
+        ["value", 95, "x\\.y\\.z.a\\.b\\.c", "noHashComment", "this\\# this is not a comment"]
+      ],
+      "error_line": 34
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "events": [
+        ["value", 1, "", "o", "p"],
+        ["value", 3, "", "o", "a with spaces   =     b  c"],
+        ["value", 6, "", "\" xa  n          p \"", "\"\\\"\\r\\nyoyoyo\\r\\r\\n\""],
+        ["value", 9, "", "\"[disturbing]\"", "hey you never know"],
+        ["value", 12, "", "s", "'something'"],
+        ["value", 16, "", "s1", "\"something'"],
+        ["value", 19, "", "s2", "\"something else\""],
+        ["value", 22, "", "s3", ""],
+        ["value", 25, "", "s4", ""],
+        ["value", 28, "", "s5", "'   '"],
+        ["value", 31, "", "s6", "' a '"],
+        ["value", 34, "", "s7", null],
+        ["value", 37, "", "true", "true"],
+        ["value", 40, "", "false", "false"],
+        ["value", 43, "", "null", "null"],
+        ["value", 46, "", "undefined", "undefined"],
+        ["value", 49, "", "zr[]", "deedee"],
+        ["value", 50, "", "ar[]", "one"],
+        ["value", 51, "", "ar[]", "three"],
+        ["value", 53, "", "ar", "this is included"],
+        ["value", 56, "", "br", "cold"],
+        ["value", 57, "", "br", "warm"],
+        ["value", 59, "", "eq", "\"eq=eq\""],
+        ["section", 62, "a"],
+        ["value", 63, "a", "av", "a val"],
+        ["value", 64, "a", "e", "{ o: p, a: { av: a val, b: { c: { e: \"this [value]\" } } } }"],
+        ["value", 65, "a", "j", "\"{ o: \"p\", a: { av: \"a val\", b: { c: { e: \"this [value]\" } } } }\""],
+        ["value", 66, "a", "\"[]\"", "a square?"],
+        ["value", 69, "a", "cr[]", "four"],
+        ["value", 70, "a", "cr[]", "eight"],
+        ["section", 73, "b"],
+        ["section", 77, "a.b.c"],
+        ["value", 78, "a.b.c", "e", "1"],
+        ["value", 79, "a.b.c", "j", "2"],
+        ["section", 82, "x\\.y\\.z"],
+        ["value", 83, "x\\.y\\.z", "x.y.z", "xyz"],
+        ["section", 85, "x\\.y\\.z.a\\.b\\.c"],
+        ["value", 86, "x\\.y\\.z.a\\.b\\.c", "a.b.c", "abc"],
+        ["value", 89, "x\\.y\\.z.a\\.b\\.c", "nocomment", "this\\; this is not a comment"],
+        ["value", 95, "x\\.y\\.z.a\\.b\\.c", "noHashComment", "this\\# this is not a comment"]
+      ],
+      "error_line": null
+    }
+  },
+  "configparser": {
+    "default": {
+      "error": {
+        "type": "MissingSectionHeaderError",
+        "line": 1
+      }
+    },
+    "lenient": {
+      "sections": [
+        null,
+        "a",
+        "b",
+        "a.b.c",
+        "x\\.y\\.z",
+        "x\\.y\\.z.a\\.b\\.c"
+      ],
+      "entries": [
+        [null, "o", "p\n\na with spaces   =     b  c"],
+        [null, "\" xa  n          p \"", "\"\\\"\\r\\nyoyoyo\\r\\r\\n\""],
+        [null, "\"[disturbing]\"", "hey you never know"],
+        [null, "s", "'something'"],
+        [null, "s1", "\"something'"],
+        [null, "s2", "\"something else\""],
+        [null, "s3", ""],
+        [null, "s4", ""],
+        [null, "s5", "'   '"],
+        [null, "s6", "' a '"],
+        [null, "s7", null],
+        [null, "true", "true"],
+        [null, "false", "false"],
+        [null, "null", "null"],
+        [null, "undefined", "undefined"],
+        [null, "zr[]", "deedee"],
+        [null, "ar[]", "three"],
+        [null, "ar", "this is included"],
+        [null, "br", "warm"],
+        [null, "eq", "\"eq=eq\""],
+        ["a", "av", "a val"],
+        ["a", "e", "{ o: p, a: { av: a val, b: { c: { e: \"this [value]\" } } } }"],
+        ["a", "j", "\"{ o: \"p\", a: { av: \"a val\", b: { c: { e: \"this [value]\" } } } }\""],
+        ["a", "\"[]\"", "a square?"],
+        ["a", "cr[]", "eight"],
+        ["a.b.c", "e", "1"],
+        ["a.b.c", "j", "2"],
+        ["x\\.y\\.z", "x.y.z", "xyz"],
+        ["x\\.y\\.z.a\\.b\\.c", "a.b.c", "abc"],
+        ["x\\.y\\.z.a\\.b\\.c", "nocomment", "this\\; this is not a comment"],
+        ["x\\.y\\.z.a\\.b\\.c", "noHashComment", "this\\# this is not a comment"]
+      ]
+    }
+  },
+  "php": {
+    "raw": {
+      "error": {
+        "message": "syntax error, unexpected '\"'",
+        "line": 6
+      }
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

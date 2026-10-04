@@ -1,0 +1,12 @@
+{
+  "tests": [
+    "ConfigTest.test002_ReadWithSubsection"
+  ],
+  "git": {
+    "entries": [
+      ["foo", "zip", "bar", null],
+      ["foo", "zap", "bar", "false"],
+      ["foo", "zap", "n", "3"]
+    ]
+  }
+}

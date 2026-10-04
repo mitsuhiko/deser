@@ -1,0 +1,8 @@
+{
+  "tests": [
+    "file::write::decoded_subsection_names_keep_their_raw_spelling"
+  ],
+  "git": {
+    "entries": []
+  }
+}

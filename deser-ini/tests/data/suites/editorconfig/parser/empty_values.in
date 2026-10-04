@@ -1,0 +1,9 @@
+root = true
+
+[test1]
+; A value set to empty string
+key1=
+; Whitespace after equals sign is ignored
+key2=  
+; A file final key set to empty string
+key3=

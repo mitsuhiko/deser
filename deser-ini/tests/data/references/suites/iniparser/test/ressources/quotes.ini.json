@@ -1,0 +1,65 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 1, "quotes"],
+        ["value", 2, "quotes", "string0", "\"str\\\"ing\""],
+        ["value", 3, "quotes", "string1", "\"str;ing\""],
+        ["value", 4, "quotes", "string2", "\"str#ing\""],
+        ["value", 5, "quotes", "string3", "str\"ing"],
+        ["value", 6, "quotes", "string4", "str;ing"],
+        ["value", 7, "quotes", "string5", "str#ing"],
+        ["value", 8, "quotes", "str\"ing", "\"str\\\"ing\""],
+        ["value", 9, "quotes", "\"str;ing\"", "\"str;ing\""],
+        ["value", 10, "quotes", "\"str#ing\"", "\"str#ing\""],
+        ["value", 11, "quotes", "str", "ing=\"str\\\"ing\""]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "quotes"
+      ],
+      "entries": [
+        ["quotes", "string0", "\"str\\\"ing\""],
+        ["quotes", "string1", "\"str;ing\""],
+        ["quotes", "string2", "\"str#ing\""],
+        ["quotes", "string3", "str\"ing"],
+        ["quotes", "string4", "str;ing"],
+        ["quotes", "string5", "str#ing"],
+        ["quotes", "str\"ing", "\"str\\\"ing\""],
+        ["quotes", "\"str;ing\"", "\"str;ing\""],
+        ["quotes", "\"str#ing\"", "\"str#ing\""],
+        ["quotes", "str", "ing=\"str\\\"ing\""]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "error": {
+        "message": "syntax error, unexpected '\"'",
+        "line": 8
+      }
+    },
+    "normal": {
+      "error": {
+        "message": "syntax error, unexpected '='",
+        "line": 8
+      }
+    }
+  }
+}

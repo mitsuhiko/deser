@@ -1,0 +1,15 @@
+{
+  "tests": [
+    "TestMerge"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "bare", "false"],
+      ["core", null, "filemode", "true"],
+      ["core", null, "repositoryformatversion", "1"],
+      ["extensions", null, "worktreeconfig", "true"],
+      ["user", null, "name", "base-user"],
+      ["user", null, "email", "base@example.com"]
+    ]
+  }
+}

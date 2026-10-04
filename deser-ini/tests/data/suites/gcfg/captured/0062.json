@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "TestReadStringInto"
+  ],
+  "git": {
+    "entries": [
+      ["hyphen-in-section", null, "hyphen-in-name", "value"]
+    ]
+  }
+}

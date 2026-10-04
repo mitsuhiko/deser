@@ -1,0 +1,139 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 9, "DEFAULT"],
+        ["value", 10, "DEFAULT", "go", "%(interpolate)s"],
+        ["section", 12, "strange"],
+        ["value", 13, "strange", "values", "that are indented # and end with hash comments"],
+        ["value", 14, "strange", "values", "other = that do continue"],
+        ["value", 15, "strange", "values", "in     # and still have"],
+        ["value", 16, "strange", "values", "other  # comments mixed"],
+        ["value", 17, "strange", "values", "lines  # with the values"],
+        ["section", 23, "corruption"],
+        ["value", 24, "corruption", "value", "that is"],
+        ["value", 27, "corruption", "value", "actually still here"],
+        ["value", 30, "corruption", "value", "and holds all these weird newlines"],
+        ["value", 34, "corruption", "value", "nor the indentation"],
+        ["value", 36, "corruption", "value", "another value = # empty string"],
+        ["value", 37, "corruption", "value", "yet another # None!"],
+        ["value", 39, "corruption", "value", "[yeah, sections can be indented as well]"],
+        ["value", 40, "corruption", "value", "and that does not mean = anything"],
+        ["value", 41, "corruption", "value", "are they subsections = False"],
+        ["value", 42, "corruption", "value", "if you want subsections = use XML"],
+        ["value", 43, "corruption", "value", "lets use some Unicode = 片仮名"],
+        ["value", 45, "corruption", "value", "[another one!]"],
+        ["value", 46, "corruption", "value", "even if values are indented like this = seriously"],
+        ["value", 47, "corruption", "yes, this still applies to", "section \"another one!\""],
+        ["value", 48, "corruption", "this too", "are there people with configurations broken as this?"],
+        ["value", 49, "corruption", "this too", "beware, this is going to be a continuation"],
+        ["value", 50, "corruption", "this too", "of the value for"],
+        ["value", 51, "corruption", "this too", "key \"this too\""],
+        ["value", 52, "corruption", "this too", "even if it has a = character"],
+        ["value", 53, "corruption", "this too", "this is still the continuation"],
+        ["value", 54, "corruption", "this too", "your editor probably highlights it wrong"],
+        ["value", 55, "corruption", "this too", "but that's life"],
+        ["value", 58, "corruption", "interpolate", "anything will do"],
+        ["section", 60, "no values here"],
+        ["section", 63, "tricky interpolation"],
+        ["value", 64, "tricky interpolation", "interpolate", "do this"],
+        ["value", 65, "tricky interpolation", "interpolate", "lets = %(go)s"],
+        ["value", 67, "tricky interpolation", "interpolate", "[more interpolation]"],
+        ["value", 68, "tricky interpolation", "interpolate", "interpolate = go shopping"],
+        ["value", 69, "tricky interpolation", "interpolate", "lets = %(go)s"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "events": [
+        ["section", 9, "DEFAULT"],
+        ["value", 10, "DEFAULT", "go", "%(interpolate)s"],
+        ["section", 12, "strange"],
+        ["value", 13, "strange", "values", "that are indented # and end with hash comments"],
+        ["value", 14, "strange", "other", "that do continue"],
+        ["section", 23, "corruption"],
+        ["value", 24, "corruption", "value", "that is"],
+        ["value", 36, "corruption", "another value", "# empty string"],
+        ["section", 39, "yeah, sections can be indented as well"],
+        ["value", 40, "yeah, sections can be indented as well", "and that does not mean", "anything"],
+        ["value", 41, "yeah, sections can be indented as well", "are they subsections", "False"],
+        ["value", 42, "yeah, sections can be indented as well", "if you want subsections", "use XML"],
+        ["value", 43, "yeah, sections can be indented as well", "lets use some Unicode", "片仮名"],
+        ["section", 45, "another one!"],
+        ["value", 46, "another one!", "even if values are indented like this", "seriously"],
+        ["value", 47, "another one!", "yes, this still applies to", "section \"another one!\""],
+        ["value", 48, "another one!", "this too", "are there people with configurations broken as this?"],
+        ["value", 52, "another one!", "even if it has a", "character"],
+        ["value", 58, "another one!", "interpolate", "anything will do"],
+        ["section", 60, "no values here"],
+        ["section", 63, "tricky interpolation"],
+        ["value", 64, "tricky interpolation", "interpolate", "do this"],
+        ["value", 65, "tricky interpolation", "lets", "%(go)s"],
+        ["section", 67, "more interpolation"],
+        ["value", 68, "more interpolation", "interpolate", "go shopping"],
+        ["value", 69, "more interpolation", "lets", "%(go)s"]
+      ],
+      "error_line": 15
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "error": {
+        "type": "ParsingError",
+        "line": 37
+      }
+    },
+    "lenient": {
+      "sections": [
+        "DEFAULT",
+        "strange",
+        "corruption",
+        "yeah, sections can be indented as well",
+        "another one!",
+        "no values here",
+        "tricky interpolation",
+        "more interpolation"
+      ],
+      "entries": [
+        ["DEFAULT", "go", "%(interpolate)s"],
+        ["strange", "values", "that are indented # and end with hash comments"],
+        ["strange", "other", "that do continue\nin     # and still have\nother  # comments mixed\nlines  # with the values"],
+        ["corruption", "value", "that is\n\n\nactually still here\n\n\nand holds all these weird newlines\n\n\nnor the indentation"],
+        ["corruption", "another value", "# empty string"],
+        ["corruption", "yet another # None!", null],
+        ["yeah, sections can be indented as well", "and that does not mean", "anything"],
+        ["yeah, sections can be indented as well", "are they subsections", "False"],
+        ["yeah, sections can be indented as well", "if you want subsections", "use XML"],
+        ["yeah, sections can be indented as well", "lets use some Unicode", "片仮名"],
+        ["another one!", "even if values are indented like this", "seriously"],
+        ["another one!", "yes, this still applies to", "section \"another one!\""],
+        ["another one!", "this too", "are there people with configurations broken as this?\nbeware, this is going to be a continuation\nof the value for\nkey \"this too\"\neven if it has a = character\nthis is still the continuation\nyour editor probably highlights it wrong\nbut that's life"],
+        ["another one!", "interpolate", "anything will do"],
+        ["tricky interpolation", "interpolate", "do this"],
+        ["tricky interpolation", "lets", "%(go)s"],
+        ["more interpolation", "interpolate", "go shopping"],
+        ["more interpolation", "lets", "%(go)s"]
+      ]
+    }
+  },
+  "php": {
+    "raw": {
+      "error": {
+        "message": "syntax error, unexpected '!'",
+        "line": 37
+      }
+    },
+    "normal": {
+      "error": {
+        "message": "syntax error, unexpected '('",
+        "line": 10
+      }
+    }
+  }
+}

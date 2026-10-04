@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "ConfigTest.testParseMultipleQuotedRegions"
+  ],
+  "git": {
+    "entries": [
+      ["foo", null, "bar", "b a z; \n"]
+    ]
+  }
+}

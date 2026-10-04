@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "(*DecoderSuite).TestDecodeFailsWithIdentBeforeSection"
+  ],
+  "git": {
+    "entries": [
+      [null, null, "key", "value"],
+      ["section", null, "key", "value"]
+    ]
+  }
+}

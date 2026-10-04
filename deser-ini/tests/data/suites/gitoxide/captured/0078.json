@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "file::access::read_only::multi_line_value_with_empty_continuation_line"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "k", "abc\tk = def"]
+    ]
+  }
+}

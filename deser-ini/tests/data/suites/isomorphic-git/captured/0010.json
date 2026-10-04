@@ -1,0 +1,12 @@
+{
+  "tests": [
+    "test-GitConfig.get unknown subsection",
+    "test-GitConfig.subsection"
+  ],
+  "git": {
+    "entries": [
+      ["remote", "foo", "url", "https://foo.com/project.git"],
+      ["remote", "bar", "url", "https://bar.com/project.git"]
+    ]
+  }
+}

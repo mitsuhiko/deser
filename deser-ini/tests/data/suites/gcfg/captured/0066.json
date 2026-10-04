@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "TestReadStringInto"
+  ],
+  "git": {
+    "entries": [
+      ["m3", null, "pmulti", "value1"],
+      ["m3", null, "pmulti", "value2"]
+    ]
+  }
+}

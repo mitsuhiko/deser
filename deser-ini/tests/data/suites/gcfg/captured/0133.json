@@ -1,0 +1,15 @@
+{
+  "tests": [
+    "TestReadWithCallback"
+  ],
+  "git": {
+    "entries": [
+      ["sect1", null, "key1", "value1"],
+      ["sect1", "subsect1", "key2", "value2"],
+      ["sect1", "subsect1", "key3", "value3"],
+      ["sect1", "subsect1", "key4", null],
+      ["sect1", "subsect1", "key5", ""],
+      ["sect3", null, "foo", "!f(){ \techo hello; \t};f"]
+    ]
+  }
+}

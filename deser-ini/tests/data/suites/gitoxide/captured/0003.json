@@ -1,0 +1,12 @@
+{
+  "tests": [
+    "file::access::mutate::remove_section::removing_lookup_buckets_preserves_siblings_and_drops_the_final_name"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "key", "plain"],
+      ["core", "a", "key", "a"],
+      ["core", "b", "key", "b"]
+    ]
+  }
+}

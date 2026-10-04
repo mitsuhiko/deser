@@ -1,0 +1,52 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 1, "section1"],
+        ["value", 2, "section1", "single1", "abc"],
+        ["value", 3, "section1", "single2", "xyz"],
+        ["section", 4, "section1"],
+        ["value", 5, "section1", "single1", "def"],
+        ["value", 6, "section1", "single2", "qrs"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "error": {
+        "type": "DuplicateSectionError",
+        "line": 4
+      }
+    },
+    "lenient": {
+      "sections": [
+        "section1"
+      ],
+      "entries": [
+        ["section1", "single1", "def"],
+        ["section1", "single2", "qrs"]
+      ]
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["section1", "single1"], "def"],
+        [["section1", "single2"], "qrs"]
+      ]
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

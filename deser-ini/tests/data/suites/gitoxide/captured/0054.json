@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "file::access::read_only::integer_accessors_apply_suffixes"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "value", "-2k"],
+      ["core", null, "value", "0x10m"]
+    ]
+  }
+}

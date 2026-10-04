@@ -1,0 +1,12 @@
+{
+  "tests": [
+    "file::access::read_only::section_value_access_is_case_insensitive",
+    "file::mutable::multi_value::get::value_names_are_case_insensitive"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "mixedcase", "one"],
+      ["core", null, "mixedcase", "two"]
+    ]
+  }
+}

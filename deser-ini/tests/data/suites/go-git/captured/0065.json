@@ -1,0 +1,12 @@
+{
+  "tests": [
+    "(*ModulesSuite).TestUnmarshalMarshal"
+  ],
+  "git": {
+    "entries": [
+      ["submodule", "foo/bar", "path", "foo/bar"],
+      ["submodule", "foo/bar", "url", "https://github.com/foo/bar.git"],
+      ["submodule", "foo/bar", "ignore", "all"]
+    ]
+  }
+}

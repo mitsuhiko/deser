@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "file::write::inserted_newlines_use_each_sections_newline_style"
+  ],
+  "git": {
+    "entries": [
+      ["a", null, "x", "1"],
+      ["b", null, "y", "2"]
+    ]
+  }
+}

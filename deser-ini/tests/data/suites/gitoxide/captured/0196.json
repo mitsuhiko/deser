@@ -1,0 +1,13 @@
+{
+  "tests": [
+    "file::init::from_paths::includes::unconditional::simple"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "b", "true"],
+      ["include", null, "path", "/tmp/.tmpXXXXXX/b"],
+      ["core", null, "b", "true"],
+      ["include", null, "path", "/tmp/.tmpXXXXXX/b"]
+    ]
+  }
+}

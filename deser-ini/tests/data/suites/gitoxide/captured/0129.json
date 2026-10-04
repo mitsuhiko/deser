@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "file::init::from_paths::includes::conditional::gitdir::dot_slash_path_is_replaced_with_directory_containing_the_including_config_file"
+  ],
+  "git": {
+    "entries": [
+      ["includeif", "gitdir:./", "path", "/tmp/.tmpXXXXXX/worktree/include.path"]
+    ]
+  }
+}

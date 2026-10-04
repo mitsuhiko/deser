@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "file::init::from_paths::includes::conditional::hasconfig::simple"
+  ],
+  "git": {
+    "entries": [
+      ["user", null, "this", "this-is-included"]
+    ]
+  }
+}

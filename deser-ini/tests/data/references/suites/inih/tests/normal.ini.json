@@ -1,0 +1,124 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 2, "section1"],
+        ["value", 3, "section1", "one", "This is a test"],
+        ["value", 4, "section1", "two", "1234"],
+        ["section", 7, " section 2 "],
+        ["value", 8, " section 2 ", "happy", "4"],
+        ["value", 9, " section 2 ", "sad", ""],
+        ["section", 11, "empty"],
+        ["section", 14, "comment_test"],
+        ["value", 15, "comment_test", "test1", "1;2;3"],
+        ["value", 16, "comment_test", "test2", "2;3;4;this won't be a comment, needs whitespace before ';'"],
+        ["value", 17, "comment_test", "test;3", "345"],
+        ["value", 18, "comment_test", "test4", "4#5#6"],
+        ["value", 21, "comment_test", "test7", ""],
+        ["value", 22, "comment_test", "test8", "; not a comment, needs whitespace before ';'"],
+        ["section", 24, "colon_tests"],
+        ["value", 25, "colon_tests", "Content-Type", "text/html"],
+        ["value", 26, "colon_tests", "foo", "bar"],
+        ["value", 27, "colon_tests", "adams", "42"],
+        ["value", 28, "colon_tests", "funny1", "with = equals"],
+        ["value", 29, "colon_tests", "funny2", "with : colons"],
+        ["value", 30, "colon_tests", "funny3", "two = equals"],
+        ["value", 31, "colon_tests", "funny4", "two : colons"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "events": [
+        ["section", 2, "section1"],
+        ["value", 3, "section1", "one", "This is a test  ; name=value comment"],
+        ["value", 4, "section1", "two", "1234"],
+        ["section", 7, " section 2 "],
+        ["value", 8, " section 2 ", "happy", "4"],
+        ["value", 9, " section 2 ", "sad", ""],
+        ["section", 11, "empty"],
+        ["section", 14, "comment_test"],
+        ["value", 15, "comment_test", "test1", "1;2;3 ; only this will be a comment"],
+        ["value", 16, "comment_test", "test2", "2;3;4;this won't be a comment, needs whitespace before ';'"],
+        ["value", 17, "comment_test", "test;3", "345 ; key should be \"test;3\""],
+        ["value", 18, "comment_test", "test4", "4#5#6 ; '#' only starts a comment at start of line"],
+        ["value", 21, "comment_test", "test7", "; blank value, except if inline comments disabled"],
+        ["value", 22, "comment_test", "test8", "; not a comment, needs whitespace before ';'"],
+        ["section", 24, "colon_tests"],
+        ["value", 25, "colon_tests", "Content-Type", "text/html"],
+        ["value", 26, "colon_tests", "foo", "bar"],
+        ["value", 27, "colon_tests", "adams", "42"],
+        ["value", 28, "colon_tests", "funny1", "with = equals"],
+        ["value", 29, "colon_tests", "funny2", "with : colons"],
+        ["value", 30, "colon_tests", "funny3", "two = equals"],
+        ["value", 31, "colon_tests", "funny4", "two : colons"]
+      ],
+      "error_line": null
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "section1",
+        " section 2 ",
+        "empty",
+        "comment_test",
+        "colon_tests"
+      ],
+      "entries": [
+        ["section1", "one", "This is a test  ; name=value comment"],
+        ["section1", "two", "1234"],
+        [" section 2 ", "happy", "4"],
+        [" section 2 ", "sad", ""],
+        ["comment_test", "test1", "1;2;3 ; only this will be a comment"],
+        ["comment_test", "test2", "2;3;4;this won't be a comment, needs whitespace before ';'"],
+        ["comment_test", "test;3", "345 ; key should be \"test;3\""],
+        ["comment_test", "test4", "4#5#6 ; '#' only starts a comment at start of line"],
+        ["comment_test", "test7", "; blank value, except if inline comments disabled"],
+        ["comment_test", "test8", "; not a comment, needs whitespace before ';'"],
+        ["colon_tests", "Content-Type", "text/html"],
+        ["colon_tests", "foo", "bar"],
+        ["colon_tests", "adams", "42"],
+        ["colon_tests", "funny1", "with = equals"],
+        ["colon_tests", "funny2", "with : colons"],
+        ["colon_tests", "funny3", "two = equals"],
+        ["colon_tests", "funny4", "two : colons"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["section1", "one"], "This is a test"],
+        [["section1", "two"], "1234"],
+        [[" section 2 ", "happy"], "4"],
+        [[" section 2 ", "sad"], ""],
+        [["empty"], []],
+        [["comment_test", "test1"], "1"],
+        [["comment_test", "test2"], "2"],
+        [["comment_test", "test4"], "4#5#6"],
+        [["comment_test", "#test5"], "567"],
+        [["comment_test", "# test6"], "678"],
+        [["comment_test", "test7"], ""],
+        [["comment_test", "test8"], ""],
+        [["colon_tests", "funny1 : with"], "equals"],
+        [["colon_tests", "funny2"], "with : colons"],
+        [["colon_tests", "funny3"], "two = equals"]
+      ]
+    },
+    "normal": {
+      "error": {
+        "message": "syntax error, unexpected '='",
+        "line": 31
+      }
+    }
+  }
+}

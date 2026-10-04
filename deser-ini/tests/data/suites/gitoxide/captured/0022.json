@@ -1,0 +1,17 @@
+{
+  "tests": [
+    "file::access::raw::set_existing_raw_value::comment_included",
+    "file::access::raw::set_existing_raw_value::ends_with_whitespace",
+    "file::access::raw::set_existing_raw_value::multi_line",
+    "file::access::raw::set_existing_raw_value::quotes_and_backslashes",
+    "file::access::raw::set_existing_raw_value::single_line",
+    "file::access::raw::set_existing_raw_value::starts_with_whitespace"
+  ],
+  "git": {
+    "entries": [
+      ["a", null, "k", "b"],
+      ["a", null, "k", "c"],
+      ["a", null, "k", "d"]
+    ]
+  }
+}

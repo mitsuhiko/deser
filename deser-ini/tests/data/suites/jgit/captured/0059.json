@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "ConfigTest.testGetFastForwardMerge"
+  ],
+  "git": {
+    "entries": [
+      ["merge", null, "ff", "false"]
+    ]
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "tests": [
+    "parse::from_bytes::complex"
+  ],
+  "git": {
+    "entries": [
+      ["user", null, "email", "code@eddie.sh"],
+      ["user", null, "name", "Foo Bar"],
+      ["core", null, "autocrlf", "input"],
+      ["push", null, "default", "simple"],
+      ["commit", null, "gpgsign", "true"],
+      ["gpg", null, "program", "gpg"],
+      ["url", "ssh://git@github.com/", "insteadof", "github://"],
+      ["url", "ssh://git@git.eddie.sh/edward/", "insteadof", "gitea://"],
+      ["pull", null, "ff", "only"],
+      ["init", null, "defaultbranch", "master"]
+    ]
+  }
+}

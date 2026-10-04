@@ -1,0 +1,12 @@
+{
+  "tests": [
+    "SubmodulesTests.test_parse_submodules_skips_sectionless_include"
+  ],
+  "git": {
+    "entries": [
+      ["submodule", "a", "path", "a"],
+      ["submodule", "a", "url", "./a"],
+      ["include", null, "path", "x"]
+    ]
+  }
+}

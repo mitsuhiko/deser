@@ -1,0 +1,13 @@
+{
+  "tests": [
+    "test-GitConfig.special boolean"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "filemode", "off"],
+      ["core", null, "bare", "on"],
+      ["core", null, "logallrefupdates", "no"],
+      ["core", null, "symlinks", "true"]
+    ]
+  }
+}

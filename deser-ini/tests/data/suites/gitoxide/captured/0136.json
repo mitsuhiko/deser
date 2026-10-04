@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "file::init::from_paths::includes::conditional::gitdir::globbing_and_wildcards"
+  ],
+  "git": {
+    "entries": [
+      ["includeif", "gitdir:stan?ard/glo*ng/[xwz]ildcards/.git", "path", "/tmp/.tmpXXXXXX/standard/globbing/wildcards/include.path"]
+    ]
+  }
+}

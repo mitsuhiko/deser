@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "ConfigFileTests.test_missing_include_file_logging"
+  ],
+  "git": {
+    "entries": [
+      ["user", null, "name", "Test User"],
+      ["include", null, "path", "nonexistent.config"]
+    ]
+  }
+}

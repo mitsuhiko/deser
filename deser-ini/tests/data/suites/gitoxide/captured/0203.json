@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "file::init::from_paths::multiple_paths_single_value"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "a", "true"]
+    ]
+  }
+}

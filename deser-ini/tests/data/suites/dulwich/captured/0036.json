@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "ConfigFileTests.test_invalid_include_path_logging"
+  ],
+  "git": {
+    "entries": [
+      ["user", null, "name", "Test User"],
+      ["include", null, "path", "/invalid"]
+    ]
+  }
+}

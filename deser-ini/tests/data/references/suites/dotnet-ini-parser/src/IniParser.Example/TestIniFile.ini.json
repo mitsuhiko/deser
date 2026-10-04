@@ -1,0 +1,61 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 2, "GeneralConfiguration"],
+        ["value", 5, "GeneralConfiguration", "setUpdate", "100"],
+        ["value", 8, "GeneralConfiguration", "setMaxErrors", "2"],
+        ["section", 12, "Users"],
+        ["value", 13, "Users", "ricky", "rickypass"],
+        ["value", 14, "Users", "patty", "pattypass"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "GeneralConfiguration",
+        "Users"
+      ],
+      "entries": [
+        ["GeneralConfiguration", "setUpdate", "100"],
+        ["GeneralConfiguration", "setMaxErrors", "2"],
+        ["Users", "ricky", "rickypass"],
+        ["Users", "patty", "pattypass"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["GeneralConfiguration", "setUpdate"], "100"],
+        [["GeneralConfiguration", "setMaxErrors"], "2"],
+        [["GeneralConfiguration", "#format: user"], "pass"],
+        [["Users", "ricky"], "rickypass"],
+        [["Users", "patty"], "pattypass"]
+      ]
+    },
+    "normal": {
+      "entries": [
+        [["GeneralConfiguration", "setUpdate"], "100"],
+        [["GeneralConfiguration", "setMaxErrors"], "2"],
+        [["GeneralConfiguration", "#format: user"], "pass"],
+        [["Users", "ricky"], "rickypass"],
+        [["Users", "patty"], "pattypass "]
+      ]
+    }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "tests": [
+    "file::mutable::multi_value::access::non_empty_sizes",
+    "file::mutable::multi_value::delete::all",
+    "file::mutable::multi_value::delete::single_at_start_and_end",
+    "file::mutable::multi_value::get::single_lines",
+    "file::mutable::multi_value::set::all",
+    "file::mutable::multi_value::set::all_empty",
+    "file::mutable::multi_value::set::single_at_end",
+    "file::mutable::multi_value::set::single_at_start",
+    "file::mutable::multi_value::set::values_are_escaped"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "a", "b100"],
+      ["core", null, "a", "d"],
+      ["core", null, "a", "f"]
+    ]
+  }
+}

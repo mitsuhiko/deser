@@ -1,0 +1,18 @@
+{
+  "tests": [
+    "file::impls::can_reconstruct_non_empty_config"
+  ],
+  "git": {
+    "entries": [
+      ["user", null, "email", "code@eddie.sh"],
+      ["core", null, "autocrlf", "input"],
+      ["push", null, "default", "simple"],
+      ["commit", null, "gpgsign", "true"],
+      ["gpg", null, "program", "gpg"],
+      ["url", "ssh://git@github.com/", "insteadof", "github://"],
+      ["url", "ssh://git@git.eddie.sh/edward/", "insteadof", "gitea://"],
+      ["pull", null, "ff", "only"],
+      ["init", null, "defaultbranch", "master"]
+    ]
+  }
+}

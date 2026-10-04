@@ -1,0 +1,8 @@
+{
+  "tests": [
+    "file::write::empty_sections_roundtrip"
+  ],
+  "git": {
+    "entries": []
+  }
+}

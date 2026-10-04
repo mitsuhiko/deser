@@ -1,0 +1,13 @@
+{
+  "tests": [
+    "(*ConfigSuite).TestUnmarshalRemotesNamedFirst"
+  ],
+  "git": {
+    "entries": [
+      ["remote", "upstream", "url", "https://github.com/go-git/go-git.git"],
+      ["remote", "upstream", "fetch", "+refs/heads/*:refs/remotes/upstream/*"],
+      ["remote", "", "url", "https://github.com/CLBRITTON2/go-git.git"],
+      ["remote", "", "fetch", "+refs/heads/*:refs/remotes/origin/*"]
+    ]
+  }
+}

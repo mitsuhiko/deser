@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "ConfigTest.testReadMultipleValuesForName"
+  ],
+  "git": {
+    "entries": [
+      ["foo", null, "bar", "false"],
+      ["foo", null, "bar", "true"]
+    ]
+  }
+}

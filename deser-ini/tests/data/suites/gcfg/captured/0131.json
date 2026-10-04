@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "TestReadStringIntoExtraData"
+  ],
+  "git": {
+    "entries": [
+      ["section", null, "name", "value"],
+      ["section", null, "name2", "value2"]
+    ]
+  }
+}

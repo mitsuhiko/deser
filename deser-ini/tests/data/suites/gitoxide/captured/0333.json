@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "main"
+  ],
+  "git": {
+    "entries": [
+      ["hello", "world", "some-value", "4"]
+    ]
+  }
+}

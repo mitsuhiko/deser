@@ -1,0 +1,14 @@
+{
+  "tests": [
+    "file::open::parse_config_with_windows_line_endings_successfully"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "repositoryformatversion", "0"],
+      ["core", null, "bare", "true"],
+      ["other", null, "repositoryformatversion", "0"],
+      ["other", null, "bare", "true"],
+      ["foo", null, "repositoryformatversion", "0"]
+    ]
+  }
+}

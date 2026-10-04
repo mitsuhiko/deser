@@ -1,0 +1,12 @@
+{
+  "tests": [
+    "(*BranchSuite).TestUnmarshalNonRefsPrefix"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "bare", "false"],
+      ["branch", "foo", "remote", "origin"],
+      ["branch", "foo", "merge", "main"]
+    ]
+  }
+}

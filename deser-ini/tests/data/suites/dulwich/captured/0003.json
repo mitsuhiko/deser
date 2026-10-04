@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "ConfigFileTests.test_comment_after_variable"
+  ],
+  "git": {
+    "entries": [
+      ["section", null, "bar", "foo"]
+    ]
+  }
+}

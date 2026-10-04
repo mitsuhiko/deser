@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "ConfigFileTests.test_from_path_pathlib"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "filemode", "true"]
+    ]
+  }
+}

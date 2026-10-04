@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "TestGPGConfig"
+  ],
+  "git": {
+    "entries": [
+      ["user", null, "signingkey", "~/.ssh/rsa_id"]
+    ]
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "file::mutable::value::set_string::single_line"
+  ],
+  "git": {
+    "entries": [
+      ["a", null, "k", "hello world"]
+    ]
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "TestReadFileInto"
+  ],
+  "git": {
+    "entries": [
+      ["section", null, "name", "value"]
+    ]
+  }
+}

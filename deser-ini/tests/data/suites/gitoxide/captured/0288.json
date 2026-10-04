@@ -1,0 +1,31 @@
+{
+  "tests": [
+    "file::write::complex_lossless_roundtrip"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "repositoryformatversion", "0"],
+      ["core", null, "filemode", "true"],
+      ["core", null, "bare", "false"],
+      ["core", null, "logallrefupdates", "true"],
+      ["remote", "origin", "url", "git@github.com:GitoxideLabs/gitoxide.git"],
+      ["remote", "origin", "fetch", "+refs/heads/*:refs/remotes/origin/*"],
+      ["test", null, "other-quoted", "hello"],
+      ["test", null, "implicit", null],
+      ["test", null, "implicit-equal", ""],
+      ["test", null, "implicit-equal-trailing-ws", ""],
+      ["test", "sub-section \"special\" C:\\root", "bool-explicit", "false"],
+      ["test", "sub-section \"special\" C:\\root", "bool-implicit", null],
+      ["test", "sub-section \"special\" C:\\root", "integer-no-prefix", "10"],
+      ["test", "sub-section \"special\" C:\\root", "integer-prefix", "10g"],
+      ["test", "sub-section \"special\" C:\\root", "color", "brightgreen red             bold"],
+      ["test", "sub-section \"special\" C:\\root", "other", "hello world"],
+      ["test", "sub-section \"special\" C:\\root", "other-quoted", "hello world"],
+      ["test", "sub-section \"special\" C:\\root", "location", "~/tmp"],
+      ["test", "sub-section \"special\" C:\\root", "location-quoted", "~/quoted"],
+      ["test", "sub-section \"special\" C:\\root", "escaped", "\n\thi\b"],
+      ["test", "sub-section \"special\" C:\\root", "escaped-quoted", "\n\thi\b"],
+      ["alias", null, "save", "!f() {                git status;                git add -A;                git commit -m \"$1\";                git push -f;                git log -1;              };             f;              unset f"]
+    ]
+  }
+}

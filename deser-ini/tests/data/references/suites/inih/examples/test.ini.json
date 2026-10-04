@@ -1,0 +1,77 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 3, "protocol"],
+        ["value", 4, "protocol", "version", "6"],
+        ["section", 6, "user"],
+        ["value", 7, "user", "name", "Bob Smith"],
+        ["value", 8, "user", "email", "bob@smith.com"],
+        ["value", 9, "user", "active", "true"],
+        ["value", 10, "user", "pi", "3.14159"],
+        ["value", 11, "user", "trillion", "1000000000000"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "events": [
+        ["section", 3, "protocol"],
+        ["value", 4, "protocol", "version", "6                ; IPv6"],
+        ["section", 6, "user"],
+        ["value", 7, "user", "name", "Bob Smith         ; Spaces around '=' are stripped"],
+        ["value", 8, "user", "email", "bob@smith.com    ; And comments (like this) ignored"],
+        ["value", 9, "user", "active", "true            ; Test a boolean"],
+        ["value", 10, "user", "pi", "3.14159             ; Test a floating point number"],
+        ["value", 11, "user", "trillion", "1000000000000 ; Test 64-bit integers"]
+      ],
+      "error_line": null
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "protocol",
+        "user"
+      ],
+      "entries": [
+        ["protocol", "version", "6                ; IPv6"],
+        ["user", "name", "Bob Smith         ; Spaces around '=' are stripped"],
+        ["user", "email", "bob@smith.com    ; And comments (like this) ignored"],
+        ["user", "active", "true            ; Test a boolean"],
+        ["user", "pi", "3.14159             ; Test a floating point number"],
+        ["user", "trillion", "1000000000000 ; Test 64-bit integers"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["protocol", "version"], "6"],
+        [["user", "name"], "Bob Smith"],
+        [["user", "email"], "bob@smith.com"],
+        [["user", "active"], "true"],
+        [["user", "pi"], "3.14159"],
+        [["user", "trillion"], "1000000000000"]
+      ]
+    },
+    "normal": {
+      "entries": [
+        [["protocol", "version"], "6"],
+        [["user", "name"], "Bob Smith"],
+        [["user", "email"], "bob@smith.com"],
+        [["user", "active"], "1"],
+        [["user", "pi"], "3.14159"],
+        [["user", "trillion"], "1000000000000"]
+      ]
+    }
+  }
+}

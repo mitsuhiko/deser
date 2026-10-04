@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "format::implicit_boolean_key_keeps_no_separator"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "autocrlf", null]
+    ]
+  }
+}

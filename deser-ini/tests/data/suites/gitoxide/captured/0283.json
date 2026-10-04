@@ -1,0 +1,16 @@
+{
+  "tests": [
+    "file::resolve_includes::missing_includes_are_ignored_by_default"
+  ],
+  "git": {
+    "entries": [
+      ["include", null, "path", "/etc/absolute/missing.config"],
+      ["include", null, "path", "relative-missing.config"],
+      ["include", null, "path", "./also-relative-missing.config"],
+      ["include", null, "path", "%(prefix)/no-install.config"],
+      ["include", null, "path", "~/no-user.config"],
+      ["includeif", "onbranch:no-branch", "path", "no-branch-provided.config"],
+      ["includeif", "gitdir:./no-git-dir", "path", "no-git-dir.config"]
+    ]
+  }
+}

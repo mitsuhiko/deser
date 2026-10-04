@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "ConfigTest.test006_readCaseInsensitive"
+  ],
+  "git": {
+    "entries": [
+      ["foo", null, "bar", null]
+    ]
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "format::leading_blank_line_cap_has_boundaries_and_is_independent"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "x", "1"]
+    ]
+  }
+}

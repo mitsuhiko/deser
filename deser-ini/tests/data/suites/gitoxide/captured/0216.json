@@ -1,0 +1,21 @@
+{
+  "tests": [
+    "file::mutable::section::pop::all",
+    "file::mutable::section::remove::all",
+    "file::mutable::section::section_mut_by_id",
+    "file::mutable::section::section_mut_must_exist_as_section_is_not_created_automatically",
+    "file::mutable::section::section_mut_or_create_new_filter_may_reject_existing_sections",
+    "file::mutable::section::section_mut_or_create_new_is_infallible",
+    "file::mutable::section::set::various_escapes_onto_various_kinds_of_values",
+    "file::mutable::section::value_name_validation::names_returned_by_public_apis_are_strings"
+  ],
+  "git": {
+    "entries": [
+      ["a", null, "a", "v"],
+      ["a", null, "b", ""],
+      ["a", null, "c", ""],
+      ["a", null, "d", null],
+      ["a", null, "e", "a        b        c"]
+    ]
+  }
+}

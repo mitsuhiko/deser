@@ -1,0 +1,23 @@
+{
+  "tests": [
+    "file::init::from_paths::includes::conditional::hasconfig::inclusion_order"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "repositoryformatversion", "0"],
+      ["core", null, "filemode", "true"],
+      ["core", null, "bare", "true"],
+      ["core", null, "ignorecase", "true"],
+      ["core", null, "precomposeunicode", "true"],
+      ["remote", "foo", "url", "before"],
+      ["remote", "other", "url", "early"],
+      ["user", null, "one", "main-config"],
+      ["includeif", "hasconfig:remote.*.url:before", "path", "include-two-three"],
+      ["includeif", "hasconfig:remote.*.url:after", "path", "include-four"],
+      ["user", null, "three", "main-config"],
+      ["user", null, "five", "main-config"],
+      ["remote", "bar", "url", "after"],
+      ["include", null, "path", "indirect"]
+    ]
+  }
+}

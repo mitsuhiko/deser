@@ -1,0 +1,14 @@
+{
+  "tests": [
+    "file::impls::can_reconstruct_configs_with_implicits"
+  ],
+  "git": {
+    "entries": [
+      ["user", null, "email", null],
+      ["user", null, "name", null],
+      ["core", null, "autocrlf", null],
+      ["push", null, "default", null],
+      ["commit", null, "gpgsign", null]
+    ]
+  }
+}

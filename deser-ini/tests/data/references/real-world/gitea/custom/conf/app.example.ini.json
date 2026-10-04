@@ -1,0 +1,123 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 58, "server"],
+        ["section", 353, "database"],
+        ["value", 363, "database", "DB_TYPE", "mysql"],
+        ["value", 364, "database", "HOST", "127.0.0.1:3306"],
+        ["value", 365, "database", "NAME", "gitea"],
+        ["value", 366, "database", "USER", "root"],
+        ["section", 437, "security"],
+        ["value", 442, "security", "INSTALL_LOCK", "false"],
+        ["value", 446, "security", "SECRET_KEY", ""],
+        ["value", 453, "security", "INTERNAL_TOKEN", ""],
+        ["section", 577, "camo"],
+        ["section", 595, "oauth2"],
+        ["value", 600, "oauth2", "ENABLED", "true"],
+        ["section", 648, "log"],
+        ["value", 659, "log", "MODE", "console"],
+        ["value", 662, "log", "LEVEL", "Info"],
+        ["section", 744, "git"],
+        ["section", 813, "service"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "events": [
+        ["section", 58, "server"],
+        ["section", 353, "database"],
+        ["value", 363, "database", "DB_TYPE", "mysql"],
+        ["value", 364, "database", "HOST", "127.0.0.1:3306 ; can use socket e.g. /var/run/mysqld/mysqld.sock"],
+        ["value", 365, "database", "NAME", "gitea"],
+        ["value", 366, "database", "USER", "root"],
+        ["section", 437, "security"],
+        ["value", 442, "security", "INSTALL_LOCK", "false"],
+        ["value", 446, "security", "SECRET_KEY", ""],
+        ["value", 453, "security", "INTERNAL_TOKEN", ""],
+        ["section", 577, "camo"],
+        ["section", 595, "oauth2"],
+        ["value", 600, "oauth2", "ENABLED", "true"],
+        ["section", 648, "log"],
+        ["value", 659, "log", "MODE", "console"],
+        ["value", 662, "log", "LEVEL", "Info"],
+        ["section", 744, "git"],
+        ["section", 813, "service"]
+      ],
+      "error_line": null
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "server",
+        "database",
+        "security",
+        "camo",
+        "oauth2",
+        "log",
+        "git",
+        "service"
+      ],
+      "entries": [
+        ["database", "DB_TYPE", "mysql"],
+        ["database", "HOST", "127.0.0.1:3306 ; can use socket e.g. /var/run/mysqld/mysqld.sock"],
+        ["database", "NAME", "gitea"],
+        ["database", "USER", "root"],
+        ["security", "INSTALL_LOCK", "false"],
+        ["security", "SECRET_KEY", ""],
+        ["security", "INTERNAL_TOKEN", ""],
+        ["oauth2", "ENABLED", "true"],
+        ["log", "MODE", "console"],
+        ["log", "LEVEL", "Info"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["server"], []],
+        [["database", "DB_TYPE"], "mysql"],
+        [["database", "HOST"], "127.0.0.1:3306"],
+        [["database", "NAME"], "gitea"],
+        [["database", "USER"], "root"],
+        [["security", "INSTALL_LOCK"], "false"],
+        [["security", "SECRET_KEY"], ""],
+        [["security", "INTERNAL_TOKEN"], ""],
+        [["camo"], []],
+        [["oauth2", "ENABLED"], "true"],
+        [["log", "MODE"], "console"],
+        [["log", "LEVEL"], "Info"],
+        [["git"], []],
+        [["service"], []]
+      ]
+    },
+    "normal": {
+      "entries": [
+        [["server"], []],
+        [["database", "DB_TYPE"], "mysql"],
+        [["database", "HOST"], "127.0.0.1:3306"],
+        [["database", "NAME"], "gitea"],
+        [["database", "USER"], "root"],
+        [["security", "INSTALL_LOCK"], ""],
+        [["security", "SECRET_KEY"], ""],
+        [["security", "INTERNAL_TOKEN"], ""],
+        [["camo"], []],
+        [["oauth2", "ENABLED"], "1"],
+        [["log", "MODE"], "console"],
+        [["log", "LEVEL"], "Info"],
+        [["git"], []],
+        [["service"], []]
+      ]
+    }
+  }
+}

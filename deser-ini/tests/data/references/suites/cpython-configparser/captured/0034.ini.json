@@ -1,0 +1,57 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 1, "one for you"],
+        ["value", 2, "one for you", "ping", "${one for me:pong}"],
+        ["section", 4, "one for me"],
+        ["value", 5, "one for me", "pong", "${one for you:ping}"],
+        ["section", 7, "selfish"],
+        ["value", 8, "selfish", "me", "${me}"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "one for you",
+        "one for me",
+        "selfish"
+      ],
+      "entries": [
+        ["one for you", "ping", "${one for me:pong}"],
+        ["one for me", "pong", "${one for you:ping}"],
+        ["selfish", "me", "${me}"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["one for you", "ping"], "${one for me:pong}"],
+        [["one for me", "pong"], "${one for you:ping}"],
+        [["selfish", "me"], "${me}"]
+      ]
+    },
+    "normal": {
+      "entries": [
+        [["one for you", "ping"], ""],
+        [["one for me", "pong"], ""],
+        [["selfish", "me"], ""]
+      ]
+    }
+  }
+}

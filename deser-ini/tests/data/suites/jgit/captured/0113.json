@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "GpgConfigTest.testGetKeyFormat_openpgp"
+  ],
+  "git": {
+    "entries": [
+      ["gpg", null, "format", "openpgp"]
+    ]
+  }
+}

@@ -1,0 +1,4 @@
+https://github.com/php/php-src
+commit fab508fe1ca8e89d5ae16bf1cac31d07576462ee
+
+ext/standard/tests/misc/browscap_lite_2016_12_06.ini is cut after 300 lines.

@@ -1,0 +1,68 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 1, "section1"],
+        ["value", 2, "section1", "key1", "value1"],
+        ["section", 4, "section2"],
+        ["value", 5, "section2", "test2", "テスト2"],
+        ["value", 6, "section2", "テスト", "test"],
+        ["value", 7, "section2", "テスト2", "テスト二"],
+        ["section", 9, "検査"],
+        ["value", 10, "検査", "key2", "value2"],
+        ["value", 11, "検査", "test2", "テスト2"],
+        ["value", 12, "検査", "テスト", "test"],
+        ["value", 13, "検査", "テスト2", "テスト二"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "section1",
+        "section2",
+        "検査"
+      ],
+      "entries": [
+        ["section1", "key1", "value1"],
+        ["section2", "test2", "テスト2"],
+        ["section2", "テスト", "test"],
+        ["section2", "テスト2", "テスト二"],
+        ["検査", "key2", "value2"],
+        ["検査", "test2", "テスト2"],
+        ["検査", "テスト", "test"],
+        ["検査", "テスト2", "テスト二"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["section1", "key1"], "value1"],
+        [["section2", "test2"], "テスト2"],
+        [["section2", "テスト"], "test"],
+        [["section2", "テスト2"], "テスト二"],
+        [["検査", "key2"], "value2"],
+        [["検査", "test2"], "テスト2"],
+        [["検査", "テスト"], "test"],
+        [["検査", "テスト2"], "テスト二"]
+      ]
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

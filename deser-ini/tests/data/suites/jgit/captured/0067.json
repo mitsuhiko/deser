@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "ConfigTest.testIncludeEmptyValue",
+    "ConfigTest.testIncludeExceptionContainsLine"
+  ],
+  "git": {
+    "entries": [
+      ["include", null, "path", ""]
+    ]
+  }
+}

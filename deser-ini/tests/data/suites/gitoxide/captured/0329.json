@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "main"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "autocrlf", "true"],
+      ["core", null, "filemode", "false"]
+    ]
+  }
+}

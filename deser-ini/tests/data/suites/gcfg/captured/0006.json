@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "ExampleReadStringInto_tags"
+  ],
+  "git": {
+    "entries": [
+      ["section", null, "var-name", "value"]
+    ]
+  }
+}

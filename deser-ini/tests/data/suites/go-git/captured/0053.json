@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "(*DecoderSuite).TestDecodeMatchesPublicLookups"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "a", "1"]
+    ]
+  }
+}

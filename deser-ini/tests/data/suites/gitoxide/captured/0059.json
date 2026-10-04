@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "file::access::read_only::integer_accessors_retain_classification_and_input"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "value", "1"],
+      ["core", null, "value", {"hex": "ff"}]
+    ]
+  }
+}

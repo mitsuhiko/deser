@@ -1,0 +1,78 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 6, "AutoComplete"],
+        ["value", 7, "AutoComplete", "popupwait", "2000"],
+        ["section", 9, "CodeContext"],
+        ["value", 10, "CodeContext", "maxlines", "15"],
+        ["section", 12, "FormatParagraph"],
+        ["value", 13, "FormatParagraph", "max-width", "72"],
+        ["section", 15, "ParenMatch"],
+        ["value", 16, "ParenMatch", "style", "expression"],
+        ["value", 17, "ParenMatch", "flash-delay", "500"],
+        ["value", 18, "ParenMatch", "bell", "True"],
+        ["section", 54, "ZzDummy"],
+        ["value", 55, "ZzDummy", "enable", "False"],
+        ["value", 56, "ZzDummy", "enable_shell", "False"],
+        ["value", 57, "ZzDummy", "enable_editor", "True"],
+        ["value", 58, "ZzDummy", "z-text", "Z"],
+        ["section", 59, "ZzDummy_cfgBindings"],
+        ["value", 60, "ZzDummy_cfgBindings", "z-in", "<Control-Shift-KeyRelease-Insert>"],
+        ["section", 61, "ZzDummy_bindings"],
+        ["value", 62, "ZzDummy_bindings", "z-out", "<Control-Shift-KeyRelease-Delete>"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "AutoComplete",
+        "CodeContext",
+        "FormatParagraph",
+        "ParenMatch",
+        "ZzDummy",
+        "ZzDummy_cfgBindings",
+        "ZzDummy_bindings"
+      ],
+      "entries": [
+        ["AutoComplete", "popupwait", "2000"],
+        ["CodeContext", "maxlines", "15"],
+        ["FormatParagraph", "max-width", "72"],
+        ["ParenMatch", "style", "expression"],
+        ["ParenMatch", "flash-delay", "500"],
+        ["ParenMatch", "bell", "True"],
+        ["ZzDummy", "enable", "False"],
+        ["ZzDummy", "enable_shell", "False"],
+        ["ZzDummy", "enable_editor", "True"],
+        ["ZzDummy", "z-text", "Z"],
+        ["ZzDummy_cfgBindings", "z-in", "<Control-Shift-KeyRelease-Insert>"],
+        ["ZzDummy_bindings", "z-out", "<Control-Shift-KeyRelease-Delete>"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "error": {
+        "message": "syntax error, unexpected '('",
+        "line": 24
+      }
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

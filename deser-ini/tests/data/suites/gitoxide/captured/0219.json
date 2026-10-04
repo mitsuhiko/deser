@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "file::mutable::section::push::whitespace_is_derived_from_whitespace_before_first_value"
+  ],
+  "git": {
+    "entries": [
+      ["a", null, "b", ""]
+    ]
+  }
+}

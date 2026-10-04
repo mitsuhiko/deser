@@ -1,0 +1,23 @@
+{
+  "tests": [
+    "ConfigParserTestCaseNoValue.test_items"
+  ],
+  "parser": "ConfigParser",
+  "options": {
+    "allow_no_value": true,
+    "allow_unnamed_section": false,
+    "comment_prefixes": [";", "#"],
+    "default_section": "DEFAULT",
+    "defaults": {"default": "<default>"},
+    "delimiters": ["=", ":"],
+    "empty_lines_in_values": true,
+    "inline_comment_prefixes": [";", "#"],
+    "strict": false
+  },
+  "result": {
+    "sections": [
+      ["DEFAULT", [["default", "<default>"]]],
+      ["section", [["name", "%(value)s"], ["key", "|%(name)s|"], ["getdefault", "|%(default)s|"]]]
+    ]
+  }
+}

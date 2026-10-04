@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "file::init::from_paths::includes::conditional::hasconfig::inclusion_order"
+  ],
+  "git": {
+    "entries": [
+      ["user", null, "two", "included-config"],
+      ["user", null, "three", "included-config"]
+    ]
+  }
+}

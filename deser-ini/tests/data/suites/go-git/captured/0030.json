@@ -1,0 +1,8 @@
+{
+  "tests": [
+    "(*DecoderSuite).TestDecode"
+  ],
+  "git": {
+    "entries": []
+  }
+}

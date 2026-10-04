@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "ConfigTest.testTimeUnitInvalidWithSection"
+  ],
+  "git": {
+    "entries": [
+      ["a", "b", "a", "1 monttthhh"]
+    ]
+  }
+}

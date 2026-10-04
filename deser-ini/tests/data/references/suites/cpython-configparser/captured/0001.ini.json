@@ -1,0 +1,66 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 2, "one"],
+        ["value", 3, "one", "one", "false"],
+        ["value", 4, "one", "one", "two = false"],
+        ["value", 5, "one", "one", "three = long story short"],
+        ["value", 7, "one", "one", "[two]"],
+        ["value", 8, "one", "one", "one = false"],
+        ["value", 9, "one", "one", "two = false"],
+        ["value", 10, "one", "one", "three = four"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "events": [
+        ["section", 2, "one"],
+        ["value", 3, "one", "one", "false"],
+        ["value", 4, "one", "two", "false"],
+        ["value", 5, "one", "three", "long story short"],
+        ["section", 7, "two"],
+        ["value", 8, "two", "one", "false"],
+        ["value", 9, "two", "two", "false"],
+        ["value", 10, "two", "three", "four"]
+      ],
+      "error_line": null
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "one",
+        "two"
+      ],
+      "entries": [
+        ["one", "one", "false"],
+        ["one", "two", "false"],
+        ["one", "three", "long story short"],
+        ["two", "one", "false"],
+        ["two", "two", "false"],
+        ["two", "three", "four"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "error": {
+        "message": "syntax error, unexpected END_OF_LINE, expecting '='",
+        "line": 3
+      }
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

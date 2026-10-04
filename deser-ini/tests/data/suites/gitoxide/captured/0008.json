@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "file::access::mutate::rename_section::renaming_to_the_same_identity_updates_all_headers"
+  ],
+  "git": {
+    "entries": [
+      ["branch", "source", "one", "1"],
+      ["branch", "source", "two", "2"]
+    ]
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "tests": [
+    "TestMarshalIndexSkipHash"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "bare", "false"],
+      ["core", null, "filemode", "true"],
+      ["index", null, "skiphash", "true"]
+    ]
+  }
+}

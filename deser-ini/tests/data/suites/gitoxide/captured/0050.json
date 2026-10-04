@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "file::access::read_only::implicit_booleans_may_be_followed_by_whitespace"
+  ],
+  "git": {
+    "entries": [
+      ["a", null, "b", ""]
+    ]
+  }
+}

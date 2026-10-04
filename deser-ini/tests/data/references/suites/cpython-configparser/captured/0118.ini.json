@@ -1,0 +1,54 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 2, "Paths"],
+        ["value", 3, "Paths", "home_dir", "/Users"],
+        ["value", 4, "Paths", "home_dir", "my_dir: ${home_dir1}/lumberjack"],
+        ["value", 5, "Paths", "home_dir", "my_pictures: ${my_dir}/Pictures"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "events": [
+        ["section", 2, "Paths"],
+        ["value", 3, "Paths", "home_dir", "/Users"],
+        ["value", 4, "Paths", "my_dir", "${home_dir1}/lumberjack"],
+        ["value", 5, "Paths", "my_pictures", "${my_dir}/Pictures"]
+      ],
+      "error_line": null
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "Paths"
+      ],
+      "entries": [
+        ["Paths", "home_dir", "/Users"],
+        ["Paths", "my_dir", "${home_dir1}/lumberjack"],
+        ["Paths", "my_pictures", "${my_dir}/Pictures"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "error": {
+        "message": "syntax error, unexpected END_OF_LINE, expecting '='",
+        "line": 3
+      }
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

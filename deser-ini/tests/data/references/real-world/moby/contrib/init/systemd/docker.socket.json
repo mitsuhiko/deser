@@ -1,0 +1,63 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 1, "Unit"],
+        ["value", 2, "Unit", "Description", "Docker Socket for the API"],
+        ["section", 4, "Socket"],
+        ["value", 7, "Socket", "ListenStream", "/run/docker.sock"],
+        ["value", 8, "Socket", "SocketMode", "0660"],
+        ["value", 9, "Socket", "SocketUser", "root"],
+        ["value", 10, "Socket", "SocketGroup", "docker"],
+        ["section", 12, "Install"],
+        ["value", 13, "Install", "WantedBy", "sockets.target"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "Unit",
+        "Socket",
+        "Install"
+      ],
+      "entries": [
+        ["Unit", "Description", "Docker Socket for the API"],
+        ["Socket", "ListenStream", "/run/docker.sock"],
+        ["Socket", "SocketMode", "0660"],
+        ["Socket", "SocketUser", "root"],
+        ["Socket", "SocketGroup", "docker"],
+        ["Install", "WantedBy", "sockets.target"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["Unit", "Description"], "Docker Socket for the API"],
+        [["Socket", "# specify ListenStream"], "/var/run/docker.sock instead."],
+        [["Socket", "ListenStream"], "/run/docker.sock"],
+        [["Socket", "SocketMode"], "0660"],
+        [["Socket", "SocketUser"], "root"],
+        [["Socket", "SocketGroup"], "docker"],
+        [["Install", "WantedBy"], "sockets.target"]
+      ]
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

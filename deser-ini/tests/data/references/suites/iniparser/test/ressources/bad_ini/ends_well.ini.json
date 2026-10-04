@@ -1,0 +1,52 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 4, "section"],
+        ["value", 6, "section", "a", "b"]
+      ],
+      "error_line": 5
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "events": [
+        ["section", 4, "section"],
+        ["value", 5, "section", "error is here", null],
+        ["value", 6, "section", "a", "b"]
+      ],
+      "error_line": null
+    }
+  },
+  "configparser": {
+    "default": {
+      "error": {
+        "type": "ParsingError",
+        "line": 5
+      }
+    },
+    "lenient": {
+      "sections": [
+        "section"
+      ],
+      "entries": [
+        ["section", "error is here", null],
+        ["section", "a", "b"]
+      ]
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["section", "a"], "b"]
+      ]
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "tests": [
+    "file::init::from_paths::includes::unconditional::multiple"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "c", "12"],
+      ["core", null, "d", "42"],
+      ["include", null, "path", "/dfgwfsghfdsfs"],
+      ["include", null, "path", "/tmp/.tmpXXXXXX/./a"],
+      ["include", null, "path", "b"],
+      ["include", "ignore", "path", "/tmp/.tmpXXXXXX/ignore"],
+      ["http", null, "sslverify", "false"]
+    ]
+  }
+}

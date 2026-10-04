@@ -1,0 +1,23 @@
+{
+  "tests": [
+    "CoverageOneHundredTestCase.test_inconsistent_converters_state"
+  ],
+  "parser": "ConfigParser",
+  "options": {
+    "allow_no_value": false,
+    "allow_unnamed_section": false,
+    "comment_prefixes": ["#", ";"],
+    "default_section": "DEFAULT",
+    "defaults": null,
+    "delimiters": ["=", ":"],
+    "empty_lines_in_values": true,
+    "inline_comment_prefixes": null,
+    "strict": true
+  },
+  "result": {
+    "sections": [
+      ["s1", [["one", "1"]]],
+      ["s2", [["two", "2"]]]
+    ]
+  }
+}

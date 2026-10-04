@@ -1,0 +1,6 @@
+{
+  "tests": [
+    "(*DecoderSuite).TestDecodeScalesLinearly"
+  ],
+  "git": {"error": {"message": "bad config line 1 in file <file>", "line": 1}}
+}

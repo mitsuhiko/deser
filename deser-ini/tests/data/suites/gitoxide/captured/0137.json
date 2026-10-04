@@ -1,0 +1,17 @@
+{
+  "tests": [
+    "file::init::from_paths::includes::conditional::gitdir::leading_dots_are_not_special"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "repositoryformatversion", "0"],
+      ["core", null, "filemode", "true"],
+      ["core", null, "bare", "false"],
+      ["core", null, "logallrefupdates", "true"],
+      ["core", null, "ignorecase", "true"],
+      ["core", null, "precomposeunicode", "true"],
+      ["section", null, "value", "base-value"],
+      ["includeif", "gitdir:.hidden/", "path", "/tmp/.tmpXXXXXX/.hidden/include.path"]
+    ]
+  }
+}

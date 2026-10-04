@@ -1,0 +1,14 @@
+{
+  "tests": [
+    "(*ConfigSuite).TestUnmarshalBoolValues"
+  ],
+  "git": {
+    "entries": [
+      ["commit", null, "gpgsign", "false"],
+      ["tag", null, "gpgsign", "false"],
+      ["index", null, "skiphash", "false"],
+      ["uploadarchive", null, "allowunreachable", "false"],
+      ["extensions", null, "worktreeconfig", "false"]
+    ]
+  }
+}

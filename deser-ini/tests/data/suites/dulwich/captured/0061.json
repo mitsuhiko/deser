@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "GetGitProxyCommandTests.test_no_default_no_match"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "gitproxy", "proxy-cmd for kernel.org"]
+    ]
+  }
+}

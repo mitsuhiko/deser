@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "file::access::raw::set_raw_value::quotes_and_backslashes"
+  ],
+  "git": {
+    "entries": [
+      ["a", null, "k", "c"],
+      ["a", null, "k", "\"hello\"\\\"there\"\\\\\\b\\x"]
+    ]
+  }
+}

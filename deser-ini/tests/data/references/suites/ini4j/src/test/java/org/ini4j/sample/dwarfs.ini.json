@@ -1,0 +1,175 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 24, "bashful"],
+        ["value", 25, "bashful", "weight", "45.7"],
+        ["value", 26, "bashful", "height", "98.8"],
+        ["value", 27, "bashful", "age", "67"],
+        ["value", 28, "bashful", "homePage", "http://snowwhite.tale/~bashful"],
+        ["value", 29, "bashful", "homeDir", "/home/bashful"],
+        ["section", 32, "doc"],
+        ["value", 33, "doc", "weight", "49.5"],
+        ["value", 34, "doc", "height", "87.7"],
+        ["value", 35, "doc", "age", "63"],
+        ["value", 36, "doc", "homePage", "http://doc.dwarfs"],
+        ["value", 37, "doc", "homeDir", "c:\\Documents and Settings\\doc"],
+        ["section", 40, "dopey"],
+        ["value", 41, "dopey", "weight", "${bashful/weight}"],
+        ["value", 42, "dopey", "height", "${doc/height}"],
+        ["value", 43, "dopey", "age", "23"],
+        ["value", 44, "dopey", "homePage", "http://dopey.snowwhite.tale/"],
+        ["value", 45, "dopey", "homeDir", "c:\\\\Documents and Settings\\\\dopey"],
+        ["value", 46, "dopey", "fortuneNumber", "11"],
+        ["value", 47, "dopey", "fortuneNumber", "33"],
+        ["value", 48, "dopey", "fortuneNumber", "55"],
+        ["section", 51, "grumpy"],
+        ["value", 52, "grumpy", "weight", "65.3"],
+        ["value", 53, "grumpy", "height", "${dopey/height}"],
+        ["value", 54, "grumpy", "age", "76"],
+        ["value", 55, "grumpy", "homePage", "http://snowwhite.tale/~grumpy/"],
+        ["value", 56, "grumpy", "homeDir", "/home/grumpy"],
+        ["section", 59, "happy"],
+        ["value", 60, "happy", "weight", "56.4"],
+        ["value", 61, "happy", "height", "77.66"],
+        ["value", 62, "happy", "age", "99"],
+        ["value", 63, "happy", "homePage", "dummy"],
+        ["value", 64, "happy", "homeDir", "/home/happy"],
+        ["section", 67, "sleepy"],
+        ["value", 68, "sleepy", "weight", "76.11"],
+        ["value", 69, "sleepy", "height", "${doc/height}8"],
+        ["value", 70, "sleepy", "age", "121"],
+        ["value", 71, "sleepy", "homePage", "http://snowwhite.tale/~sleepy"],
+        ["value", 72, "sleepy", "homeDir", "/home/sleepy"],
+        ["value", 73, "sleepy", "fortuneNumber", "99"],
+        ["section", 76, "sneezy"],
+        ["value", 77, "sneezy", "weight", "69.7"],
+        ["value", 78, "sneezy", "height", "76.88"],
+        ["value", 79, "sneezy", "age", "64"],
+        ["value", 80, "sneezy", "homePage", "${happy/homePage}/~sneezy"],
+        ["value", 81, "sneezy", "homeDir", "/home/sneezy"],
+        ["value", 82, "sneezy", "fortuneNumber", "11"],
+        ["value", 83, "sneezy", "fortuneNumber", "22"],
+        ["value", 84, "sneezy", "fortuneNumber", "33"],
+        ["value", 85, "sneezy", "fortuneNumber", "44"],
+        ["section", 88, "happy"],
+        ["value", 89, "happy", "homePage", "http://happy.smurf"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "error": {
+        "type": "DuplicateOptionError",
+        "line": 47
+      }
+    },
+    "lenient": {
+      "sections": [
+        "bashful",
+        "doc",
+        "dopey",
+        "grumpy",
+        "happy",
+        "sleepy",
+        "sneezy"
+      ],
+      "entries": [
+        ["bashful", "weight", "45.7"],
+        ["bashful", "height", "98.8"],
+        ["bashful", "age", "67"],
+        ["bashful", "homePage", "http://snowwhite.tale/~bashful"],
+        ["bashful", "homeDir", "/home/bashful"],
+        ["doc", "weight", "49.5"],
+        ["doc", "height", "87.7"],
+        ["doc", "age", "63"],
+        ["doc", "homePage", "http://doc.dwarfs"],
+        ["doc", "homeDir", "c:\\Documents and Settings\\doc"],
+        ["dopey", "weight", "${bashful/weight}"],
+        ["dopey", "height", "${doc/height}"],
+        ["dopey", "age", "23"],
+        ["dopey", "homePage", "http://dopey.snowwhite.tale/"],
+        ["dopey", "homeDir", "c:\\\\Documents and Settings\\\\dopey"],
+        ["dopey", "fortuneNumber", "55"],
+        ["grumpy", "weight", "65.3"],
+        ["grumpy", "height", "${dopey/height}"],
+        ["grumpy", "age", "76"],
+        ["grumpy", "homePage", "http://snowwhite.tale/~grumpy/"],
+        ["grumpy", "homeDir", "/home/grumpy"],
+        ["happy", "weight", "56.4"],
+        ["happy", "height", "77.66"],
+        ["happy", "age", "99"],
+        ["happy", "homePage", "http://happy.smurf"],
+        ["happy", "homeDir", "/home/happy"],
+        ["sleepy", "weight", "76.11"],
+        ["sleepy", "height", "${doc/height}8"],
+        ["sleepy", "age", "121"],
+        ["sleepy", "homePage", "http://snowwhite.tale/~sleepy"],
+        ["sleepy", "homeDir", "/home/sleepy"],
+        ["sleepy", "fortuneNumber", "99"],
+        ["sneezy", "weight", "69.7"],
+        ["sneezy", "height", "76.88"],
+        ["sneezy", "age", "64"],
+        ["sneezy", "homePage", "${happy/homePage}/~sneezy"],
+        ["sneezy", "homeDir", "/home/sneezy"],
+        ["sneezy", "fortuneNumber", "44"]
+      ]
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["bashful", "weight"], "45.7"],
+        [["bashful", "height"], "98.8"],
+        [["bashful", "age"], "67"],
+        [["bashful", "homePage"], "http://snowwhite.tale/~bashful"],
+        [["bashful", "homeDir"], "/home/bashful"],
+        [["doc", "weight"], "49.5"],
+        [["doc", "height"], "87.7"],
+        [["doc", "age"], "63"],
+        [["doc", "homePage"], "http://doc.dwarfs"],
+        [["doc", "homeDir"], "c:\\Documents and Settings\\doc"],
+        [["dopey", "weight"], "${bashful/weight}"],
+        [["dopey", "height"], "${doc/height}"],
+        [["dopey", "age"], "23"],
+        [["dopey", "homePage"], "http://dopey.snowwhite.tale/"],
+        [["dopey", "homeDir"], "c:\\\\Documents and Settings\\\\dopey"],
+        [["dopey", "fortuneNumber"], "55"],
+        [["grumpy", "weight"], "65.3"],
+        [["grumpy", "height"], "${dopey/height}"],
+        [["grumpy", "age"], "76"],
+        [["grumpy", "homePage"], "http://snowwhite.tale/~grumpy/"],
+        [["grumpy", "homeDir"], "/home/grumpy"],
+        [["happy", "homePage"], "http://happy.smurf"],
+        [["sleepy", "weight"], "76.11"],
+        [["sleepy", "height"], "${doc/height}8"],
+        [["sleepy", "age"], "121"],
+        [["sleepy", "homePage"], "http://snowwhite.tale/~sleepy"],
+        [["sleepy", "homeDir"], "/home/sleepy"],
+        [["sleepy", "fortuneNumber"], "99"],
+        [["sneezy", "weight"], "69.7"],
+        [["sneezy", "height"], "76.88"],
+        [["sneezy", "age"], "64"],
+        [["sneezy", "homePage"], "${happy/homePage}/~sneezy"],
+        [["sneezy", "homeDir"], "/home/sneezy"],
+        [["sneezy", "fortuneNumber"], "44"]
+      ]
+    },
+    "normal": {
+      "error": {
+        "message": "syntax error, unexpected '~'",
+        "line": 28
+      }
+    }
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "inih": {
+    "default": {
+      "events": [],
+      "error_line": 1
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "events": [
+        ["value", 1, "", {"hex": "fffe"}, null]
+      ],
+      "error_line": null
+    }
+  },
+  "configparser": {
+    "default": {
+      "error": {
+        "type": "UnicodeDecodeError"
+      }
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": []
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

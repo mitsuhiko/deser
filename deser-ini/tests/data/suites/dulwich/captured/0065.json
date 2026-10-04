@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "SubmodulesTests.testSubmodules"
+  ],
+  "git": {
+    "entries": [
+      ["submodule", "core/lib", "path", "core/lib"],
+      ["submodule", "core/lib", "url", "https://github.com/phhusson/QuasselC.git"]
+    ]
+  }
+}

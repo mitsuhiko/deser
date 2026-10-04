@@ -1,0 +1,17 @@
+{
+  "tests": [
+    "file::init::from_paths::includes::conditional::hasconfig::no_cycle"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "repositoryformatversion", "0"],
+      ["core", null, "filemode", "true"],
+      ["core", null, "bare", "true"],
+      ["core", null, "ignorecase", "true"],
+      ["core", null, "precomposeunicode", "true"],
+      ["include", null, "path", "remote"],
+      ["includeif", "hasconfig:remote.*.url:barurl", "path", "include-with-url"],
+      ["include", null, "path", "remote"]
+    ]
+  }
+}

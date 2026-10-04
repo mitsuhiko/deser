@@ -1,0 +1,12 @@
+{
+  "tests": [
+    "ConfigFileTests.test_from_file_multiple",
+    "ConfigFileTests.test_write_preserve_multivar"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "foo", "bar"],
+      ["core", null, "foo", "blah"]
+    ]
+  }
+}

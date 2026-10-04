@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "format::tabs_indentation_option",
+    "format::zero_tabs_or_spaces_mean_no_indentation"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "editor", "vim"]
+    ]
+  }
+}

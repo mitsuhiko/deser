@@ -1,0 +1,22 @@
+{
+  "tests": [
+    "ConfigParserTestCaseExtendedInterpolation.test_boolean"
+  ],
+  "parser": "ConfigParser",
+  "options": {
+    "allow_no_value": false,
+    "allow_unnamed_section": false,
+    "comment_prefixes": [";", "#"],
+    "default_section": "common",
+    "defaults": null,
+    "delimiters": ["=", ":"],
+    "empty_lines_in_values": true,
+    "inline_comment_prefixes": [";", "#"],
+    "strict": true
+  },
+  "result": {
+    "sections": [
+      ["BOOLTEST", [["T1", "1"], ["T2", "TRUE"], ["T3", "True"], ["T4", "oN"], ["T5", "yes"], ["F1", "0"], ["F2", "FALSE"], ["F3", "False"], ["F4", "oFF"], ["F5", "nO"], ["E1", "2"], ["E2", "foo"], ["E3", "-1"], ["E4", "0.1"], ["E5", "FALSE AND MORE"]]]
+    ]
+  }
+}

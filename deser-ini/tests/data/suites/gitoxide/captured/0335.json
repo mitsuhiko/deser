@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "main"
+  ],
+  "git": {
+    "entries": [
+      ["some-section", null, "file", "a    c"]
+    ]
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "ConfigFileTests.test_custom_file_opener_with_include_depth"
+  ],
+  "git": {
+    "entries": [
+      ["user", null, "name", "Test User"],
+      ["include", null, "path", "/tmp/tmpXXXXXXXX/middle.config"]
+    ]
+  }
+}

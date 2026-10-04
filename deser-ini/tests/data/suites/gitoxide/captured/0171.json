@@ -1,0 +1,14 @@
+{
+  "tests": [
+    "file::init::from_paths::includes::conditional::onbranch::double_star_globs_cross_component_boundaries",
+    "file::init::from_paths::includes::conditional::onbranch::literal_branch_names_match",
+    "file::init::from_paths::includes::conditional::onbranch::patterns_ending_with_slash_match_subdirectories_recursively",
+    "file::init::from_paths::includes::conditional::onbranch::simple_glob_patterns",
+    "file::init::from_paths::includes::conditional::onbranch::simple_globs_do_not_cross_component_boundary"
+  ],
+  "git": {
+    "entries": [
+      ["section", null, "value", "branch-override-by-include"]
+    ]
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "test-GitConfig.escaped"
+  ],
+  "git": {
+    "entries": [
+      ["foo", null, "keyaaa", "\"valaaa"]
+    ]
+  }
+}

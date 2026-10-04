@@ -1,0 +1,123 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["value", 3, "", "root", "true"],
+        ["section", 5, "test3.c"],
+        ["value", 7, "test3.c", "key", "value"],
+        ["section", 9, "test4.c"],
+        ["value", 10, "test4.c", "key1", "value1"],
+        ["value", 12, "test4.c", "key2", "value2"],
+        ["section", 15, "test5.c"],
+        ["value", 16, "test5.c", "key1", "value; not comment"],
+        ["value", 17, "test5.c", "key2", "value # not comment"],
+        ["section", 20, "test6.c"],
+        ["value", 21, "test6.c", "key1", "value \\; not comment"],
+        ["value", 22, "test6.c", "key2", "value \\# not comment"],
+        ["section", 25, "test\\;.c"],
+        ["value", 26, "test\\;.c", "key", "value"],
+        ["section", 28, "test9.c"],
+        ["value", 30, "test9.c", "key", "value"],
+        ["section", 32, "test10.c"],
+        ["value", 33, "test10.c", "key1", "value1"],
+        ["value", 35, "test10.c", "key2", "value2"],
+        ["section", 38, "test11.c"],
+        ["value", 39, "test11.c", "key", "value# not comment"],
+        ["section", 42, "test12.c"],
+        ["value", 43, "test12.c", "key", "value \\# not comment"],
+        ["section", 46, "test\\#.c"],
+        ["value", 47, "test\\#.c", "key", "value"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "error": {
+        "type": "MissingSectionHeaderError",
+        "line": 3
+      }
+    },
+    "lenient": {
+      "sections": [
+        null,
+        "test3.c",
+        "test4.c",
+        "test5.c",
+        "test6.c",
+        "test\\;.c",
+        "test9.c",
+        "test10.c",
+        "test11.c",
+        "test12.c",
+        "test\\#.c"
+      ],
+      "entries": [
+        [null, "root", "true"],
+        ["test3.c", "key", "value"],
+        ["test4.c", "key1", "value1"],
+        ["test4.c", "key2", "value2"],
+        ["test5.c", "key1", "value; not comment"],
+        ["test5.c", "key2", "value # not comment"],
+        ["test6.c", "key1", "value \\; not comment"],
+        ["test6.c", "key2", "value \\# not comment"],
+        ["test\\;.c", "key", "value"],
+        ["test9.c", "key", "value"],
+        ["test10.c", "key1", "value1"],
+        ["test10.c", "key2", "value2"],
+        ["test11.c", "key", "value# not comment"],
+        ["test12.c", "key", "value \\# not comment"],
+        ["test\\#.c", "key", "value"]
+      ]
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["root"], "true"],
+        [["test3.c", "key"], "value"],
+        [["test4.c", "key1"], "value1"],
+        [["test4.c", "key2"], "value2"],
+        [["test5.c", "key1"], "value"],
+        [["test5.c", "key2"], "value # not comment"],
+        [["test6.c", "key1"], "value \\"],
+        [["test6.c", "key2"], "value \\# not comment"],
+        [["test\\;.c", "key"], "value"],
+        [["test9.c", "key"], "value"],
+        [["test10.c", "key1"], "value1"],
+        [["test10.c", "key2"], "value2"],
+        [["test11.c", "key"], "value# not comment"],
+        [["test12.c", "key"], "value \\# not comment"],
+        [["test\\#.c", "key"], "value"]
+      ]
+    },
+    "normal": {
+      "entries": [
+        [["root"], "1"],
+        [["test3.c", "key"], "value"],
+        [["test4.c", "key1"], "value1"],
+        [["test4.c", "key2"], "value2"],
+        [["test5.c", "key1"], "value"],
+        [["test5.c", "key2"], "value # not comment"],
+        [["test6.c", "key1"], "value \\"],
+        [["test6.c", "key2"], "value \\# not comment"],
+        [["test\\;.c", "key"], "value"],
+        [["test9.c", "key"], "value"],
+        [["test10.c", "key1"], "value1"],
+        [["test10.c", "key2"], "value2"],
+        [["test11.c", "key"], "value# not comment"],
+        [["test12.c", "key"], "value \\# not comment"],
+        [["test\\#.c", "key"], "value"]
+      ]
+    }
+  }
+}

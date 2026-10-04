@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "file::access::read_only::single_section"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "a", "b"],
+      ["core", null, "c", null]
+    ]
+  }
+}

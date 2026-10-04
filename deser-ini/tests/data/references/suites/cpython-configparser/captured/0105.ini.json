@@ -1,0 +1,50 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 1, "Foo"]
+      ],
+      "error_line": 2
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "events": [
+        ["section", 1, "Foo"],
+        ["value", 2, "Foo", "$val-without-opt-name", null]
+      ],
+      "error_line": null
+    }
+  },
+  "configparser": {
+    "default": {
+      "error": {
+        "type": "ParsingError",
+        "line": 2
+      }
+    },
+    "lenient": {
+      "sections": [
+        "Foo"
+      ],
+      "entries": [
+        ["Foo", "$val-without-opt-name", null]
+      ]
+    }
+  },
+  "php": {
+    "raw": {
+      "error": {
+        "message": "syntax error, unexpected '$'",
+        "line": 2
+      }
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

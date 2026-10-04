@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "ExampleReadStringInto_bool"
+  ],
+  "git": {
+    "entries": [
+      ["section", null, "switch", "on"]
+    ]
+  }
+}

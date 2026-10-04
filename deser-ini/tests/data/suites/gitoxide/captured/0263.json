@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "file::mutable::value::set_string::multi_line"
+  ],
+  "git": {
+    "entries": [
+      ["a", null, "k", "a\nb   \n\t   c"]
+    ]
+  }
+}

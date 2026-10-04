@@ -1,0 +1,29 @@
+{
+  "tests": [
+    "TestUnmarshalMarshal"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "bare", "true"],
+      ["core", null, "worktree", "foo"],
+      ["core", null, "custom", "ignored"],
+      ["core", null, "autocrlf", "true"],
+      ["core", null, "filemode", "true"],
+      ["user", null, "name", "John Doe"],
+      ["user", null, "email", "john@example.com"],
+      ["author", null, "name", "Jane Roe"],
+      ["author", null, "email", "jane@example.com"],
+      ["committer", null, "name", "Richard Roe"],
+      ["committer", null, "email", "richard@example.co"],
+      ["pack", null, "window", "20"],
+      ["remote", "insteadOf", "url", "https://github.com/kostyay/go-git.git"],
+      ["remote", "origin", "url", "git@github.com:mcuadros/go-git.git"],
+      ["remote", "origin", "fetch", "+refs/heads/*:refs/remotes/origin/*"],
+      ["remote", "origin", "mirror", "true"],
+      ["remote", "win-local", "url", "X:\\Git\\"],
+      ["branch", "master", "remote", "origin"],
+      ["branch", "master", "merge", "refs/heads/master"],
+      ["url", "ssh://git@github.com/", "insteadof", "https://github.com/"]
+    ]
+  }
+}

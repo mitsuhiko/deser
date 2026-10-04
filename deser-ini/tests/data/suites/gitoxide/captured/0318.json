@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "format::quoted_subsection_and_value_verbatim"
+  ],
+  "git": {
+    "entries": [
+      ["test", "sub \"x\"", "path", "C:\\root"]
+    ]
+  }
+}

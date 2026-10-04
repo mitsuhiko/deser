@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "file::init::from_paths::includes::conditional::onbranch::literal_branch_names_match"
+  ],
+  "git": {
+    "entries": [
+      ["section", null, "value", "base-value"],
+      ["includeif", "onbranch:literal-match", "path", "./include.config"]
+    ]
+  }
+}

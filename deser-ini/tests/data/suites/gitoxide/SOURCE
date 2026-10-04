@@ -1,0 +1,5 @@
+https://github.com/GitoxideLabs/gitoxide
+commit 8f1280faf8dcabcfd967ee004a466f8b473b9b4f
+
+captured/ has the inputs of the test suite (see scripts/ini/git-config),
+the .json files how git reads them (alpine/git:v2.54.0@sha256:832b1cd1a271509f3d5272a1a62d4cb2ab1a53426ebde1f6c2cb7349f907dc6f).

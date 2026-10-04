@@ -1,0 +1,61 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["value", 1, "", "zr[]", "deedee"],
+        ["value", 2, "", "zr", "123"],
+        ["value", 3, "", "ar[]", "one"],
+        ["value", 4, "", "ar[]", "three"],
+        ["value", 5, "", "str", "3"],
+        ["value", 6, "", "brr", "1"],
+        ["value", 7, "", "brr", "2"],
+        ["value", 8, "", "brr", "3"],
+        ["value", 9, "", "brr", "3"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "error": {
+        "type": "MissingSectionHeaderError",
+        "line": 1
+      }
+    },
+    "lenient": {
+      "sections": [
+        null
+      ],
+      "entries": [
+        [null, "zr[]", "deedee"],
+        [null, "zr", "123"],
+        [null, "ar[]", "three"],
+        [null, "str", "3"],
+        [null, "brr", "3"]
+      ]
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["zr"], "123"],
+        [["ar", 0], "one"],
+        [["ar", 1], "three"],
+        [["str"], "3"],
+        [["brr"], "3"]
+      ]
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

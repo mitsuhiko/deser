@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "ConfigFileTests.test_from_file_includeif_hasconfig"
+  ],
+  "git": {
+    "entries": [
+      ["includeif", "hasconfig:remote.*.url:ssh://org-*@github.com/**", "path", "~/.config/git/.work"]
+    ]
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "tests": [
+    "RawConfigParserTestCase.test_basic",
+    "SortedTestCase.test_basic"
+  ],
+  "parser": "RawConfigParser",
+  "options": {
+    "allow_no_value": false,
+    "allow_unnamed_section": false,
+    "comment_prefixes": [";", "#"],
+    "default_section": "DEFAULT",
+    "defaults": null,
+    "delimiters": ["=", ":"],
+    "empty_lines_in_values": true,
+    "inline_comment_prefixes": [";", "#"],
+    "strict": false
+  },
+  "result": {
+    "sections": [
+      ["And Now For Something", [["completely different", "True"], ["the larch", "1"]]]
+    ]
+  }
+}

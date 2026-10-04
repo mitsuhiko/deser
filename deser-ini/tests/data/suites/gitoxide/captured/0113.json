@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "file::init::from_env::follow_include_paths"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "key", "changed"]
+    ]
+  }
+}

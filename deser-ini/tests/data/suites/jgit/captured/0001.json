@@ -1,0 +1,13 @@
+{
+  "tests": [
+    "BranchConfigTest.getRemoteTrackingBranchShouldHandleNormalCase",
+    "BranchConfigTest.getTrackingBranchShouldHandleNormalCaseForRemoteTrackingBranch"
+  ],
+  "git": {
+    "entries": [
+      ["remote", "origin", "fetch", "+refs/heads/*:refs/remotes/origin/*"],
+      ["branch", "master", "remote", "origin"],
+      ["branch", "master", "merge", "refs/heads/master"]
+    ]
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 5, "Chuchichäschtli"],
+        ["value", 7, "Chuchichäschtli", "10.123", "example"],
+        ["value", 8, "Chuchichäschtli", "Gruss", "Grüzi"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "Chuchichäschtli"
+      ],
+      "entries": [
+        ["Chuchichäschtli", "10.123", "example"],
+        ["Chuchichäschtli", "Gruss", "Grüzi"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["Chuchichäschtli", "10.123"], "example"],
+        [["Chuchichäschtli", "Gruss"], "Grüzi"]
+      ]
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

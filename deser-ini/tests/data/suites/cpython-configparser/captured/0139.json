@@ -1,0 +1,25 @@
+{
+  "tests": [
+    "RawConfigParserTestCase.test_read_returns_file_list",
+    "RawConfigParserTestCase.test_read_returns_file_list_with_bytestring_path",
+    "SortedTestCase.test_read_returns_file_list",
+    "SortedTestCase.test_read_returns_file_list_with_bytestring_path"
+  ],
+  "parser": "RawConfigParser",
+  "options": {
+    "allow_no_value": false,
+    "allow_unnamed_section": false,
+    "comment_prefixes": [";", "#"],
+    "default_section": "DEFAULT",
+    "defaults": null,
+    "delimiters": ["=", ":"],
+    "empty_lines_in_values": true,
+    "inline_comment_prefixes": [";", "#"],
+    "strict": false
+  },
+  "result": {
+    "sections": [
+      ["Foo Bar", [["foo", "newbar"]]]
+    ]
+  }
+}

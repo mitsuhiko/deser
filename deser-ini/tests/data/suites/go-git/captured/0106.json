@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "TestUnmarshalProtectNTFSUnsetForUnrecognised"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "protectntfs", "maybe"],
+      ["core", null, "protecthfs", "maybe"]
+    ]
+  }
+}

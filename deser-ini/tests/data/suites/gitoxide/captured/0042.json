@@ -1,0 +1,12 @@
+{
+  "tests": [
+    "file::access::read_only::get_value_looks_up_all_sections_before_failing"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "bool-explicit", "false"],
+      ["core", null, "bool-implicit", "false"],
+      ["core", null, "bool-implicit", null]
+    ]
+  }
+}

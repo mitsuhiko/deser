@@ -1,0 +1,28 @@
+{
+  "tests": [
+    "RawConfigParserTestSambaConf.test_reading"
+  ],
+  "parser": "RawConfigParser",
+  "options": {
+    "allow_no_value": false,
+    "allow_unnamed_section": false,
+    "comment_prefixes": ["#", ";", "----"],
+    "default_section": "DEFAULT",
+    "defaults": null,
+    "delimiters": ["=", ":"],
+    "empty_lines_in_values": false,
+    "inline_comment_prefixes": ["//"],
+    "strict": false
+  },
+  "result": {
+    "sections": [
+      ["global", [["workgroup", "MDKGROUP"], ["server string", "Samba Server %v"], ["printcap name", "lpstat"], ["load printers", "yes"], ["printing", "cups"], ["log file", "/var/log/samba/log.%m"], ["max log size", "50"], ["hosts allow", "127."], ["security", "user"], ["password level", "8"], ["encrypt passwords", "yes"], ["smb passwd file", "/etc/samba/smbpasswd"], ["socket options", "TCP_NODELAY SO_RCVBUF=8192 SO_SNDBUF=8192"], ["dns proxy", "no"]]],
+      ["homes", [["comment", "Home Directories"], ["browseable", "no"], ["writable", "yes"]]],
+      ["printers", [["comment", "All Printers"], ["path", "/var/spool/samba"], ["browseable", "no"], ["guest ok", "yes"], ["writable", "no"], ["printable", "yes"], ["create mode", "0700"], ["print command", "lpr-cups -P %p -o raw %s -r"]]],
+      ["print$", [["path", "/var/lib/samba/printers"], ["browseable", "yes"], ["read only", "yes"], ["write list", "@adm root"]]],
+      ["pdf-generator", [["path", "/var/tmp"], ["guest ok", "No"], ["printable", "Yes"], ["comment", "PDF Generator (only valid users)"], ["print command", "/usr/share/samba/scripts/print-pdf %s ~%u \\\\\\\\\\\\\\\\%L\\\\\\\\%u %m %I &"]]],
+      ["tmp", [["comment", "Temporary file space"], ["path", "/tmp"], ["read only", "no"], ["public", "yes"], ["echo command", "cat %s; rm %s"]]],
+      ["Agustin", [["comment", "Agustin Private Files"], ["path", "/home/agustin/Documents"], ["valid users", "agustin"], ["writable", "yes"]]]
+    ]
+  }
+}

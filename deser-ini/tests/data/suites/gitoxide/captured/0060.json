@@ -1,0 +1,12 @@
+{
+  "tests": [
+    "file::access::read_only::interpreted_values_can_be_returned_with_their_sections"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "a", "1"],
+      ["core", null, "a", "2"],
+      ["core", null, "a", "3"]
+    ]
+  }
+}

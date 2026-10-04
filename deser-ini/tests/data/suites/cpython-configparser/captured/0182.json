@@ -1,0 +1,23 @@
+{
+  "tests": [
+    "StrictTestCase.test_case_sensitivity",
+    "StrictTestCase.test_case_sensitivity_mapping_access"
+  ],
+  "parser": "RawConfigParser",
+  "options": {
+    "allow_no_value": false,
+    "allow_unnamed_section": false,
+    "comment_prefixes": [";", "#"],
+    "default_section": "DEFAULT",
+    "defaults": null,
+    "delimiters": ["=", ":"],
+    "empty_lines_in_values": true,
+    "inline_comment_prefixes": [";", "#"],
+    "strict": true
+  },
+  "result": {
+    "sections": [
+      ["MySection", [["Option", "first line\nsecond line"]]]
+    ]
+  }
+}

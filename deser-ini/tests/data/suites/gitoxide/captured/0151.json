@@ -1,0 +1,23 @@
+{
+  "tests": [
+    "file::init::from_paths::includes::conditional::hasconfig::globs"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "repositoryformatversion", "0"],
+      ["core", null, "filemode", "true"],
+      ["core", null, "bare", "true"],
+      ["core", null, "ignorecase", "true"],
+      ["core", null, "precomposeunicode", "true"],
+      ["remote", "foo", "url", "https://foo/bar/baz"],
+      ["includeif", "hasconfig:remote.*.url:**/baz", "path", "double-star-start"],
+      ["includeif", "hasconfig:remote.*.url:**/nomatch", "path", "no"],
+      ["includeif", "hasconfig:remote.*.url:https:/**", "path", "double-star-end"],
+      ["includeif", "hasconfig:remote.*.url:nomatch:/**", "path", "no"],
+      ["includeif", "hasconfig:remote.*.url:https:/**/baz", "path", "double-star-middle"],
+      ["includeif", "hasconfig:remote.*.url:https:/**/nomatch", "path", "no"],
+      ["includeif", "hasconfig:remote.*.url:https://*/bar/baz", "path", "single-star-middle"],
+      ["includeif", "hasconfig:remote.*.url:https://*/baz", "path", "no"]
+    ]
+  }
+}

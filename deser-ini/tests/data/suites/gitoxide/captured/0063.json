@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "file::access::read_only::multi_line_value_plain"
+  ],
+  "git": {
+    "entries": [
+      ["alias", null, "save", "!git status         && git add -A         && git commit -m \"$1\"         && git push -f         && git log -1         && :"]
+    ]
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "TestIssue1"
+  ],
+  "git": {
+    "entries": [
+      ["section", null, "bigint", ""]
+    ]
+  }
+}

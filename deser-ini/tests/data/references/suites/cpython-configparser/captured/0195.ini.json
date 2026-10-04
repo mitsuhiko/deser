@@ -1,0 +1,57 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 1, "Foo"],
+        ["value", 2, "Foo", "will this be added", "True"],
+        ["section", 3, "Bar"],
+        ["value", 4, "Bar", "what about this", "True"],
+        ["section", 5, "Foo"],
+        ["value", 6, "Foo", "oops", "this won't"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "error": {
+        "type": "DuplicateSectionError",
+        "line": 5
+      }
+    },
+    "lenient": {
+      "sections": [
+        "Foo",
+        "Bar"
+      ],
+      "entries": [
+        ["Foo", "will this be added", "True"],
+        ["Foo", "oops", "this won't"],
+        ["Bar", "what about this", "True"]
+      ]
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["Foo", "oops"], "this won't"],
+        [["Bar", "what about this"], "True"]
+      ]
+    },
+    "normal": {
+      "entries": [
+        [["Foo", "oops"], "this won"],
+        [["Bar", "what about this"], "1"]
+      ]
+    }
+  }
+}

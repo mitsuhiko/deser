@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "test-GitConfig.variable name insensitive"
+  ],
+  "git": {
+    "entries": [
+      ["foo", null, "keyaaa", "valaaa"]
+    ]
+  }
+}

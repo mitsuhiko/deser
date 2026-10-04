@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "ConfigFileTests.test_from_file_subsection_unknown_escape_is_lenient"
+  ],
+  "git": {
+    "entries": [
+      ["branch", "foonbar", "k", "v"]
+    ]
+  }
+}

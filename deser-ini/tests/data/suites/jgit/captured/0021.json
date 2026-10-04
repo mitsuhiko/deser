@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "ConfigTest.testCombinedMergeOptions"
+  ],
+  "git": {
+    "entries": [
+      ["merge", null, "ff", "false"],
+      ["branch", "side", "mergeoptions", "--ff-only --no-commit"]
+    ]
+  }
+}

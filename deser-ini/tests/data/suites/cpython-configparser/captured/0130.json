@@ -1,0 +1,25 @@
+{
+  "tests": [
+    "RawConfigParserTestCase.test_interpolation",
+    "SortedTestCase.test_interpolation"
+  ],
+  "parser": "RawConfigParser",
+  "options": {
+    "allow_no_value": false,
+    "allow_unnamed_section": false,
+    "comment_prefixes": [";", "#"],
+    "default_section": "DEFAULT",
+    "defaults": null,
+    "delimiters": ["=", ":"],
+    "empty_lines_in_values": true,
+    "inline_comment_prefixes": [";", "#"],
+    "strict": false
+  },
+  "result": {
+    "sections": [
+      ["Foo", [["bar", "something %(with1)s interpolation (1 step)"], ["bar9", "something %(with9)s lots of interpolation (9 steps)"], ["bar10", "something %(with10)s lots of interpolation (10 steps)"], ["bar11", "something %(with11)s lots of interpolation (11 steps)"], ["with11", "%(with10)s"], ["with10", "%(with9)s"], ["with9", "%(with8)s"], ["with8", "%(With7)s"], ["with7", "%(WITH6)s"], ["with6", "%(with5)s"], ["With5", "%(with4)s"], ["WITH4", "%(with3)s"], ["with3", "%(with2)s"], ["with2", "%(with1)s"], ["with1", "with"]]],
+      ["Mutual Recursion", [["foo", "%(bar)s"], ["bar", "%(foo)s"]]],
+      ["Interpolation Error", [["name", "%(reference)s"]]]
+    ]
+  }
+}

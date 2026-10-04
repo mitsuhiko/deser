@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "ConfigFileTests.test_includeif_hasconfig_wildcard"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "autocrlf", "true"],
+      ["includeif", "hasconfig:core.autocrlf:true", "path", "included.config"]
+    ]
+  }
+}

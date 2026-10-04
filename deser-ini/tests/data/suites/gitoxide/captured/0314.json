@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "format::meaning_is_preserved"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "editor", "vim"]
+    ]
+  }
+}

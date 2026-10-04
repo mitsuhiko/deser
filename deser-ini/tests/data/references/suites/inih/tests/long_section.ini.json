@@ -1,0 +1,43 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 2, "_123456789_123456789_123456789_123456789_123456789_123456789"],
+        ["value", 3, "_123456789_123456789_123456789_123456789_123456789_123456789", "name", "value"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "sections": [
+        "_123456789_123456789_123456789_123456789_123456789_123456789"
+      ],
+      "entries": [
+        ["_123456789_123456789_123456789_123456789_123456789_123456789", "name", "value"]
+      ]
+    },
+    "lenient": {
+      "same_as": "default"
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["_123456789_123456789_123456789_123456789_123456789_123456789", "name"], "value"]
+      ]
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "tests": [
+    "ConfigParserTestCaseNoInterpolation.test_no_interpolation"
+  ],
+  "parser": "ConfigParser",
+  "options": {
+    "allow_no_value": false,
+    "allow_unnamed_section": false,
+    "comment_prefixes": [";", "#"],
+    "default_section": "DEFAULT",
+    "defaults": null,
+    "delimiters": ["=", ":"],
+    "empty_lines_in_values": true,
+    "inline_comment_prefixes": [";", "#"],
+    "strict": false
+  },
+  "result": {
+    "sections": [
+      ["numbers", [["one", "1"], ["two", "%(one)s * 2"], ["three", "${common:one} * 3"]]],
+      ["hexen", [["sixteen", "${numbers:two} * 8"]]]
+    ]
+  }
+}

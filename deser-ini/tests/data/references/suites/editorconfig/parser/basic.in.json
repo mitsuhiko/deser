@@ -1,0 +1,63 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 1, "*.a"],
+        ["value", 2, "*.a", "option1", "value1"],
+        ["section", 5, "*.a"],
+        ["value", 6, "*.a", "option2", "value2"],
+        ["section", 8, "*.b"],
+        ["value", 9, "*.b", "option1", "a"],
+        ["value", 10, "*.b", "option2", "a"],
+        ["section", 12, "b.b"],
+        ["value", 13, "b.b", "option2", "b"],
+        ["section", 15, "*.b"],
+        ["value", 16, "*.b", "option1", "c"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "error": {
+        "type": "DuplicateSectionError",
+        "line": 5
+      }
+    },
+    "lenient": {
+      "sections": [
+        "*.a",
+        "*.b",
+        "b.b"
+      ],
+      "entries": [
+        ["*.a", "option1", "value1"],
+        ["*.a", "option2", "value2"],
+        ["*.b", "option1", "c"],
+        ["*.b", "option2", "a"],
+        ["b.b", "option2", "b"]
+      ]
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["*.a", "option2"], "value2"],
+        [["*.b", "option1"], "c"],
+        [["b.b", "option2"], "b"]
+      ]
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

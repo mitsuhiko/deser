@@ -1,0 +1,27 @@
+{
+  "tests": [
+    "file::init::from_paths::includes::conditional::gitdir::absolute_git_dir_with_os_separators_match",
+    "file::init::from_paths::includes::conditional::gitdir::absolute_worktree_dir_with_os_separators_matches_with_trailing_glob",
+    "file::init::from_paths::includes::conditional::gitdir::case_insensitive_matches_any_case",
+    "file::init::from_paths::includes::conditional::gitdir::dot_path_matching_symlink_with_icase",
+    "file::init::from_paths::includes::conditional::gitdir::dot_path_with_symlink",
+    "file::init::from_paths::includes::conditional::gitdir::dot_slash_path_is_replaced_with_directory_containing_the_including_config_file",
+    "file::init::from_paths::includes::conditional::gitdir::dot_slash_path_with_dot_git_suffix_matches",
+    "file::init::from_paths::includes::conditional::gitdir::explicit_star_star_prefix_and_suffix_match_zero_or_more_path_components",
+    "file::init::from_paths::includes::conditional::gitdir::globbing_and_wildcards",
+    "file::init::from_paths::includes::conditional::gitdir::leading_dots_are_not_special",
+    "file::init::from_paths::includes::conditional::gitdir::pattern_with_backslash",
+    "file::init::from_paths::includes::conditional::gitdir::pattern_with_escaped_backslash",
+    "file::init::from_paths::includes::conditional::gitdir::relative_path_matching_symlink",
+    "file::init::from_paths::includes::conditional::gitdir::relative_path_with_trailing_slash_matches_like_star_star",
+    "file::init::from_paths::includes::conditional::gitdir::relative_path_without_trailing_slash_and_dot_git_suffix_matches",
+    "file::init::from_paths::includes::conditional::gitdir::star_star_in_the_middle",
+    "file::init::from_paths::includes::conditional::gitdir::tilde_expansion_with_symlink",
+    "file::init::from_paths::includes::conditional::gitdir::tilde_slash_expands_the_current_user_home"
+  ],
+  "git": {
+    "entries": [
+      ["section", null, "value", "override-value"]
+    ]
+  }
+}

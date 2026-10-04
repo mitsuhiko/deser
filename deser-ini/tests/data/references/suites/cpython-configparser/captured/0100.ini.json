@@ -1,0 +1,52 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 1, "DEFAULT"],
+        ["value", 2, "DEFAULT", "test", "= test"]
+      ],
+      "error_line": 3
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "events": [
+        ["section", 1, "DEFAULT"],
+        ["value", 2, "DEFAULT", "test", "= test"],
+        ["value", 3, "DEFAULT", "invalid", null]
+      ],
+      "error_line": null
+    }
+  },
+  "configparser": {
+    "default": {
+      "error": {
+        "type": "ParsingError",
+        "line": 3
+      }
+    },
+    "lenient": {
+      "sections": [
+        "DEFAULT"
+      ],
+      "entries": [
+        ["DEFAULT", "test", "= test"],
+        ["DEFAULT", "invalid", null]
+      ]
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["DEFAULT", "test :"], "test"]
+      ]
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

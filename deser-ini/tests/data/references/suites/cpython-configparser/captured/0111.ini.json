@@ -1,0 +1,67 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 1, "Long Line"],
+        ["value", 2, "Long Line", "foo", "= this line is much, much longer than my editor"],
+        ["value", 3, "Long Line", "foo", "likes it."],
+        ["section", 4, "DEFAULT"],
+        ["section", 7, "Long Line - With Comments!"]
+      ],
+      "error_line": 5
+    },
+    "no_multiline": {
+      "events": [
+        ["section", 1, "Long Line"],
+        ["value", 2, "Long Line", "foo", "= this line is much, much longer than my editor"],
+        ["section", 4, "DEFAULT"],
+        ["section", 7, "Long Line - With Comments!"]
+      ],
+      "error_line": 3
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "events": [
+        ["section", 1, "Long Line"],
+        ["value", 2, "Long Line", "foo", "= this line is much, much longer than my editor"],
+        ["value", 3, "Long Line", "foo", "likes it."],
+        ["section", 4, "DEFAULT"],
+        ["value", 5, "DEFAULT", "foo$ another very", null],
+        ["value", 6, "DEFAULT", "long line", null],
+        ["section", 7, "Long Line - With Comments!"],
+        ["value", 8, "Long Line - With Comments!", "test $ we        // can", null],
+        ["value", 9, "Long Line - With Comments!", "also      // place", null],
+        ["value", 10, "Long Line - With Comments!", "comments  // in", null],
+        ["value", 11, "Long Line - With Comments!", "multiline // values", null]
+      ],
+      "error_line": null
+    }
+  },
+  "configparser": {
+    "default": {
+      "error": {
+        "type": "ParsingError",
+        "line": 5
+      }
+    },
+    "lenient": {
+      "error": {
+        "type": "MultilineContinuationError",
+        "line": 6
+      }
+    }
+  },
+  "php": {
+    "raw": {
+      "error": {
+        "message": "syntax error, unexpected '$'",
+        "line": 5
+      }
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

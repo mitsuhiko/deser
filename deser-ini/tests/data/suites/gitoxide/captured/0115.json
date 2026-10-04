@@ -1,0 +1,8 @@
+{
+  "tests": [
+    "file::init::from_paths::frontmatter_is_maintained_in_multiple_files"
+  ],
+  "git": {
+    "entries": []
+  }
+}

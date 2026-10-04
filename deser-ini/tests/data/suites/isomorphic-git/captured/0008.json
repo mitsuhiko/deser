@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "test-GitConfig.existing subsection with dots in key"
+  ],
+  "git": {
+    "entries": [
+      ["remote", "foo.bar", "url", "https://foo.com/project.git"]
+    ]
+  }
+}

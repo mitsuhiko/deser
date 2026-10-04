@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "StackedConfigTests.test_git_config_system"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "autocrlf", "true"]
+    ]
+  }
+}

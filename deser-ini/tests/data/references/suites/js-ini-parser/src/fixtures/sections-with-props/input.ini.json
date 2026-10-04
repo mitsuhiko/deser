@@ -1,0 +1,62 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 1, "s1"],
+        ["value", 2, "s1", "a", "b"],
+        ["value", 3, "s1", "c", "d"],
+        ["section", 5, "s2"],
+        ["value", 6, "s2", "e", "f"],
+        ["value", 7, "s2", "g", "h"],
+        ["section", 9, "s1"],
+        ["value", 10, "s1", "i", "j"],
+        ["value", 11, "s1", "k", "l"]
+      ],
+      "error_line": null
+    },
+    "no_multiline": {
+      "same_as": "default"
+    },
+    "no_inline_comments": {
+      "same_as": "default"
+    },
+    "allow_no_value": {
+      "same_as": "default"
+    }
+  },
+  "configparser": {
+    "default": {
+      "error": {
+        "type": "DuplicateSectionError",
+        "line": 9
+      }
+    },
+    "lenient": {
+      "sections": [
+        "s1",
+        "s2"
+      ],
+      "entries": [
+        ["s1", "a", "b"],
+        ["s1", "c", "d"],
+        ["s1", "i", "j"],
+        ["s1", "k", "l"],
+        ["s2", "e", "f"],
+        ["s2", "g", "h"]
+      ]
+    }
+  },
+  "php": {
+    "raw": {
+      "entries": [
+        [["s1", "i"], "j"],
+        [["s1", "k"], "l"],
+        [["s2", "e"], "f"],
+        [["s2", "g"], "h"]
+      ]
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

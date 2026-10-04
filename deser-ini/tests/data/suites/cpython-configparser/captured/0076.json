@@ -1,0 +1,24 @@
+{
+  "tests": [
+    "ConfigParserTestCaseNonStandardDefaultSection.test_case_sensitivity",
+    "ConfigParserTestCaseNonStandardDefaultSection.test_case_sensitivity_mapping_access"
+  ],
+  "parser": "ConfigParser",
+  "options": {
+    "allow_no_value": false,
+    "allow_unnamed_section": false,
+    "comment_prefixes": [";", "#"],
+    "default_section": "general",
+    "defaults": {"key": "value"},
+    "delimiters": ["=", ":"],
+    "empty_lines_in_values": true,
+    "inline_comment_prefixes": [";", "#"],
+    "strict": false
+  },
+  "result": {
+    "sections": [
+      ["general", [["key", "value"]]],
+      ["section", [["nekey", "nevalue"]]]
+    ]
+  }
+}

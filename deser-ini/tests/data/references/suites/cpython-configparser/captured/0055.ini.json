@@ -1,0 +1,199 @@
+{
+  "inih": {
+    "default": {
+      "events": [
+        ["section", 1, "Foo Bar"],
+        ["value", 2, "Foo Bar", "foo", "bar1"],
+        ["section", 3, "Spacey Bar"],
+        ["value", 4, "Spacey Bar", "foo", "bar2"],
+        ["section", 5, "Spacey Bar From The Beginning"],
+        ["value", 6, "Spacey Bar From The Beginning", "foo", "bar3"],
+        ["value", 7, "Spacey Bar From The Beginning", "foo", "baz = qwe"],
+        ["section", 8, "Commented Bar"],
+        ["value", 9, "Commented Bar", "foo", "bar4 # comment"],
+        ["value", 10, "Commented Bar", "baz", "qwe"],
+        ["section", 11, "Long Line"],
+        ["value", 12, "Long Line", "foo", "this line is much, much longer than my editor"],
+        ["value", 13, "Long Line", "foo", "likes it."],
+        ["section", 14, "Section\\with$weird%characters[\t"],
+        ["section", 15, "Internationalized Stuff"],
+        ["value", 16, "Internationalized Stuff", "foo[bg]", "Bulgarian"],
+        ["value", 17, "Internationalized Stuff", "foo", "Default"],
+        ["value", 18, "Internationalized Stuff", "foo[en]", "English"],
+        ["value", 19, "Internationalized Stuff", "foo[de]", "Deutsch"],
+        ["section", 20, "Spaces"],
+        ["value", 21, "Spaces", "key with spaces", "value"],
+        ["value", 22, "Spaces", "another with spaces", "splat!"],
+        ["section", 23, "Types"],
+        ["value", 24, "Types", "int", "42"],
+        ["value", 25, "Types", "float", "0.44"],
+        ["value", 26, "Types", "boolean", "NO"],
+        ["value", 27, "Types", "123", "strange but acceptable"],
+        ["section", 28, "This One Has A "],
+        ["value", 29, "This One Has A ", "forks", "spoons"],
+        ["section", 30, "NoValue"]
+      ],
+      "error_line": 31
+    },
+    "no_multiline": {
+      "events": [
+        ["section", 1, "Foo Bar"],
+        ["value", 2, "Foo Bar", "foo", "bar1"],
+        ["section", 3, "Spacey Bar"],
+        ["value", 4, "Spacey Bar", "foo", "bar2"],
+        ["section", 5, "Spacey Bar From The Beginning"],
+        ["value", 6, "Spacey Bar From The Beginning", "foo", "bar3"],
+        ["value", 7, "Spacey Bar From The Beginning", "baz", "qwe"],
+        ["section", 8, "Commented Bar"],
+        ["value", 9, "Commented Bar", "foo", "bar4 # comment"],
+        ["value", 10, "Commented Bar", "baz", "qwe"],
+        ["section", 11, "Long Line"],
+        ["value", 12, "Long Line", "foo", "this line is much, much longer than my editor"],
+        ["section", 14, "Section\\with$weird%characters[\t"],
+        ["section", 15, "Internationalized Stuff"],
+        ["value", 16, "Internationalized Stuff", "foo[bg]", "Bulgarian"],
+        ["value", 17, "Internationalized Stuff", "foo", "Default"],
+        ["value", 18, "Internationalized Stuff", "foo[en]", "English"],
+        ["value", 19, "Internationalized Stuff", "foo[de]", "Deutsch"],
+        ["section", 20, "Spaces"],
+        ["value", 21, "Spaces", "key with spaces", "value"],
+        ["value", 22, "Spaces", "another with spaces", "splat!"],
+        ["section", 23, "Types"],
+        ["value", 24, "Types", "int", "42"],
+        ["value", 25, "Types", "float", "0.44"],
+        ["value", 26, "Types", "boolean", "NO"],
+        ["value", 27, "Types", "123", "strange but acceptable"],
+        ["section", 28, "This One Has A "],
+        ["value", 29, "This One Has A ", "forks", "spoons"],
+        ["section", 30, "NoValue"]
+      ],
+      "error_line": 13
+    },
+    "no_inline_comments": {
+      "events": [
+        ["section", 1, "Foo Bar"],
+        ["value", 2, "Foo Bar", "foo", "bar1"],
+        ["section", 3, "Spacey Bar"],
+        ["value", 4, "Spacey Bar", "foo", "bar2"],
+        ["section", 5, "Spacey Bar From The Beginning"],
+        ["value", 6, "Spacey Bar From The Beginning", "foo", "bar3"],
+        ["value", 7, "Spacey Bar From The Beginning", "foo", "baz = qwe"],
+        ["section", 8, "Commented Bar"],
+        ["value", 9, "Commented Bar", "foo", "bar4 # comment"],
+        ["value", 10, "Commented Bar", "baz", "qwe ;another one"],
+        ["section", 11, "Long Line"],
+        ["value", 12, "Long Line", "foo", "this line is much, much longer than my editor"],
+        ["value", 13, "Long Line", "foo", "likes it."],
+        ["section", 14, "Section\\with$weird%characters[\t"],
+        ["section", 15, "Internationalized Stuff"],
+        ["value", 16, "Internationalized Stuff", "foo[bg]", "Bulgarian"],
+        ["value", 17, "Internationalized Stuff", "foo", "Default"],
+        ["value", 18, "Internationalized Stuff", "foo[en]", "English"],
+        ["value", 19, "Internationalized Stuff", "foo[de]", "Deutsch"],
+        ["section", 20, "Spaces"],
+        ["value", 21, "Spaces", "key with spaces", "value"],
+        ["value", 22, "Spaces", "another with spaces", "splat!"],
+        ["section", 23, "Types"],
+        ["value", 24, "Types", "int", "42"],
+        ["value", 25, "Types", "float", "0.44"],
+        ["value", 26, "Types", "boolean", "NO"],
+        ["value", 27, "Types", "123", "strange but acceptable"],
+        ["section", 28, "This One Has A "],
+        ["value", 29, "This One Has A ", "forks", "spoons"],
+        ["section", 30, "NoValue"]
+      ],
+      "error_line": 31
+    },
+    "allow_no_value": {
+      "events": [
+        ["section", 1, "Foo Bar"],
+        ["value", 2, "Foo Bar", "foo", "bar1"],
+        ["section", 3, "Spacey Bar"],
+        ["value", 4, "Spacey Bar", "foo", "bar2"],
+        ["section", 5, "Spacey Bar From The Beginning"],
+        ["value", 6, "Spacey Bar From The Beginning", "foo", "bar3"],
+        ["value", 7, "Spacey Bar From The Beginning", "foo", "baz = qwe"],
+        ["section", 8, "Commented Bar"],
+        ["value", 9, "Commented Bar", "foo", "bar4 # comment"],
+        ["value", 10, "Commented Bar", "baz", "qwe"],
+        ["section", 11, "Long Line"],
+        ["value", 12, "Long Line", "foo", "this line is much, much longer than my editor"],
+        ["value", 13, "Long Line", "foo", "likes it."],
+        ["section", 14, "Section\\with$weird%characters[\t"],
+        ["section", 15, "Internationalized Stuff"],
+        ["value", 16, "Internationalized Stuff", "foo[bg]", "Bulgarian"],
+        ["value", 17, "Internationalized Stuff", "foo", "Default"],
+        ["value", 18, "Internationalized Stuff", "foo[en]", "English"],
+        ["value", 19, "Internationalized Stuff", "foo[de]", "Deutsch"],
+        ["section", 20, "Spaces"],
+        ["value", 21, "Spaces", "key with spaces", "value"],
+        ["value", 22, "Spaces", "another with spaces", "splat!"],
+        ["section", 23, "Types"],
+        ["value", 24, "Types", "int", "42"],
+        ["value", 25, "Types", "float", "0.44"],
+        ["value", 26, "Types", "boolean", "NO"],
+        ["value", 27, "Types", "123", "strange but acceptable"],
+        ["section", 28, "This One Has A "],
+        ["value", 29, "This One Has A ", "forks", "spoons"],
+        ["section", 30, "NoValue"],
+        ["value", 31, "NoValue", "option-without-value", null]
+      ],
+      "error_line": null
+    }
+  },
+  "configparser": {
+    "default": {
+      "error": {
+        "type": "ParsingError",
+        "line": 31
+      }
+    },
+    "lenient": {
+      "sections": [
+        "Foo Bar",
+        "Spacey Bar",
+        "Spacey Bar From The Beginning",
+        "Commented Bar",
+        "Long Line",
+        "Section\\with$weird%characters[\t",
+        "Internationalized Stuff",
+        "Spaces",
+        "Types",
+        "This One Has A ] In It",
+        "NoValue"
+      ],
+      "entries": [
+        ["Foo Bar", "foo", "bar1"],
+        ["Spacey Bar", "foo", "bar2"],
+        ["Spacey Bar From The Beginning", "foo", "bar3"],
+        ["Spacey Bar From The Beginning", "baz", "qwe"],
+        ["Commented Bar", "foo", "bar4 # comment"],
+        ["Commented Bar", "baz", "qwe ;another one"],
+        ["Long Line", "foo", "this line is much, much longer than my editor\nlikes it."],
+        ["Internationalized Stuff", "foo[bg]", "Bulgarian"],
+        ["Internationalized Stuff", "foo", "Default"],
+        ["Internationalized Stuff", "foo[en]", "English"],
+        ["Internationalized Stuff", "foo[de]", "Deutsch"],
+        ["Spaces", "key with spaces", "value"],
+        ["Spaces", "another with spaces", "splat!"],
+        ["Types", "int", "42"],
+        ["Types", "float", "0.44"],
+        ["Types", "boolean", "NO"],
+        ["Types", "123", "strange but acceptable"],
+        ["This One Has A ] In It", "forks", "spoons"],
+        ["NoValue", "option-without-value", null]
+      ]
+    }
+  },
+  "php": {
+    "raw": {
+      "error": {
+        "message": "syntax error, unexpected TC_LABEL, expecting '='",
+        "line": 16
+      }
+    },
+    "normal": {
+      "same_as": "raw"
+    }
+  }
+}

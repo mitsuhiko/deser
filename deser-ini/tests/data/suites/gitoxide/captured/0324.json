@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "main"
+  ],
+  "git": {
+    "entries": [
+      ["core", null, "a", "10k"],
+      ["core", null, "c", "false"]
+    ]
+  }
+}

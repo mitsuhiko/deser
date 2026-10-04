@@ -1,0 +1,11 @@
+{
+  "tests": [
+    "file::init::comfort::from_git_dir",
+    "file::init::comfort::from_globals"
+  ],
+  "git": {
+    "entries": [
+      ["a", null, "user", "from-user.config"]
+    ]
+  }
+}

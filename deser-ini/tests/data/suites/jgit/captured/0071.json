@@ -1,0 +1,10 @@
+{
+  "tests": [
+    "ConfigTest.testLfContinuation"
+  ],
+  "git": {
+    "entries": [
+      ["foo", null, "bar", "true"]
+    ]
+  }
+}
