@@ -71,7 +71,7 @@ pub struct Account {
 //! The data formats have a deserializer (which deserializes values from a
 //! slice) and a serializer (which serializes values into a buffer).  Values
 //! can also be read from and written to streams (such as files or sockets),
-//! see [`io`][io-module].  The stream serializers and deserializers of the
+//! see the [`io` module][io-module].  The stream serializers and deserializers of the
 //! formats do not do IO themselves (see [`stream`]), so they also work with
 //! other kinds of IO and without the standard library.
 //!
@@ -105,6 +105,8 @@ pub struct Account {
 //! * [`deser-value`](https://docs.rs/deser-value): a dynamic value type which can
 //!   hold any value of the data model, to inspect or transform data or to
 //!   convert between formats.
+//! * [`deser-transcode`](https://docs.rs/deser-transcode): converts values from
+//!   one data format to another directly, without types in between.
 //! * [`deser-path`](https://docs.rs/deser-path): a layer that tracks the path of
 //!   the current value (like `servers[1].timeout`) and attaches it to errors.
 //! * [`deser-validate`](https://docs.rs/deser-validate): validates values while
@@ -122,7 +124,7 @@ pub struct Account {
 //! # Features
 //!
 //! * `derive` turns on basic derive support for [`Serialize`] and [`Deserialize`].  For more
-//!   information see [`derive`][derive-module].
+//!   information see the [`derive` module][derive-module].
 //! * `open-enums` adds open enums: traits whose implementations (in any crate) are the
 //!   variants of their trait objects, see [open enums][open-enums].
 //! * `jiff`, `chrono`, `time`, `uuid`, `rust_decimal`, `bigdecimal` and `num-bigint`
@@ -132,9 +134,9 @@ pub struct Account {
 //! * `indexmap`, `hashbrown`, `smallvec`, `arrayvec`, `bytes` and `bstr` implement
 //!   [`Serialize`] and [`Deserialize`] for the collections and byte buffers of these
 //!   crates.  They behave like their counterparts in the standard library, including
-//!   the [adapters](crate::adapters) (for instance `IndexMap<_, DisplayFromStr>`).
+//!   the [adapters] (for instance `IndexMap<_, DisplayFromStr>`).
 //!   Without `std` the adapters of `IndexMap` and `IndexSet` are not available.
-//! * `io` (enabled by default) adds [`io`][io-module] to read values from and
+//! * `io` (enabled by default) adds the [`io` module][io-module] to read values from and
 //!   write values to streams of the standard library (`std::io`).  It
 //!   requires `std`.  Reading and writing streams without IO (see
 //!   [`stream`]) does not need it.

@@ -76,6 +76,58 @@ type Entry = (TypeKey, Arc<dyn DebugAny>);
 /// results (like [`UnknownFields::Collect`](crate::de::UnknownFields::Collect))
 /// are shared too: everything that uses the context reports to them, so
 /// they belong into the state of a single deserialization instead.
+///
+/// # Values
+///
+/// These are the values that deser itself reads from a context.  Unless
+/// noted otherwise, a value in the [`State`](crate::State) takes
+/// precedence over the one of the context.
+///
+/// Deserialization:
+///
+/// * [`UnknownFields`](crate::de::UnknownFields): what happens with keys
+///   of structs that no field takes.  Ignored by default.
+/// * [`DuplicateKeys`](crate::de::DuplicateKeys): what happens if a key is
+///   given more than once.  Rejected by default (query strings and
+///   environment variables use the last value).
+/// * [`LexicalRules`](crate::de::LexicalRules): how
+///   [lexical atoms](crate::Atom::Lexical) are interpreted.  Strict by
+///   default (query strings, environment variables and CSV are lenient).
+/// * [`Limits`](crate::de::Limits): limits of the nesting depth, the
+///   number of events and items and the length of strings and bytes.
+///   Unlimited by default.  Only read from the context and enforced by
+///   the [`DeserializeDriver`](crate::de::DeserializeDriver).
+/// * [`CollectErrors`](crate::de::CollectErrors): collects the errors of
+///   the whole deserialization instead of failing on the first one,
+///   optionally up to a limit.  Off by default.  Only read from the
+///   context.
+/// * [`TrackLocations`](crate::TrackLocations): asks the formats to
+///   provide the [`Source`](crate::Source) to resolve input ranges into
+///   lines and columns.  Off by default.
+///
+/// Serialization and deserialization:
+///
+/// * [`BytesFormat`](crate::BytesFormat): how bytes are represented in
+///   formats without native bytes.  Base64 by default.
+/// * [`OpenEnums`](crate::OpenEnums) (with the `open-enums` feature): the
+///   registered variants of open enums.  Required to deserialize open
+///   enums, only the registered variants can be deserialized.
+///
+/// Any other type that is [`Debug`], [`Send`], [`Sync`] and `'static` can
+/// be a value too.  Types and formats read their own values with
+/// [`State::get`](crate::State::get) (which falls back to the context) or
+/// [`State::context`](crate::State::context):
+///
+/// ```
+/// use deser::{Context, State};
+///
+/// #[derive(Debug)]
+/// struct Greeting(&'static str);
+///
+/// let mut state = State::new();
+/// state.set_context(Context::with(Greeting("hello")));
+/// assert_eq!(state.get::<Greeting>().unwrap().0, "hello");
+/// ```
 #[derive(Clone, Default)]
 pub struct Context {
     // `None` for the empty context so that it does not allocate.
