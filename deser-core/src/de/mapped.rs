@@ -1,5 +1,3 @@
-use alloc::borrow::Cow;
-
 use crate::State;
 use crate::de::{OwnedSink, Sink, SinkHandle};
 use crate::error::Error;
@@ -58,51 +56,7 @@ impl<'a, 'de, T: Send, U: Send> Sink<'de> for MappedSink<'a, 'de, T, U> {
         self.sink.get_mut().seq(state)
     }
 
-    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-        self.sink.get_mut().next_key(state)
-    }
-
-    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-        self.sink.get_mut().next_value(state)
-    }
-
-    fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        self.sink.get_mut().__private_key_atom(atom, state)
-    }
-
-    fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        self.sink.get_mut().__private_value_atom(atom, state)
-    }
-
-    fn __private_borrowed_key_atom(
-        &mut self,
-        atom: Atom<'de>,
-        state: &mut State,
-    ) -> Result<(), Error> {
-        self.sink.get_mut().__private_borrowed_key_atom(atom, state)
-    }
-
-    fn __private_borrowed_value_atom(
-        &mut self,
-        atom: Atom<'de>,
-        state: &mut State,
-    ) -> Result<(), Error> {
-        self.sink
-            .get_mut()
-            .__private_borrowed_value_atom(atom, state)
-    }
-
-    fn value_for_key(
-        &mut self,
-        key: &str,
-        state: &mut State,
-    ) -> Result<Option<SinkHandle<'_, 'de>>, Error> {
-        self.sink.get_mut().value_for_key(key, state)
-    }
-
-    fn recover(&mut self, err: Error, state: &mut State) -> Result<(), Error> {
-        self.sink.get_mut().recover(err, state)
-    }
+    forward_to_owned!(sink);
 
     fn finish(&mut self, state: &mut State) -> Result<(), Error> {
         self.sink.get_mut().finish(state)?;
@@ -110,9 +64,5 @@ impl<'a, 'de, T: Send, U: Send> Sink<'de> for MappedSink<'a, 'de, T, U> {
             *self.out = Some((self.convert)(value)?);
         }
         Ok(())
-    }
-
-    fn expecting(&self) -> Cow<'_, str> {
-        self.sink.get().expecting()
     }
 }

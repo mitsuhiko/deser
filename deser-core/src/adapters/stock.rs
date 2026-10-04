@@ -653,66 +653,7 @@ impl<'a, 'de, T: Default + Send> Sink<'de> for DefaultOnErrorSink<'a, 'de, T> {
 
     // Errors of the items are handled in `recover`.
 
-    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-        match self.sink() {
-            Some(sink) => sink.next_key(state),
-            None => Ok(SinkHandle::null()),
-        }
-    }
-
-    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-        match self.sink() {
-            Some(sink) => sink.next_value(state),
-            None => Ok(SinkHandle::null()),
-        }
-    }
-
-    fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        match self.sink() {
-            Some(sink) => sink.__private_key_atom(atom, state),
-            None => Ok(()),
-        }
-    }
-
-    fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        match self.sink() {
-            Some(sink) => sink.__private_value_atom(atom, state),
-            None => Ok(()),
-        }
-    }
-
-    fn __private_borrowed_key_atom(
-        &mut self,
-        atom: Atom<'de>,
-        state: &mut State,
-    ) -> Result<(), Error> {
-        match self.sink() {
-            Some(sink) => sink.__private_borrowed_key_atom(atom, state),
-            None => Ok(()),
-        }
-    }
-
-    fn __private_borrowed_value_atom(
-        &mut self,
-        atom: Atom<'de>,
-        state: &mut State,
-    ) -> Result<(), Error> {
-        match self.sink() {
-            Some(sink) => sink.__private_borrowed_value_atom(atom, state),
-            None => Ok(()),
-        }
-    }
-
-    fn value_for_key(
-        &mut self,
-        key: &str,
-        state: &mut State,
-    ) -> Result<Option<SinkHandle<'_, 'de>>, Error> {
-        match self.sink() {
-            Some(sink) => sink.value_for_key(key, state),
-            None => Ok(None),
-        }
-    }
+    forward_to_optional!(sink);
 
     fn recover(&mut self, err: Error, state: &mut State) -> Result<(), Error> {
         // the value might recover itself, otherwise it failed

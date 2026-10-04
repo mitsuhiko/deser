@@ -10,63 +10,6 @@ use crate::de::{Deserialize, OwnedSink, Sink, SinkHandle, is_null_atom};
 use crate::error::Error;
 use crate::event::Atom;
 
-/// Forwards all calls of a sink to an owned sink.
-macro_rules! forward_to_owned {
-    ($field:ident) => {
-        fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-            self.$field.get_mut().next_key(state)
-        }
-
-        fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-            self.$field.get_mut().next_value(state)
-        }
-
-        fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-            self.$field.get_mut().__private_key_atom(atom, state)
-        }
-
-        fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-            self.$field.get_mut().__private_value_atom(atom, state)
-        }
-
-        fn __private_borrowed_key_atom(
-            &mut self,
-            atom: Atom<'de>,
-            state: &mut State,
-        ) -> Result<(), Error> {
-            self.$field
-                .get_mut()
-                .__private_borrowed_key_atom(atom, state)
-        }
-
-        fn __private_borrowed_value_atom(
-            &mut self,
-            atom: Atom<'de>,
-            state: &mut State,
-        ) -> Result<(), Error> {
-            self.$field
-                .get_mut()
-                .__private_borrowed_value_atom(atom, state)
-        }
-
-        fn value_for_key(
-            &mut self,
-            key: &str,
-            state: &mut State,
-        ) -> Result<Option<SinkHandle<'_, 'de>>, Error> {
-            self.$field.get_mut().value_for_key(key, state)
-        }
-
-        fn recover(&mut self, err: Error, state: &mut State) -> Result<(), Error> {
-            self.$field.get_mut().recover(err, state)
-        }
-
-        fn expecting(&self) -> Cow<'_, str> {
-            self.$field.get().expecting()
-        }
-    };
-}
-
 /// The part of replacing a value that depends on its type.
 ///
 /// [`ReplaceSink`] is the same for all types (it exists once), it only
