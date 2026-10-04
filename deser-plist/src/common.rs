@@ -7,12 +7,6 @@ use deser_core::de::DeserializeDriver;
 use deser_core::ext::Timestamp;
 use deser_core::{Error, ErrorKind, Event, State};
 
-/// Formats a finite float with the shortest text that reads back as the
-/// same value of its type.
-pub(crate) fn format_finite<F: zmij::Float>(value: F) -> String {
-    zmij::Buffer::new().format_finite(value).into()
-}
-
 /// Receives the events of a reader.
 ///
 /// Events which borrow from the input are passed to
@@ -145,36 +139,6 @@ pub(crate) fn format_xml_date(value: &Timestamp) -> String {
     .to_string()
 }
 
-const BASE64_ALPHABET: &[u8; 64] =
-    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-/// Encodes bytes as base64 with padding.
-pub(crate) fn encode_base64(data: &[u8], out: &mut String) {
-    let (chunks, rest) = data.as_chunks::<3>();
-    for chunk in chunks {
-        let n = u32::from(chunk[0]) << 16 | u32::from(chunk[1]) << 8 | u32::from(chunk[2]);
-        for shift in [18, 12, 6, 0] {
-            out.push(BASE64_ALPHABET[(n >> shift) as usize & 63] as char);
-        }
-    }
-    match *rest {
-        [a] => {
-            let n = u32::from(a) << 16;
-            out.push(BASE64_ALPHABET[(n >> 18) as usize & 63] as char);
-            out.push(BASE64_ALPHABET[(n >> 12) as usize & 63] as char);
-            out.push_str("==");
-        }
-        [a, b] => {
-            let n = u32::from(a) << 16 | u32::from(b) << 8;
-            out.push(BASE64_ALPHABET[(n >> 18) as usize & 63] as char);
-            out.push(BASE64_ALPHABET[(n >> 12) as usize & 63] as char);
-            out.push(BASE64_ALPHABET[(n >> 6) as usize & 63] as char);
-            out.push('=');
-        }
-        _ => {}
-    }
-}
-
 /// Decodes base64 as found in `<data>` elements.
 ///
 /// Whitespace is ignored anywhere, the padding is optional and decoding
@@ -250,10 +214,12 @@ pub(crate) fn decode_utf16_text(input: &[u8]) -> Option<Result<String, usize>> {
 
 #[test]
 fn test_base64() {
+    use deser_core::adapters::{Base64, BytesEncoding};
+
     for len in 0..20 {
         let data: Vec<u8> = (0..len as u8).map(|x| x.wrapping_mul(37)).collect();
         let mut encoded = String::new();
-        encode_base64(&data, &mut encoded);
+        Base64::encode(&data, &mut encoded);
         assert_eq!(decode_base64(&encoded).unwrap(), data);
         let spaced: String = encoded
             .chars()

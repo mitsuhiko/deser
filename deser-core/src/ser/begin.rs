@@ -205,14 +205,14 @@ pub fn emit_plain_field<T: Serialize>(
 
 /// A struct emitter for an [`IndexedStruct`].
 #[cfg(feature = "derive")]
-pub struct IndexedStructEmitter<'a> {
+struct IndexedStructEmitter<'a> {
     fields: &'a dyn IndexedStruct,
     index: usize,
 }
 
 #[cfg(feature = "derive")]
 impl<'a> IndexedStructEmitter<'a> {
-    pub fn new(fields: &'a dyn IndexedStruct) -> IndexedStructEmitter<'a> {
+    fn new(fields: &'a dyn IndexedStruct) -> IndexedStructEmitter<'a> {
         IndexedStructEmitter { fields, index: 0 }
     }
 }

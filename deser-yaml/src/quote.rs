@@ -2,7 +2,6 @@
 use std::borrow::Cow;
 use std::fmt::Write;
 
-use crate::num::Float;
 use crate::resolve::{Version, is_plain_str, is_yaml11_implicit};
 
 /// The longest simple (implicit) key the YAML specification allows.
@@ -318,8 +317,8 @@ pub(crate) fn push_indent(out: &mut String, indent: usize) {
 /// YAML 1.1 requires a `.` in floats and a sign in exponents.  The text is
 /// the shortest that reads back as the same value of its type (`f32` or
 /// `f64`).
-pub(crate) fn write_float<W: Write, F: Float>(out: &mut W, value: F) {
-    let wide = value.to_f64();
+pub(crate) fn write_float<W: Write, F: zmij::Float + Into<f64>>(out: &mut W, value: F) {
+    let wide: f64 = value.into();
     if wide.is_nan() {
         out.write_str(".nan").unwrap();
     } else if wide.is_infinite() {

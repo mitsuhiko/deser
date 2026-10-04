@@ -170,7 +170,7 @@ pub(crate) struct UnclaimedKeys(Vec<Error>);
 /// Derived structs only retain the names of keys they do not know if this
 /// returns `true` (or they need them for other reasons).
 #[inline]
-pub fn wants_unknown_fields(state: &State) -> bool {
+pub(crate) fn wants_unknown_fields(state: &State) -> bool {
     !matches!(UnknownFields::of(state), UnknownFields::Ignore)
 }
 

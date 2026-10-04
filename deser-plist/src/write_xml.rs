@@ -4,9 +4,10 @@
 //! with tabs and data is written as base64 in lines.
 use alloc::string::{String, ToString};
 
+use deser_core::adapters::{Base64, BytesEncoding};
 use deser_core::{Error, ErrorKind};
 
-use crate::common::{encode_base64, format_finite, format_xml_date};
+use crate::common::format_xml_date;
 use crate::ser::Node;
 
 /// What precedes the value.
@@ -43,7 +44,7 @@ pub(crate) fn scalar(out: &mut String, node: &Node, depth: usize) -> Result<(), 
         Node::Real32(value) => {
             out.push_str("<real>");
             if value.is_finite() {
-                out.push_str(&format_finite(value));
+                out.push_str(zmij::Buffer::new().format_finite(value));
             } else {
                 out.push_str(&format_real(f64::from(value)));
             }
@@ -61,7 +62,7 @@ pub(crate) fn scalar(out: &mut String, node: &Node, depth: usize) -> Result<(), 
             let data_depth = depth.min(8);
             let line_len = 76 - data_depth * 8;
             let mut encoded = String::new();
-            encode_base64(value, &mut encoded);
+            Base64::encode(value, &mut encoded);
             for line in encoded.as_bytes().chunks(line_len) {
                 indent(out, data_depth);
                 // base64 is ASCII
@@ -96,7 +97,7 @@ pub(crate) fn scalar(out: &mut String, node: &Node, depth: usize) -> Result<(), 
 /// finite.
 fn format_real(value: f64) -> String {
     if value.is_finite() {
-        format_finite(value)
+        zmij::Buffer::new().format_finite(value).into()
     } else if value.is_nan() {
         "nan".into()
     } else if value > 0.0 {

@@ -316,6 +316,8 @@ All notable changes to deser are documented here.
   feature and the fallback for builds without it are gone.  `deser-env`,
   `deser-ini`, `deser-plist`, `deser-urlencoded` and `deser-xml` format
   floats with `zmij` as well, the output is the same as before.
+  `deser-json`, `deser-toml`, `deser-yaml` and `deser-csv` format
+  integers with `itoa` instead of a copy of the same formatter each.
 - The `speedups` feature is enabled by default and exists in every format
   that writes floats as text or validates UTF-8.  It validates UTF-8 with
   `simdutf8` in `deser-json` and its dialects, `deser-toml`, `deser-yaml`,

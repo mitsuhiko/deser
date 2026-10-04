@@ -84,7 +84,7 @@ impl DuplicateKeys {
 /// Returns `true` if it was seen before.
 #[cfg(feature = "derive")]
 #[inline(always)]
-pub fn mark_seen(seen: &mut [u64], index: usize) -> bool {
+pub(crate) fn mark_seen(seen: &mut [u64], index: usize) -> bool {
     let (word, bit) = (index / 64, 1u64 << (index % 64));
     let seen_before = seen[word] & bit != 0;
     seen[word] |= bit;
@@ -101,6 +101,6 @@ pub(crate) fn is_seen(seen: &[u64], index: usize) -> bool {
 ///
 /// Returns `Ok(true)` if the value replaces the previous one.
 #[cold]
-pub fn duplicate_field(name: &str, state: &State) -> Result<bool, Error> {
+pub(crate) fn duplicate_field(name: &str, state: &State) -> Result<bool, Error> {
     DuplicateKeys::of(state).resolve(|| format!("duplicate field `{}`", name))
 }

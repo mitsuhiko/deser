@@ -5,7 +5,6 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt::{self, Write as _};
 
-use crate::num::IntBuffer;
 use deser_core::ext::Number;
 use deser_core::ser::SerializeRef;
 use deser_core::ser::{self, EventSink, SerializeDriver};
@@ -1452,8 +1451,8 @@ impl FieldEncoder<'_> {
             Atom::Null => return Ok(None),
             Atom::Bool(value) => (if value { &b"true"[..] } else { b"false" }, false),
             // numbers are formatted on the stack
-            Atom::U64(value) => (scratch.int.format_u64(value).as_bytes(), true),
-            Atom::I64(value) => (scratch.int.format_i64(value).as_bytes(), true),
+            Atom::U64(value) => (scratch.int.format(value).as_bytes(), true),
+            Atom::I64(value) => (scratch.int.format(value).as_bytes(), true),
             Atom::F64(value) => (scratch.float(value), true),
             Atom::F32(value) => (scratch.float(value), true),
             _ => return self.other_text(atom, &mut scratch.bytes),
@@ -1559,7 +1558,7 @@ impl fmt::Write for ByteWriter<'_> {
 struct Scratch {
     /// Text that is not a number.
     bytes: Vec<u8>,
-    int: IntBuffer,
+    int: itoa::Buffer,
     float: zmij::Buffer,
 }
 
@@ -1567,7 +1566,7 @@ impl Scratch {
     fn new(bytes: Vec<u8>) -> Scratch {
         Scratch {
             bytes,
-            int: IntBuffer::new(),
+            int: itoa::Buffer::new(),
             float: zmij::Buffer::new(),
         }
     }

@@ -1652,33 +1652,13 @@ fn keeps_whitespace(state: &State) -> bool {
         .is_some_and(|keeps| keeps.0)
 }
 
-/// The floats that are written (`f32` and `f64`), formatted with `zmij`.
-trait Float: zmij::Float + Copy {
-    /// Returns the value as `f64`.
-    fn to_f64(self) -> f64;
-}
-
-impl Float for f64 {
-    #[inline(always)]
-    fn to_f64(self) -> f64 {
-        self
-    }
-}
-
-impl Float for f32 {
-    #[inline(always)]
-    fn to_f64(self) -> f64 {
-        f64::from(self)
-    }
-}
-
 /// Returns the text of a float.
 ///
 /// Finite floats have the shortest text that reads back as the same value
 /// of their type, like in the other formats.  The others are written as in
 /// XML Schema.
-fn float_text<F: Float>(value: F) -> String {
-    let wide = value.to_f64();
+fn float_text<F: zmij::Float + Into<f64>>(value: F) -> String {
+    let wide: f64 = value.into();
     if wide.is_nan() {
         "NaN".into()
     } else if wide.is_infinite() {

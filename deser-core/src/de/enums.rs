@@ -342,7 +342,10 @@ impl<'a> Tag<'a> {
 /// Implicit atoms are looked up as their value and then as their text.
 /// Extension values are lowered to their fallback.
 #[inline]
-pub fn lookup_atom<T>(atom: &Atom, mut lookup: impl FnMut(Tag<'_>) -> Option<T>) -> Option<T> {
+pub(crate) fn lookup_atom<T>(
+    atom: &Atom,
+    mut lookup: impl FnMut(Tag<'_>) -> Option<T>,
+) -> Option<T> {
     match atom {
         Atom::Lexical(text) => match lookup(Tag::Str(text)) {
             Some(rv) => Some(rv),
@@ -366,7 +369,7 @@ pub fn lookup_atom<T>(atom: &Atom, mut lookup: impl FnMut(Tag<'_>) -> Option<T>)
 /// the unit enums of the derive.  Names given as strings (the common case)
 /// are looked up inline, everything else in a function that exists once.
 #[inline]
-pub fn unit_variant(
+pub(crate) fn unit_variant(
     atom: &Atom<'_>,
     lookup: fn(Tag<'_>) -> Option<usize>,
     names: &[&str],
@@ -422,7 +425,7 @@ fn tag_display<'a>(atom: &'a Atom<'_>) -> Option<Cow<'a, str>> {
 ///
 /// Atoms that cannot be tags (such as floats) are unexpected.
 #[cold]
-pub fn unknown_variant_atom(atom: &Atom, names: &[&str], expecting: &str) -> Error {
+pub(crate) fn unknown_variant_atom(atom: &Atom, names: &[&str], expecting: &str) -> Error {
     match tag_display(atom) {
         Some(name) => unknown_variant(Some(&name), expecting, names),
         None => atom.unexpected_error(expecting),
@@ -852,7 +855,7 @@ impl<'a, 'de, E: Send> Sink<'de> for AdjacentlyTaggedSink<'a, 'de, E> {
 /// The derive generates this function: it passes the variant with the
 /// given index to [`UntaggedTry::variant`] and returns `false` if there is
 /// no such variant.
-pub type UntaggedVariants<'de, E> = for<'t> fn(usize, &mut UntaggedTry<'t, 'de, E>) -> bool;
+pub(crate) type UntaggedVariants<'de, E> = for<'t> fn(usize, &mut UntaggedTry<'t, 'de, E>) -> bool;
 
 /// Creates a sink handle for an untagged enum.
 ///
@@ -1452,14 +1455,6 @@ pub struct UnitEnum {
     pub other: Option<usize>,
 }
 
-/// Returns the index of the variant of a unit enum for an atom.
-///
-/// See [`unit_variant`].
-#[inline]
-pub fn unit_enum_index(atom: Atom<'_>, info: &UnitEnum) -> Result<usize, Error> {
-    unit_variant(&atom, info.lookup, info.names, info.expecting, info.other)
-}
-
 /// A function that sets a value to the variant of a unit enum by index.
 pub(crate) type VariantSetter<T> = fn(&mut T, usize);
 
@@ -1501,7 +1496,7 @@ fn unit_enum_set(
     atom: Atom<'_>,
     info: &UnitEnum,
 ) -> Result<(), Error> {
-    let index = unit_enum_index(atom, info)?;
+    let index = unit_variant(&atom, info.lookup, info.names, info.expecting, info.other)?;
     set(target, index);
     Ok(())
 }

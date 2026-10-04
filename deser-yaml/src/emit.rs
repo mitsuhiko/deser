@@ -11,7 +11,6 @@
 use std::borrow::Cow;
 use std::fmt::{self, Write};
 
-use crate::num::IntBuffer;
 use deser_core::ext::{BigInt, Datetime, Decimal, ExtValue, Number, Timestamp};
 use deser_core::hints::Layout;
 use deser_core::ser::EventSink;
@@ -756,8 +755,8 @@ impl Emitter {
                 Scalar::Text(if value { "true" } else { "false" }.into()),
                 None,
             ),
-            Atom::U64(value) => (Scalar::short_text(IntBuffer::new().format_u64(value)), None),
-            Atom::I64(value) => (Scalar::short_text(IntBuffer::new().format_i64(value)), None),
+            Atom::U64(value) => (Scalar::short_text(itoa::Buffer::new().format(value)), None),
+            Atom::I64(value) => (Scalar::short_text(itoa::Buffer::new().format(value)), None),
             Atom::F64(value) => {
                 let mut text = ShortText::new();
                 write_float(&mut text, value);

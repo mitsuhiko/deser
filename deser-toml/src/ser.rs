@@ -7,7 +7,6 @@ use deser_core::ser::{self, SerializeDriver, SerializeRef};
 use deser_core::{Atom, BytesFormat, Error, ErrorKind, Event, Serialize, State};
 
 use crate::document::{Document, Entry, Item, Span, TableKind, Value};
-use crate::num::{Float, IntBuffer};
 use deser_core::ext::{Datetime, Number, Timestamp};
 
 /// Configures how values are serialized to TOML.
@@ -796,8 +795,8 @@ impl<'d> Writer<'d> {
     fn write_value_start(&mut self, value: &Value, stack: &mut Vec<InlineFrame>) {
         match *value {
             Value::Str(ref value) => write_string(&mut self.out, value),
-            Value::Int(value) => self.out.push_small(IntBuffer::new().format_i64(value)),
-            Value::UInt(value) => self.out.push_small(IntBuffer::new().format_u64(value)),
+            Value::Int(value) => self.out.push_small(itoa::Buffer::new().format(value)),
+            Value::UInt(value) => self.out.push_small(itoa::Buffer::new().format(value)),
             Value::Float(value) => write_float(&mut self.out, value),
             Value::Float32(value) => write_float(&mut self.out, value),
             Value::FloatText(ref value) => self.out.push_small(value),
@@ -818,8 +817,8 @@ impl<'d> Writer<'d> {
 /// Writes a float with the shortest text that reads back as the same value
 /// of its type (`f32` or `f64`).  The text always has a fractional part or
 /// an exponent.
-fn write_float<F: Float>(out: &mut String, value: F) {
-    let wide = value.to_f64();
+fn write_float<F: zmij::Float + Into<f64>>(out: &mut String, value: F) {
+    let wide: f64 = value.into();
     if wide.is_nan() {
         out.push_small("nan");
     } else if wide.is_infinite() {

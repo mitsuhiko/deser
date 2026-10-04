@@ -6,8 +6,6 @@
 use alloc::string::{String, ToString};
 use core::fmt::Write;
 
-use crate::common::format_finite;
-
 use crate::ser::Node;
 
 /// Writes a value that is not an array or dictionary.
@@ -16,7 +14,9 @@ pub(crate) fn scalar(out: &mut String, node: &Node) {
         Node::Bool(value) => out.push_str(if value { "YES" } else { "NO" }),
         Node::Int(value) => out.push_str(&value.to_string()),
         Node::Real(value) => write_str(out, &format_real(value)),
-        Node::Real32(value) if value.is_finite() => write_str(out, &format_finite(value)),
+        Node::Real32(value) if value.is_finite() => {
+            write_str(out, zmij::Buffer::new().format_finite(value))
+        }
         Node::Real32(value) => write_str(out, &format_real(f64::from(value))),
         Node::Str(ref value) => write_str(out, value),
         Node::Data(ref value) => {
@@ -39,7 +39,7 @@ pub(crate) fn scalar(out: &mut String, node: &Node) {
 
 fn format_real(value: f64) -> String {
     if value.is_finite() {
-        format_finite(value)
+        zmij::Buffer::new().format_finite(value).into()
     } else if value.is_nan() {
         "nan".into()
     } else if value > 0.0 {

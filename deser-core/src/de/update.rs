@@ -302,7 +302,7 @@ impl<'a, 'de, T: Send> Sink<'de> for CheckedUpdateSink<'a, 'de, T> {
 
 /// Creates a sink handle that replaces a value with the value of an owned
 /// sink.
-pub fn replace_with<'a, 'de, T: Send + 'a>(
+pub(crate) fn replace_with<'a, 'de, T: Send + 'a>(
     out: &'a mut T,
     sink: OwnedSink<'de, T>,
     state: &mut State,

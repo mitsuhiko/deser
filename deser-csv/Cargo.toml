@@ -26,6 +26,7 @@ speedups = []
 
 [dependencies]
 deser-core = { version = "0.9.1", path = "../deser-core", default-features = false }
+itoa = "1.0.18"
 zmij = "1.0.23"
 
 [dev-dependencies]

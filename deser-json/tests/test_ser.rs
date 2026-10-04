@@ -286,7 +286,6 @@ fn test_float_precision() {
 
 #[test]
 fn test_float_format() {
-    // the output does not depend on the zmij feature
     for (value, expected) in [
         (0.0, "0.0"),
         (-0.0, "-0.0"),

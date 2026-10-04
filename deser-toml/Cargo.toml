@@ -25,6 +25,7 @@ speedups = ["dep:simdutf8"]
 [dependencies]
 deser-core = { version = "0.9.1", path = "../deser-core", default-features = false }
 simdutf8 = { version = "0.1.5", optional = true }
+itoa = "1.0.18"
 zmij = "1.0.23"
 
 [dev-dependencies]

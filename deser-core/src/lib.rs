@@ -163,8 +163,8 @@ pub mod __derive {
     pub use crate::de::update::UpdateTarget;
     pub use crate::error::unknown_variant;
     pub use crate::ser::begin::{
-        Begin, FIELDS_END, IndexedSeq, IndexedSeqEmitter, IndexedStruct, IndexedStructEmitter,
-        PlainSink, StructField, describe_struct, emit_plain_field, serialize_indexed,
+        Begin, FIELDS_END, IndexedSeq, IndexedSeqEmitter, IndexedStruct, PlainSink, StructField,
+        describe_struct, emit_plain_field, serialize_indexed,
     };
     pub use crate::ser::enums::{
         EntrySer, FieldSer, FieldsSer, FlatFieldsSer, SeqSer, TaggedContent, TaggedNewtype,

@@ -202,7 +202,6 @@ extern crate alloc;
 
 mod buf;
 mod escape;
-mod num;
 mod pretty;
 mod ser;
 mod trailing;

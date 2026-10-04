@@ -877,8 +877,8 @@ impl Writer<'_> {
             Atom::Char(value) => Cow::Owned(value.to_string()),
             Atom::U64(value) => Cow::Owned(value.to_string()),
             Atom::I64(value) => Cow::Owned(value.to_string()),
-            Atom::F32(value) => Cow::Owned(float_text(value)),
-            Atom::F64(value) => Cow::Owned(float_text(value)),
+            Atom::F32(value) => Cow::Owned(zmij::Buffer::new().format(value).into()),
+            Atom::F64(value) => Cow::Owned(zmij::Buffer::new().format(value).into()),
             Atom::Bytes(ref bytes) => {
                 let format = bytes.fallback.copied().unwrap_or(self.bytes);
                 Cow::Owned(
@@ -959,13 +959,4 @@ fn unsupported_key() -> Error {
         ErrorKind::UnsupportedType,
         "keys of INI files must be strings, numbers or booleans",
     )
-}
-
-/// Returns the text of a float.
-///
-/// Finite floats have the shortest text that reads back as the same value
-/// of their type, like in the other formats.  The others are `NaN`, `inf`
-/// and `-inf`.
-fn float_text<F: zmij::Float>(value: F) -> String {
-    zmij::Buffer::new().format(value).into()
 }

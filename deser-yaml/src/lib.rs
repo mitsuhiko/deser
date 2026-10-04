@@ -187,7 +187,6 @@ mod copy;
 mod de;
 mod emit;
 mod event;
-mod num;
 mod parser;
 mod quote;
 mod resolve;

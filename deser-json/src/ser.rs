@@ -4,7 +4,6 @@ use alloc::string::ToString;
 use alloc::vec::Vec;
 use core::mem::ManuallyDrop;
 
-use crate::num::{Float, IntBuffer};
 use deser_core::ext::{BigInt, Decimal, ExtValue, Number, RawInput};
 use deser_core::ser::SerializeRef;
 use deser_core::ser::{self, EventSink, SerializeDriver};
@@ -1253,11 +1252,12 @@ impl Output {
     /// Writes a float with the shortest text that reads back as the same
     /// value of its type (`f32` or `f64`).
     #[inline]
-    fn write_float<F: Float>(&mut self, val: F) {
-        if val.to_f64().is_finite() {
+    fn write_float<F: zmij::Float + Into<f64>>(&mut self, val: F) {
+        let wide: f64 = val.into();
+        if wide.is_finite() {
             self.write_str(zmij::Buffer::new().format_finite(val))
         } else {
-            self.write_non_finite(val.to_f64())
+            self.write_non_finite(wide)
         }
     }
 
@@ -1374,12 +1374,12 @@ impl Output {
 
     #[inline]
     fn write_u64(&mut self, val: u64) {
-        self.write_str(IntBuffer::new().format_u64(val))
+        self.write_str(itoa::Buffer::new().format(val))
     }
 
     #[inline]
     fn write_i64(&mut self, val: i64) {
-        self.write_str(IntBuffer::new().format_i64(val))
+        self.write_str(itoa::Buffer::new().format(val))
     }
 
     #[inline]

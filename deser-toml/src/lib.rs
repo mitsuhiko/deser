@@ -106,7 +106,6 @@ mod copy;
 mod datetime;
 mod de;
 mod document;
-mod num;
 mod parser;
 mod scan;
 mod ser;
