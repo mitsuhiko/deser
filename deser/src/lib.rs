@@ -152,10 +152,10 @@ pub struct Account {
 //!
 //! ```toml
 //! [dependencies]
-//! deser-cbor = { version = "0.9", default-features = false }
+//! deser-cbor = { version = "0.10", default-features = false }
 //!
 //! [dependencies.deser]
-//! version = "0.9"
+//! version = "0.10"
 //! default-features = false
 //! features = ["derive"]
 //! ```

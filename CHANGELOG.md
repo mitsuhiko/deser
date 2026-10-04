@@ -2,7 +2,7 @@
 
 All notable changes to deser are documented here.
 
-## Unreleased
+## 0.10.0
 
 - **Breaking:** the APIs follow the same conventions everywhere: values
   are changed with setters (`set_x(&mut self, ...)`) and read with

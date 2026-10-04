@@ -1,7 +1,7 @@
 [package]
 name = "deser-plist"
 authors = ["Armin Ronacher <armin.ronacher@active-4.com>"]
-version = "0.9.1"
+version = "0.10.0"
 edition.workspace = true
 rust-version.workspace = true
 description = "Property list (plist) support for deser"
@@ -25,12 +25,12 @@ io = ["std", "deser-core/io"]
 speedups = []
 
 [dependencies]
-deser-core = { version = "0.9.1", path = "../deser-core", default-features = false }
+deser-core = { version = "0.10.0", path = "../deser-core", default-features = false }
 zmij = "1.0.23"
 
 [dev-dependencies]
-deser = { version = "0.9.1", path = "../deser", features = ["derive"] }
-deser-location = { version = "0.9.1", path = "../deser-location" }
+deser = { version = "0.10.0", path = "../deser", features = ["derive"] }
+deser-location = { version = "0.10.0", path = "../deser-location" }
 
 [[test]]
 name = "integration"
