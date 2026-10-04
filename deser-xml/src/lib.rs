@@ -231,10 +231,8 @@
 //!
 //! * `io` (enabled by default): reading and writing streams of the
 //!   standard library, see [streams](#streams).
-//! * `speedups` (enabled by default): formats floats with
-//!   [`zmij`](https://docs.rs/zmij), which is faster and makes binaries
-//!   smaller.  Without it floats are formatted with the same text by a
-//!   fallback on top of the float formatting of `core`.
+//! * `speedups` (enabled by default): has no effect yet, it exists so
+//!   that all formats have it.
 //!
 //! # Limitations
 //!
@@ -244,7 +242,6 @@
 
 mod de;
 mod mixed;
-mod num;
 mod root;
 mod ser;
 mod stream;

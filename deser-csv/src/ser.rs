@@ -5,7 +5,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt::{self, Write as _};
 
-use crate::num::{Float, IntBuffer};
+use crate::num::IntBuffer;
 use deser_core::ext::Number;
 use deser_core::ser::SerializeRef;
 use deser_core::ser::{self, EventSink, SerializeDriver};
@@ -1560,7 +1560,6 @@ struct Scratch {
     /// Text that is not a number.
     bytes: Vec<u8>,
     int: IntBuffer,
-    #[cfg(feature = "speedups")]
     float: zmij::Buffer,
 }
 
@@ -1569,7 +1568,6 @@ impl Scratch {
         Scratch {
             bytes,
             int: IntBuffer::new(),
-            #[cfg(feature = "speedups")]
             float: zmij::Buffer::new(),
         }
     }
@@ -1577,39 +1575,11 @@ impl Scratch {
     /// Formats a float with the shortest text that reads back as the same
     /// value of its type (`f32` or `f64`), like the other formats.
     #[inline]
-    fn float<F: FormatFloat>(&mut self, value: F) -> &[u8] {
-        if !value.is_finite() {
-            // `NaN`, `inf` and `-inf`
-            self.bytes.clear();
-            let _ = write!(ByteWriter(&mut self.bytes), "{}", value.to_f64());
-            return &self.bytes;
-        }
-        #[cfg(feature = "speedups")]
-        {
-            self.float.format_finite(value).as_bytes()
-        }
-        #[cfg(not(feature = "speedups"))]
-        {
-            self.bytes.clear();
-            self.bytes
-                .extend_from_slice(crate::num::format_finite(value).as_bytes());
-            &self.bytes
-        }
+    fn float<F: zmij::Float>(&mut self, value: F) -> &[u8] {
+        // `NaN`, `inf` and `-inf` like `Display`
+        self.float.format(value).as_bytes()
     }
 }
-
-/// The floats that can be formatted.
-#[cfg(feature = "speedups")]
-trait FormatFloat: zmij::Float + Float {}
-
-#[cfg(feature = "speedups")]
-impl<F: zmij::Float + Float> FormatFloat for F {}
-
-#[cfg(not(feature = "speedups"))]
-trait FormatFloat: Float {}
-
-#[cfg(not(feature = "speedups"))]
-impl<F: Float> FormatFloat for F {}
 
 /// Appends bytes to the output.
 ///

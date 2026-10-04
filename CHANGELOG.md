@@ -307,20 +307,20 @@ All notable changes to deser are documented here.
   it, so these floats roundtrip through JSON5.
 - `deser-csv`: reading is 17% faster and writing twice as fast.  Fields
   are found with masks of the special characters of 64 bytes (with SIMD
-  on aarch64 and x86_64), floats are formatted with `zmij` by default
-  (the new `speedups` feature, the output is the same) and numbers, short
-  fields and the names of columns are written and compared without
+  on aarch64 and x86_64), floats are formatted with `zmij` and numbers,
+  short fields and the names of columns are written and compared without
   `memcpy` and `memcmp`.  Empty fields of optional numbers and booleans
   no longer create an error that is thrown away, and derived structs do
   not ask every field of a record if it collects repeated columns.
-- **Breaking:** the formats have a single `speedups` feature, enabled by
-  default, instead of `zmij` and `speedups`.  It formats floats with
-  `zmij` and, in the formats that validate UTF-8 with `simdutf8`
-  (`deser-json` and its dialects, `deser-toml`, `deser-yaml`,
-  `deser-cbor` and `deser-msgpack`), turns on `simdutf8` as well.
-  `deser-env`, `deser-ini`, `deser-plist`, `deser-urlencoded` and
-  `deser-xml` now format floats with `zmij` too.  The output is the same
-  without the feature.
+- **Breaking:** the formats always format floats with `zmij`, the `zmij`
+  feature and the fallback for builds without it are gone.  `deser-env`,
+  `deser-ini`, `deser-plist`, `deser-urlencoded` and `deser-xml` format
+  floats with `zmij` as well, the output is the same as before.
+- The `speedups` feature is enabled by default and exists in every format
+  that writes floats as text or validates UTF-8.  It validates UTF-8 with
+  `simdutf8` in `deser-json` and its dialects, `deser-toml`, `deser-yaml`,
+  `deser-cbor` and `deser-msgpack`, in the other formats it has no effect
+  yet.
 
 ## 0.9.1
 

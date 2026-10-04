@@ -859,36 +859,11 @@ fn unsupported_key() -> Error {
     )
 }
 
-/// The floats that are written (`f32` and `f64`).
-#[cfg(feature = "speedups")]
-trait Float: zmij::Float + crate::num::Float {}
-
-#[cfg(feature = "speedups")]
-impl<F: zmij::Float + crate::num::Float> Float for F {}
-
-/// The floats that are written (`f32` and `f64`).
-#[cfg(not(feature = "speedups"))]
-trait Float: crate::num::Float {}
-
-#[cfg(not(feature = "speedups"))]
-impl<F: crate::num::Float> Float for F {}
-
 /// Returns the text of a float.
 ///
 /// Finite floats have the shortest text that reads back as the same value
 /// of their type, like in the other formats.  The others are `NaN`, `inf`
 /// and `-inf`.
-fn float_text<F: Float>(value: F) -> String {
-    if value.is_finite() {
-        #[cfg(feature = "speedups")]
-        {
-            zmij::Buffer::new().format_finite(value).into()
-        }
-        #[cfg(not(feature = "speedups"))]
-        {
-            crate::num::format_finite(value)
-        }
-    } else {
-        value.to_f64().to_string()
-    }
+fn float_text<F: zmij::Float>(value: F) -> String {
+    zmij::Buffer::new().format(value).into()
 }

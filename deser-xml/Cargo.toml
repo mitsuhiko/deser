@@ -17,18 +17,15 @@ autotests = false
 default = ["io", "speedups"]
 # reading and writing documents from and to streams (with `deser::io`)
 io = ["deser-core/io"]
-# formats floats with zmij, which is faster and makes binaries smaller than
-# the fallback (the text is the same)
-speedups = ["dep:zmij"]
+# no speedups yet, the feature exists so that all formats have it
+speedups = []
 
 [dependencies]
 deser-core = { version = "0.9.1", path = "../deser-core", default-features = false, features = ["std"] }
 quick-xml = "0.42.0"
-zmij = { version = "1.0.23", optional = true }
+zmij = "1.0.23"
 
 [dev-dependencies]
-# the float formatting is tested against it
-zmij = "1.0.23"
 deser = { version = "0.9.1", path = "../deser", features = ["derive"] }
 deser-encoding = { path = "../deser-encoding" }
 deser-json = { version = "0.9.1", path = "../deser-json" }

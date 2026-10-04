@@ -150,17 +150,6 @@ size_row() {
     $((small / 1024)) $(((small - hello_small) / 1024))
 }
 
-# Turns off the speedups feature of deser-json (the float formatting falls
-# back to the standard library) in a copy of a deser crate.
-without_zmij() {
-  rm -rf $2
-  mkdir -p $2
-  cp -R $1/Cargo.toml $1/Cargo.lock $1/src $2/
-  sed -i.bak -e "s/^name = \"\(.*\)\"/name = \"\1-no-zmij\"/" \
-    -e 's|^\(deser-json = { path = "[^"]*"\) }|\1, default-features = false, features = ["std"] }|' $2/Cargo.toml
-  rm $2/Cargo.toml.bak
-}
-
 binary_sizes() {
   mkdir -p target/size/hello/src
   printf '[package]\nname = "hello"\nversion = "0.1.0"\nedition = "2024"\n\n[workspace]\n' \
@@ -178,14 +167,10 @@ binary_sizes() {
     cp $lib-version/src/main.rs target/size/one-$lib/src/main.rs
     size_row "$lib" target/size/one-$lib
   done
-  without_zmij target/size/one-deser target/size/one-deser-no-zmij
-  size_row "deser (without zmij)" target/size/one-deser-no-zmij
   for lib in $LIBS; do
     generate_many $lib bin
     size_row "$lib, 100 types" target/size/many-$lib
   done
-  without_zmij target/size/many-deser target/size/many-deser-no-zmij
-  size_row "deser (without zmij), 100 types" target/size/many-deser-no-zmij
 }
 
 if [ "$WHAT" != sizes ]; then

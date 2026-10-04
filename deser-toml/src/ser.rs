@@ -7,7 +7,7 @@ use deser_core::ser::{self, SerializeDriver, SerializeRef};
 use deser_core::{Atom, BytesFormat, Error, ErrorKind, Event, Serialize, State};
 
 use crate::document::{Document, Entry, Item, Span, TableKind, Value};
-use crate::num::IntBuffer;
+use crate::num::{Float, IntBuffer};
 use deser_core::ext::{Datetime, Number, Timestamp};
 
 /// Configures how values are serialized to TOML.
@@ -815,20 +815,6 @@ impl<'d> Writer<'d> {
     }
 }
 
-/// The floats that are written (`f32` and `f64`).
-#[cfg(feature = "speedups")]
-trait Float: zmij::Float + crate::num::Float {}
-
-#[cfg(feature = "speedups")]
-impl<F: zmij::Float + crate::num::Float> Float for F {}
-
-/// The floats that are written (`f32` and `f64`).
-#[cfg(not(feature = "speedups"))]
-trait Float: crate::num::Float {}
-
-#[cfg(not(feature = "speedups"))]
-impl<F: crate::num::Float> Float for F {}
-
 /// Writes a float with the shortest text that reads back as the same value
 /// of its type (`f32` or `f64`).  The text always has a fractional part or
 /// an exponent.
@@ -839,10 +825,7 @@ fn write_float<F: Float>(out: &mut String, value: F) {
     } else if wide.is_infinite() {
         out.push_small(if wide > 0.0 { "inf" } else { "-inf" });
     } else {
-        #[cfg(feature = "speedups")]
         out.push_small(zmij::Buffer::new().format_finite(value));
-        #[cfg(not(feature = "speedups"))]
-        out.push_small(&crate::num::format_finite(value));
     }
 }
 

@@ -7,31 +7,10 @@ use deser_core::de::DeserializeDriver;
 use deser_core::ext::Timestamp;
 use deser_core::{Error, ErrorKind, Event, State};
 
-/// The floats that are written (`f32` and `f64`).
-#[cfg(feature = "speedups")]
-pub(crate) trait Float: zmij::Float + crate::num::Float {}
-
-#[cfg(feature = "speedups")]
-impl<F: zmij::Float + crate::num::Float> Float for F {}
-
-/// The floats that are written (`f32` and `f64`).
-#[cfg(not(feature = "speedups"))]
-pub(crate) trait Float: crate::num::Float {}
-
-#[cfg(not(feature = "speedups"))]
-impl<F: crate::num::Float> Float for F {}
-
 /// Formats a finite float with the shortest text that reads back as the
 /// same value of its type.
-pub(crate) fn format_finite<F: Float>(value: F) -> String {
-    #[cfg(feature = "speedups")]
-    {
-        zmij::Buffer::new().format_finite(value).into()
-    }
-    #[cfg(not(feature = "speedups"))]
-    {
-        crate::num::format_finite(value)
-    }
+pub(crate) fn format_finite<F: zmij::Float>(value: F) -> String {
+    zmij::Buffer::new().format_finite(value).into()
 }
 
 /// Receives the events of a reader.

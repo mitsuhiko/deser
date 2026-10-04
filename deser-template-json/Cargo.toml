@@ -16,7 +16,7 @@ doc = false
 default = ["std", "io", "speedups"]
 std = ["deser-core/std", "deser-json/std", "simdutf8?/std"]
 io = ["std", "deser-core/io", "deser-json/io"]
-# formats floats with zmij and validates UTF-8 with simdutf8 (see deser-json)
+# faster UTF-8 validation (simdutf8)
 speedups = ["dep:simdutf8", "deser-json/speedups"]
 
 [dependencies]

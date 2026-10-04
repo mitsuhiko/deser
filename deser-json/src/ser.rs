@@ -4,7 +4,7 @@ use alloc::string::ToString;
 use alloc::vec::Vec;
 use core::mem::ManuallyDrop;
 
-use crate::num::IntBuffer;
+use crate::num::{Float, IntBuffer};
 use deser_core::ext::{BigInt, Decimal, ExtValue, Number, RawInput};
 use deser_core::ser::SerializeRef;
 use deser_core::ser::{self, EventSink, SerializeDriver};
@@ -1254,15 +1254,8 @@ impl Output {
     /// value of its type (`f32` or `f64`).
     #[inline]
     fn write_float<F: Float>(&mut self, val: F) {
-        if val.is_finite() {
-            #[cfg(feature = "speedups")]
-            {
-                self.write_str(zmij::Buffer::new().format_finite(val))
-            }
-            #[cfg(not(feature = "speedups"))]
-            {
-                self.write_str(&crate::num::format_finite(val))
-            }
+        if val.to_f64().is_finite() {
+            self.write_str(zmij::Buffer::new().format_finite(val))
         } else {
             self.write_non_finite(val.to_f64())
         }
@@ -1475,20 +1468,6 @@ static ESCAPE: [u8; 256] = [
     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // E
     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // F
 ];
-
-/// The floats that are written (`f32` and `f64`).
-#[cfg(feature = "speedups")]
-trait Float: zmij::Float + crate::num::Float {}
-
-#[cfg(feature = "speedups")]
-impl<F: zmij::Float + crate::num::Float> Float for F {}
-
-/// The floats that are written (`f32` and `f64`).
-#[cfg(not(feature = "speedups"))]
-trait Float: crate::num::Float {}
-
-#[cfg(not(feature = "speedups"))]
-impl<F: crate::num::Float> Float for F {}
 
 /// Serializes a value to JSON.
 ///

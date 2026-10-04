@@ -190,11 +190,9 @@
 //!
 //! * `io` (enabled by default): reading and writing streams of the
 //!   standard library, see [streams](#streams).  Requires `std`.
-//! * `speedups` (enabled by default): formats floats with
-//!   [`zmij`](https://docs.rs/zmij), which is faster and makes binaries
-//!   smaller, and uses [`simdutf8`](https://docs.rs/simdutf8) to validate
-//!   UTF-8 when parsing byte slices.  Without it floats are formatted with
-//!   the same text by a fallback on top of the float formatting of `core`.
+//! * `speedups` (enabled by default): uses
+//!   [`simdutf8`](https://docs.rs/simdutf8) to validate UTF-8 when parsing
+//!   byte slices.
 //! * `std` (enabled by default): uses the standard library.  Without it
 //!   this crate only needs `alloc` (see [`no_std`](https://docs.rs/deser/latest/deser/#no_std)).
 #![doc(html_logo_url = "https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo.svg")]
