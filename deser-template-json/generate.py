@@ -32,7 +32,8 @@ Lines with comments that start with `//#` are only in the template (for
 instance to explain why code is conditional), they are removed.  Comments
 that start with `//#(capability)` are only kept (as regular comments) for
 the dialects with the capability.
-The generated files are formatted with rustfmt.
+The generated files are formatted with rustfmt.  `src/copy.rs` is not
+generated, it's a symlink to `shared/copy.rs` (like in other formats).
 
 Usage:
 
@@ -76,7 +77,7 @@ DIALECTS = {
     "deser-hj": {"comments", "trailing_commas", "single_quotes", "hjson"},
 }
 
-FILES = ["copy.rs", "de.rs", "parser.rs", "raw.rs", "scan.rs", "stream.rs"]
+FILES = ["de.rs", "parser.rs", "raw.rs", "scan.rs", "stream.rs"]
 
 # names in conditions which are not capabilities
 OTHER_CFGS = {"test", "miri", "doc", "docsrs", "debug_assertions", "unix", "windows"}

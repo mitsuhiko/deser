@@ -102,6 +102,9 @@
 //!   [`simdutf8`](https://docs.rs/simdutf8).
 #![doc(html_logo_url = "https://raw.githubusercontent.com/mitsuhiko/deser/main/artwork/logo.svg")]
 
+// `copy.rs` is shared with other formats which only need `alloc`
+extern crate alloc;
+
 mod copy;
 mod datetime;
 mod de;
