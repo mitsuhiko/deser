@@ -1,0 +1,17 @@
+[package]
+name = "ini"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+deser = { path = "../../deser", features = ["derive"] }
+deser-ini = { path = "../../deser-ini" }
+deser-path = { path = "../../deser-path" }
+
+[[bin]]
+name = "ini"
+path = "src/main.rs"
+test = false
+doc = false

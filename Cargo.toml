@@ -43,6 +43,7 @@ members = [
   "examples/env",
   "examples/formats",
   "examples/generic-types",
+  "examples/ini",
   "examples/input-contracts",
   "examples/json",
   "examples/json-lines",

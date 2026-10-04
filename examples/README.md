@@ -27,6 +27,9 @@ Getting started:
 * [`query-strings`](query-strings): query strings and HTML forms with
   `deser-urlencoded`, with numbers that parse in flattened structs and
   tagged enums.
+* [`ini`](ini): an application config, `setup.cfg` and `.gitconfig`
+  with `deser-ini`, its default dialect and the presets for Python's
+  `configparser` and git, and writing them back.
 * [`csv`](csv): reading a CSV export row by row with `deser-csv`,
   flattened tagged enums, lists in a field, per-row errors and writing
   CSV and TSV.
