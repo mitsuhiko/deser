@@ -1,5 +1,3 @@
-// @generated from deser-template-json/src/buf.rs by
-// deser-template-json/generate.py.  Do not edit.
 //! A byte buffer optimized for many small writes.
 
 use alloc::string::String;

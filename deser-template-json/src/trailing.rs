@@ -1,5 +1,3 @@
-// @generated from deser-template-json/src/trailing.rs by
-// deser-template-json/generate.py.  Do not edit.
 //! What may follow a value.
 
 /// Controls what may follow a value.

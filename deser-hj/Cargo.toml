@@ -18,19 +18,21 @@ autotests = false
 [features]
 default = ["std", "io", "speedups"]
 # the standard library, without it only `alloc` is needed
-std = ["deser-core/std", "deser-json/std", "simdutf8?/std"]
+std = ["deser-core/std", "simdutf8?/std"]
 # reading and writing values from and to streams (with `deser::io`)
-io = ["std", "deser-core/io", "deser-json/io"]
+io = ["std", "deser-core/io"]
 # faster UTF-8 validation (simdutf8)
-speedups = ["dep:simdutf8", "deser-json/speedups"]
+speedups = ["dep:simdutf8"]
 
 [dependencies]
 deser-core = { version = "0.10.0", path = "../deser-core", default-features = false }
-# the serializer (JSON is valid Hjson)
-deser-json = { version = "0.10.0", path = "../deser-json", default-features = false }
+itoa = "1.0.18"
+zmij = "1.0.23"
 simdutf8 = { version = "0.1.5", optional = true, default-features = false }
 
 [dev-dependencies]
+# the expected values of the test suite are JSON
+deser-json = { version = "0.10.0", path = "../deser-json" }
 deser = { version = "0.10.0", path = "../deser", features = ["derive"] }
 deser-value = { version = "0.10.0", path = "../deser-value" }
 

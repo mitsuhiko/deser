@@ -1,12 +1,15 @@
 # deser-template-json
 
-The source of the parsers of `deser-json`, `deser-jsonc`, `deser-json5` and
-`deser-hj` and their tests.  This crate is not published and nothing depends on it.
-It only exists so that the template is Rust code that compiles, can be
-tested and works in editors.
+The source of the parsers and serializers of `deser-json`, `deser-jsonc`,
+`deser-json5` and `deser-hj` and their tests.  This crate is not published and
+nothing depends on it.  It only exists so that the template is Rust code that
+compiles, can be tested and works in editors.
 
-The crates share one parser.  The code that only some dialects have is
-marked with `#[cfg]` attributes on made up *capabilities*:
+The crates share one parser and one serializer (JSON is valid in every
+dialect, each crate writes its own raw values as they are and JSON5 writes
+NaN and infinite floats).  Every crate gets its own copy, so the dialects do
+not depend on each other.  The code that only some dialects have is marked
+with `#[cfg]` attributes on made up *capabilities*:
 
 | capability        | what it adds                                                          | jsonc | json5 | hjson |
 |-------------------|-----------------------------------------------------------------------|:-----:|:-----:|:-----:|

@@ -275,6 +275,14 @@ fn test_serialize() {
             format!("{{\"kind\":\"x\",\"payload\":{ENCODED},\"after\":42}}")
         );
     }
+
+    // the serializer of the dialect writes its own raw values as they are
+    if KEEPS_INPUT {
+        assert_eq!(
+            dialect::to_string(&envelope).unwrap(),
+            format!("{{\"kind\":\"x\",\"payload\":{PAYLOAD},\"after\":42}}")
+        );
+    }
 }
 
 #[test]
@@ -373,6 +381,11 @@ fn test_dialect_syntax() {
     assert_eq!(
         deser_json::to_string(&value.v).unwrap(),
         r#"{"a":"x","b":16,"c":[null]}"#
+    );
+    // the serializer of the dialect writes it as it is, also in a value
+    assert_eq!(
+        dialect::to_string(&vec![&value.v]).unwrap(),
+        "[{a: 'x', // comment\n b: 0x10, c: [+Infinity,],}]"
     );
 }
 

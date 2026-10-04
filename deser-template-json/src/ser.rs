@@ -1,11 +1,10 @@
-// @generated from deser-template-json/src/ser.rs by
-// deser-template-json/generate.py.  Do not edit.
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 use core::mem::ManuallyDrop;
 
+#[cfg(not(hjson))]
 use deser_core::ext::RawInput;
 use deser_core::ext::{BigInt, Decimal, ExtValue, Number};
 use deser_core::ser::SerializeRef;
@@ -62,11 +61,11 @@ pub enum InlinePolicy {
 ///
 /// ```
 /// use std::collections::BTreeMap;
-/// use deser_json::{Indent, SerializerConfig};
+/// use deser_template_json::{Indent, SerializerConfig};
 ///
 /// let value = BTreeMap::from([("name", vec!["a", "b"])]);
 /// assert_eq!(
-///     deser_json::to_string(&value).unwrap(),
+///     deser_template_json::to_string(&value).unwrap(),
 ///     r#"{"name":["a","b"]}"#
 /// );
 ///
@@ -163,7 +162,7 @@ impl SerializerConfig {
     /// * [`Trailing::Stop`]: values are separated by line breaks.
     ///
     /// ```
-    /// use deser_json::{Serializer, SerializerConfig, Trailing};
+    /// use deser_template_json::{Serializer, SerializerConfig, Trailing};
     ///
     /// const LINES: SerializerConfig =
     ///     SerializerConfig::builder().trailing(Trailing::Newline).build();
@@ -191,7 +190,7 @@ impl SerializerConfig {
     /// after separators use [`set_pretty`](Self::set_pretty).
     ///
     /// ```
-    /// use deser_json::{Indent, SerializerConfig};
+    /// use deser_template_json::{Indent, SerializerConfig};
     ///
     /// const TAB: SerializerConfig = SerializerConfig::builder().indent(Indent::Tab).build();
     /// assert_eq!(TAB.to_string(&vec![1, 2]).unwrap(), "[\n\t1,\n\t2\n]");
@@ -208,7 +207,7 @@ impl SerializerConfig {
     ///
     /// ```
     /// use std::collections::BTreeMap;
-    /// use deser_json::SerializerConfig;
+    /// use deser_template_json::SerializerConfig;
     ///
     /// let value = BTreeMap::from([("a", vec![1, 2])]);
     /// const SPACED: SerializerConfig = SerializerConfig::builder().compact(false).build();
@@ -223,7 +222,7 @@ impl SerializerConfig {
     ///
     /// ```
     /// use deser::Serialize;
-    /// use deser_json::{Indent, InlinePolicy, SerializerConfig};
+    /// use deser_template_json::{Indent, InlinePolicy, SerializerConfig};
     ///
     /// #[derive(Serialize)]
     /// struct Shape {
@@ -260,7 +259,7 @@ impl SerializerConfig {
     ///
     /// ```
     /// use std::collections::BTreeMap;
-    /// use deser_json::{Indent, SerializerConfig};
+    /// use deser_template_json::{Indent, SerializerConfig};
     ///
     /// let value = BTreeMap::from([("a", 1)]);
     /// const PRETTY: SerializerConfig =
@@ -283,7 +282,7 @@ impl SerializerConfig {
     /// [`deser-json5`](https://docs.rs/deser-json5) enable this.
     ///
     /// ```
-    /// use deser_json::SerializerConfig;
+    /// use deser_template_json::SerializerConfig;
     ///
     /// let values = [f64::NAN, f64::INFINITY, f64::NEG_INFINITY];
     /// assert_eq!(
@@ -343,7 +342,7 @@ impl SerializerConfig {
     /// ```
     /// use deser::ser::{Layer, Next};
     /// use deser::{Atom, Error, Event};
-    /// use deser_json::SerializerConfig;
+    /// use deser_template_json::SerializerConfig;
     ///
     /// /// Writes all numbers as strings.
     /// struct NumbersAsStrings;
@@ -556,9 +555,14 @@ impl Default for SerializerConfigBuilder {
 }
 
 /// Declares that raw values of the dialect are written as they are.
+#[cfg(not(hjson))]
 fn accept_raw(driver: &mut SerializeDriver<'_>) {
     driver.state_mut().declare_raw_format(&crate::raw::ID);
 }
+
+/// Hjson has no raw values.
+#[cfg(hjson)]
+fn accept_raw(_driver: &mut SerializeDriver<'_>) {}
 
 /// Writes the events of a value.
 pub(crate) enum ValueWriter {
@@ -631,7 +635,7 @@ impl ValueWriter {
 /// value is followed by a line break ([JSON Lines](https://jsonlines.org/)).
 ///
 /// ```
-/// use deser_json::{Serializer, SerializerConfig, Trailing};
+/// use deser_template_json::{Serializer, SerializerConfig, Trailing};
 ///
 /// const LINES: SerializerConfig =
 ///     SerializerConfig::builder().trailing(Trailing::Newline).build();
@@ -649,7 +653,7 @@ impl ValueWriter {
 ///
 /// ```
 /// # #[cfg(feature = "io")] {
-/// use deser_json::SerializerConfig;
+/// use deser_template_json::SerializerConfig;
 ///
 /// let mut writer = SerializerConfig::new().writer(Vec::new());
 /// writer.set_buffer_limit(4);
@@ -926,7 +930,7 @@ impl SerializerConfig {
     /// serialized.
     ///
     /// ```
-    /// use deser_json::{SerializerConfig, Trailing};
+    /// use deser_template_json::{SerializerConfig, Trailing};
     ///
     /// const LINES: SerializerConfig =
     ///     SerializerConfig::builder().trailing(Trailing::Newline).build();
@@ -959,15 +963,35 @@ impl SerializerConfig {
 ///
 /// ```
 /// let mut out = Vec::new();
-/// deser_json::to_writer(&mut out, &vec![1, 2, 3]).unwrap();
+/// deser_template_json::to_writer(&mut out, &vec![1, 2, 3]).unwrap();
 /// assert_eq!(out, b"[1,2,3]");
 /// ```
-#[cfg(feature = "io")]
+#[cfg(all(feature = "io", not(json5)))]
 pub fn to_writer<W: std::io::Write, T: Serialize + ?Sized>(
     writer: W,
     value: &T,
 ) -> Result<(), Error> {
     SerializerConfig::new().to_writer(writer, value)
+}
+
+/// Serializes a value as JSON5 to a writer.
+///
+/// Like [`to_string`] the output is JSON except for NaN and infinite
+/// floats.  The output of large values is written in parts while they are
+/// serialized (see [`deser::io`](deser_core::io)), the writer does not
+/// need to be buffered.
+///
+/// ```
+/// let mut out = Vec::new();
+/// deser_template_json::to_writer(&mut out, &vec![f64::NAN]).unwrap();
+/// assert_eq!(out, b"[NaN]");
+/// ```
+#[cfg(all(feature = "io", json5))]
+pub fn to_writer<W: std::io::Write, T: Serialize + ?Sized>(
+    writer: W,
+    value: &T,
+) -> Result<(), Error> {
+    JSON5_CONFIG.to_writer(writer, value)
 }
 
 /// The output of the serializer.
@@ -1325,6 +1349,7 @@ impl Output {
     fn write_ext_value(&mut self, ext: &ExtValue) -> Result<(), Error> {
         // raw values of the dialect are written as they are, the
         // serialization only passes them on if they are (see `accept_raw`)
+        #[cfg(not(hjson))]
         if let Some(raw) = ext.downcast_value_ref::<RawInput>()
             && raw.is_format(&crate::raw::ID)
             && let Some(text) = raw.as_str()
@@ -1478,9 +1503,31 @@ static ESCAPE: [u8; 256] = [
 /// Serializes a value to JSON.
 ///
 /// This uses the default [`SerializerConfig`].
+#[cfg(not(json5))]
 #[inline]
 pub fn to_string<T: Serialize + ?Sized>(value: &T) -> Result<String, Error> {
     SerializerConfig::new().to_string(value)
+}
+
+/// The configuration of [`to_string`] and [`to_writer`].
+#[cfg(json5)]
+const JSON5_CONFIG: SerializerConfig = SerializerConfig::builder().non_finite_floats(true).build();
+
+/// Serializes a value to JSON5.
+///
+/// The output is JSON, except for NaN and infinite floats which are
+/// written as `NaN`, `Infinity` and `-Infinity` (the default
+/// [`SerializerConfig`] writes them as `null`, see
+/// [`SerializerConfig::set_non_finite_floats`]).
+///
+/// ```
+/// let value = vec![1.0, f64::INFINITY];
+/// assert_eq!(deser_template_json::to_string(&value).unwrap(), "[1.0,Infinity]");
+/// ```
+#[cfg(json5)]
+#[inline]
+pub fn to_string<T: Serialize + ?Sized>(value: &T) -> Result<String, Error> {
+    JSON5_CONFIG.to_string(value)
 }
 
 /// Returns the text of an implicit value if it's a JSON literal for the

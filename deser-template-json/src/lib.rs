@@ -1,5 +1,5 @@
-//! The template of the parsers of `deser-json`, `deser-jsonc`,
-//! `deser-json5` and `deser-hj`.
+//! The template of the parsers and serializers of `deser-json`,
+//! `deser-jsonc`, `deser-json5` and `deser-hj`.
 //!
 //! This crate is not published and not used by anything.  The modules
 //! other than this one are the source the parsers of the dialect crates are
@@ -14,18 +14,28 @@
 
 extern crate alloc;
 
+mod buf;
 mod copy;
 mod de;
+mod escape;
 mod parser;
+mod pretty;
 mod raw;
 mod scan;
+mod ser;
 mod stream;
+mod trailing;
 
 pub use self::de::{
     Deserializer, DeserializerConfig, DeserializerConfigBuilder, Iter, from_slice, from_str,
 };
 pub use self::raw::{Json5, RawJson5};
+#[cfg(feature = "io")]
+pub use self::ser::to_writer;
+pub use self::ser::{
+    Indent, InlinePolicy, Serializer, SerializerConfig, SerializerConfigBuilder, to_string,
+};
 pub use self::stream::StreamDeserializer;
 #[cfg(feature = "io")]
 pub use self::stream::from_reader;
-pub use deser_json::{Trailing, to_string};
+pub use self::trailing::Trailing;

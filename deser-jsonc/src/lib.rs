@@ -25,14 +25,15 @@
 //! assert_eq!(config.ports, [80, 443]);
 //! ```
 //!
-//! JSON is valid JSONC, so values are serialized as JSON with the
-//! serializer of `deser-json` (which is re-exported).
+//! JSON is valid JSONC, so values are serialized as JSON (with the same
+//! serializer as `deser-json`).
 //!
 //! # Raw Values
 //!
 //! [`RawJsonc`] holds the JSONC text of a value.  Like `deser_json::RawJson` it
 //! keeps the text of values that are deserialized from JSONC as it is
-//! (including comments), other values are encoded as JSON.  See
+//! (including comments), other values are encoded as JSON.  The serializer
+//! of this crate writes the text of raw JSONC values as it is.  See
 //! [`Raw`](deser_core::ext::Raw) for more information.
 //!
 //! # Features
@@ -49,23 +50,28 @@
 extern crate alloc;
 
 // These are generated from `deser-template-json`.
+mod buf;
 mod copy;
 mod de;
+mod escape;
 mod parser;
+mod pretty;
 mod raw;
 mod scan;
+mod ser;
 mod stream;
+mod trailing;
 
 pub use self::de::{
     Deserializer, DeserializerConfig, DeserializerConfigBuilder, Iter, from_slice, from_str,
 };
 pub use self::raw::{Jsonc, RawJsonc};
+#[cfg(feature = "io")]
+pub use self::ser::to_writer;
+pub use self::ser::{
+    Indent, InlinePolicy, Serializer, SerializerConfig, SerializerConfigBuilder, to_string,
+};
 pub use self::stream::StreamDeserializer;
 #[cfg(feature = "io")]
 pub use self::stream::from_reader;
-#[cfg(feature = "io")]
-pub use deser_json::to_writer;
-pub use deser_json::{
-    Indent, InlinePolicy, Serializer, SerializerConfig, SerializerConfigBuilder, Trailing,
-    to_string,
-};
+pub use self::trailing::Trailing;

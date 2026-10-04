@@ -6,7 +6,6 @@ use alloc::string::ToString;
 use alloc::vec::Vec;
 use core::mem::ManuallyDrop;
 
-use deser_core::ext::RawInput;
 use deser_core::ext::{BigInt, Decimal, ExtValue, Number};
 use deser_core::ser::SerializeRef;
 use deser_core::ser::{self, EventSink, SerializeDriver};
@@ -62,11 +61,11 @@ pub enum InlinePolicy {
 ///
 /// ```
 /// use std::collections::BTreeMap;
-/// use deser_json::{Indent, SerializerConfig};
+/// use deser_hj::{Indent, SerializerConfig};
 ///
 /// let value = BTreeMap::from([("name", vec!["a", "b"])]);
 /// assert_eq!(
-///     deser_json::to_string(&value).unwrap(),
+///     deser_hj::to_string(&value).unwrap(),
 ///     r#"{"name":["a","b"]}"#
 /// );
 ///
@@ -163,7 +162,7 @@ impl SerializerConfig {
     /// * [`Trailing::Stop`]: values are separated by line breaks.
     ///
     /// ```
-    /// use deser_json::{Serializer, SerializerConfig, Trailing};
+    /// use deser_hj::{Serializer, SerializerConfig, Trailing};
     ///
     /// const LINES: SerializerConfig =
     ///     SerializerConfig::builder().trailing(Trailing::Newline).build();
@@ -191,7 +190,7 @@ impl SerializerConfig {
     /// after separators use [`set_pretty`](Self::set_pretty).
     ///
     /// ```
-    /// use deser_json::{Indent, SerializerConfig};
+    /// use deser_hj::{Indent, SerializerConfig};
     ///
     /// const TAB: SerializerConfig = SerializerConfig::builder().indent(Indent::Tab).build();
     /// assert_eq!(TAB.to_string(&vec![1, 2]).unwrap(), "[\n\t1,\n\t2\n]");
@@ -208,7 +207,7 @@ impl SerializerConfig {
     ///
     /// ```
     /// use std::collections::BTreeMap;
-    /// use deser_json::SerializerConfig;
+    /// use deser_hj::SerializerConfig;
     ///
     /// let value = BTreeMap::from([("a", vec![1, 2])]);
     /// const SPACED: SerializerConfig = SerializerConfig::builder().compact(false).build();
@@ -223,7 +222,7 @@ impl SerializerConfig {
     ///
     /// ```
     /// use deser::Serialize;
-    /// use deser_json::{Indent, InlinePolicy, SerializerConfig};
+    /// use deser_hj::{Indent, InlinePolicy, SerializerConfig};
     ///
     /// #[derive(Serialize)]
     /// struct Shape {
@@ -260,7 +259,7 @@ impl SerializerConfig {
     ///
     /// ```
     /// use std::collections::BTreeMap;
-    /// use deser_json::{Indent, SerializerConfig};
+    /// use deser_hj::{Indent, SerializerConfig};
     ///
     /// let value = BTreeMap::from([("a", 1)]);
     /// const PRETTY: SerializerConfig =
@@ -283,7 +282,7 @@ impl SerializerConfig {
     /// [`deser-json5`](https://docs.rs/deser-json5) enable this.
     ///
     /// ```
-    /// use deser_json::SerializerConfig;
+    /// use deser_hj::SerializerConfig;
     ///
     /// let values = [f64::NAN, f64::INFINITY, f64::NEG_INFINITY];
     /// assert_eq!(
@@ -343,7 +342,7 @@ impl SerializerConfig {
     /// ```
     /// use deser::ser::{Layer, Next};
     /// use deser::{Atom, Error, Event};
-    /// use deser_json::SerializerConfig;
+    /// use deser_hj::SerializerConfig;
     ///
     /// /// Writes all numbers as strings.
     /// struct NumbersAsStrings;
@@ -555,10 +554,8 @@ impl Default for SerializerConfigBuilder {
     }
 }
 
-/// Declares that raw values of the dialect are written as they are.
-fn accept_raw(driver: &mut SerializeDriver<'_>) {
-    driver.state_mut().declare_raw_format(&crate::raw::ID);
-}
+/// Hjson has no raw values.
+fn accept_raw(_driver: &mut SerializeDriver<'_>) {}
 
 /// Writes the events of a value.
 pub(crate) enum ValueWriter {
@@ -631,7 +628,7 @@ impl ValueWriter {
 /// value is followed by a line break ([JSON Lines](https://jsonlines.org/)).
 ///
 /// ```
-/// use deser_json::{Serializer, SerializerConfig, Trailing};
+/// use deser_hj::{Serializer, SerializerConfig, Trailing};
 ///
 /// const LINES: SerializerConfig =
 ///     SerializerConfig::builder().trailing(Trailing::Newline).build();
@@ -649,7 +646,7 @@ impl ValueWriter {
 ///
 /// ```
 /// # #[cfg(feature = "io")] {
-/// use deser_json::SerializerConfig;
+/// use deser_hj::SerializerConfig;
 ///
 /// let mut writer = SerializerConfig::new().writer(Vec::new());
 /// writer.set_buffer_limit(4);
@@ -926,7 +923,7 @@ impl SerializerConfig {
     /// serialized.
     ///
     /// ```
-    /// use deser_json::{SerializerConfig, Trailing};
+    /// use deser_hj::{SerializerConfig, Trailing};
     ///
     /// const LINES: SerializerConfig =
     ///     SerializerConfig::builder().trailing(Trailing::Newline).build();
@@ -959,7 +956,7 @@ impl SerializerConfig {
 ///
 /// ```
 /// let mut out = Vec::new();
-/// deser_json::to_writer(&mut out, &vec![1, 2, 3]).unwrap();
+/// deser_hj::to_writer(&mut out, &vec![1, 2, 3]).unwrap();
 /// assert_eq!(out, b"[1,2,3]");
 /// ```
 #[cfg(feature = "io")]
@@ -1323,15 +1320,6 @@ impl Output {
     /// their fallback representation.
     #[cold]
     fn write_ext_value(&mut self, ext: &ExtValue) -> Result<(), Error> {
-        // raw values of the dialect are written as they are, the
-        // serialization only passes them on if they are (see `accept_raw`)
-        if let Some(raw) = ext.downcast_value_ref::<RawInput>()
-            && raw.is_format(&crate::raw::ID)
-            && let Some(text) = raw.as_str()
-        {
-            self.write_str(text);
-            return Ok(());
-        }
         // JSON numbers have arbitrary precision, so wide integers and
         // decimals can be written natively.
         if let Some(&val) = ext.downcast_ref::<u128>() {

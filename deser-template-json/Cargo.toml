@@ -14,19 +14,23 @@ doc = false
 
 [features]
 default = ["std", "io", "speedups"]
-std = ["deser-core/std", "deser-json/std", "simdutf8?/std"]
-io = ["std", "deser-core/io", "deser-json/io"]
+std = ["deser-core/std", "simdutf8?/std"]
+io = ["std", "deser-core/io"]
 # faster UTF-8 validation (simdutf8)
-speedups = ["dep:simdutf8", "deser-json/speedups"]
+speedups = ["dep:simdutf8"]
 
 [dependencies]
 deser-core = { path = "../deser-core", default-features = false }
-deser-json = { path = "../deser-json", default-features = false }
+# writing floats and integers
+itoa = "1.0.18"
+zmij = "1.0.23"
 simdutf8 = { version = "0.1.5", optional = true, default-features = false }
 # the characters of identifiers (map keys without quotes)
 unicode-ident = "1.0.12"
 
 [dev-dependencies]
+# the tests compare the dialects with JSON
+deser-json = { path = "../deser-json" }
 deser = { path = "../deser", features = ["derive"] }
 deser-encoding = { path = "../deser-encoding" }
 deser-json5 = { path = "../deser-json5" }

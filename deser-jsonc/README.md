@@ -20,8 +20,8 @@ let config: Config = deser_jsonc::from_str(r#"{
 assert_eq!(config.name, "api");
 ```
 
-Otherwise it works like [`deser-json`](https://docs.rs/deser-json), which
-is also used to serialize (JSON is valid JSONC).  The parser is generated
-from the one of `deser-json` (see `deser-template-json` in the
+Otherwise it works like [`deser-json`](https://docs.rs/deser-json) and
+serializes JSON (which is valid JSONC).  The parser and the serializer are
+generated from the ones of `deser-json` (see `deser-template-json` in the
 repository).
 

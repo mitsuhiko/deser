@@ -62,11 +62,11 @@ pub enum InlinePolicy {
 ///
 /// ```
 /// use std::collections::BTreeMap;
-/// use deser_json::{Indent, SerializerConfig};
+/// use deser_json5::{Indent, SerializerConfig};
 ///
 /// let value = BTreeMap::from([("name", vec!["a", "b"])]);
 /// assert_eq!(
-///     deser_json::to_string(&value).unwrap(),
+///     deser_json5::to_string(&value).unwrap(),
 ///     r#"{"name":["a","b"]}"#
 /// );
 ///
@@ -163,7 +163,7 @@ impl SerializerConfig {
     /// * [`Trailing::Stop`]: values are separated by line breaks.
     ///
     /// ```
-    /// use deser_json::{Serializer, SerializerConfig, Trailing};
+    /// use deser_json5::{Serializer, SerializerConfig, Trailing};
     ///
     /// const LINES: SerializerConfig =
     ///     SerializerConfig::builder().trailing(Trailing::Newline).build();
@@ -191,7 +191,7 @@ impl SerializerConfig {
     /// after separators use [`set_pretty`](Self::set_pretty).
     ///
     /// ```
-    /// use deser_json::{Indent, SerializerConfig};
+    /// use deser_json5::{Indent, SerializerConfig};
     ///
     /// const TAB: SerializerConfig = SerializerConfig::builder().indent(Indent::Tab).build();
     /// assert_eq!(TAB.to_string(&vec![1, 2]).unwrap(), "[\n\t1,\n\t2\n]");
@@ -208,7 +208,7 @@ impl SerializerConfig {
     ///
     /// ```
     /// use std::collections::BTreeMap;
-    /// use deser_json::SerializerConfig;
+    /// use deser_json5::SerializerConfig;
     ///
     /// let value = BTreeMap::from([("a", vec![1, 2])]);
     /// const SPACED: SerializerConfig = SerializerConfig::builder().compact(false).build();
@@ -223,7 +223,7 @@ impl SerializerConfig {
     ///
     /// ```
     /// use deser::Serialize;
-    /// use deser_json::{Indent, InlinePolicy, SerializerConfig};
+    /// use deser_json5::{Indent, InlinePolicy, SerializerConfig};
     ///
     /// #[derive(Serialize)]
     /// struct Shape {
@@ -260,7 +260,7 @@ impl SerializerConfig {
     ///
     /// ```
     /// use std::collections::BTreeMap;
-    /// use deser_json::{Indent, SerializerConfig};
+    /// use deser_json5::{Indent, SerializerConfig};
     ///
     /// let value = BTreeMap::from([("a", 1)]);
     /// const PRETTY: SerializerConfig =
@@ -283,7 +283,7 @@ impl SerializerConfig {
     /// [`deser-json5`](https://docs.rs/deser-json5) enable this.
     ///
     /// ```
-    /// use deser_json::SerializerConfig;
+    /// use deser_json5::SerializerConfig;
     ///
     /// let values = [f64::NAN, f64::INFINITY, f64::NEG_INFINITY];
     /// assert_eq!(
@@ -343,7 +343,7 @@ impl SerializerConfig {
     /// ```
     /// use deser::ser::{Layer, Next};
     /// use deser::{Atom, Error, Event};
-    /// use deser_json::SerializerConfig;
+    /// use deser_json5::SerializerConfig;
     ///
     /// /// Writes all numbers as strings.
     /// struct NumbersAsStrings;
@@ -631,7 +631,7 @@ impl ValueWriter {
 /// value is followed by a line break ([JSON Lines](https://jsonlines.org/)).
 ///
 /// ```
-/// use deser_json::{Serializer, SerializerConfig, Trailing};
+/// use deser_json5::{Serializer, SerializerConfig, Trailing};
 ///
 /// const LINES: SerializerConfig =
 ///     SerializerConfig::builder().trailing(Trailing::Newline).build();
@@ -649,7 +649,7 @@ impl ValueWriter {
 ///
 /// ```
 /// # #[cfg(feature = "io")] {
-/// use deser_json::SerializerConfig;
+/// use deser_json5::SerializerConfig;
 ///
 /// let mut writer = SerializerConfig::new().writer(Vec::new());
 /// writer.set_buffer_limit(4);
@@ -926,7 +926,7 @@ impl SerializerConfig {
     /// serialized.
     ///
     /// ```
-    /// use deser_json::{SerializerConfig, Trailing};
+    /// use deser_json5::{SerializerConfig, Trailing};
     ///
     /// const LINES: SerializerConfig =
     ///     SerializerConfig::builder().trailing(Trailing::Newline).build();
@@ -951,23 +951,24 @@ impl SerializerConfig {
     }
 }
 
-/// Serializes a value to a writer.
+/// Serializes a value as JSON5 to a writer.
 ///
-/// The output of large values is written in parts while they are
+/// Like [`to_string`] the output is JSON except for NaN and infinite
+/// floats.  The output of large values is written in parts while they are
 /// serialized (see [`deser::io`](deser_core::io)), the writer does not
 /// need to be buffered.
 ///
 /// ```
 /// let mut out = Vec::new();
-/// deser_json::to_writer(&mut out, &vec![1, 2, 3]).unwrap();
-/// assert_eq!(out, b"[1,2,3]");
+/// deser_json5::to_writer(&mut out, &vec![f64::NAN]).unwrap();
+/// assert_eq!(out, b"[NaN]");
 /// ```
 #[cfg(feature = "io")]
 pub fn to_writer<W: std::io::Write, T: Serialize + ?Sized>(
     writer: W,
     value: &T,
 ) -> Result<(), Error> {
-    SerializerConfig::new().to_writer(writer, value)
+    JSON5_CONFIG.to_writer(writer, value)
 }
 
 /// The output of the serializer.
@@ -1475,12 +1476,23 @@ static ESCAPE: [u8; 256] = [
     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // F
 ];
 
-/// Serializes a value to JSON.
+/// The configuration of [`to_string`] and [`to_writer`].
+const JSON5_CONFIG: SerializerConfig = SerializerConfig::builder().non_finite_floats(true).build();
+
+/// Serializes a value to JSON5.
 ///
-/// This uses the default [`SerializerConfig`].
+/// The output is JSON, except for NaN and infinite floats which are
+/// written as `NaN`, `Infinity` and `-Infinity` (the default
+/// [`SerializerConfig`] writes them as `null`, see
+/// [`SerializerConfig::set_non_finite_floats`]).
+///
+/// ```
+/// let value = vec![1.0, f64::INFINITY];
+/// assert_eq!(deser_json5::to_string(&value).unwrap(), "[1.0,Infinity]");
+/// ```
 #[inline]
 pub fn to_string<T: Serialize + ?Sized>(value: &T) -> Result<String, Error> {
-    SerializerConfig::new().to_string(value)
+    JSON5_CONFIG.to_string(value)
 }
 
 /// Returns the text of an implicit value if it's a JSON literal for the

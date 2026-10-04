@@ -1,5 +1,3 @@
-// @generated from deser-template-json/src/pretty.rs by
-// deser-template-json/generate.py.  Do not edit.
 //! Writes indented JSON and JSON with spaces after separators.
 //!
 //! The compact output (no indentation, no spaces) is written by the writer

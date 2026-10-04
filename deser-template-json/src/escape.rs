@@ -1,5 +1,3 @@
-// @generated from deser-template-json/src/escape.rs by
-// deser-template-json/generate.py.  Do not edit.
 //! Finds the bytes of strings that need escaping when serializing.
 use crate::scan::{ONE_BYTES, block_escape, escape_mask, load_u32, load_u64};
 

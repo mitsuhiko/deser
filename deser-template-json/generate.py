@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generates the parsers of the JSON dialect crates from the template.
+"""Generates the parsers and serializers of the JSON dialect crates from the template.
 
 The template (`src/` next to this script) is Rust code where the code that
 only some dialects have is marked with `#[cfg(...)]` attributes (and
@@ -77,7 +77,12 @@ DIALECTS = {
     "deser-hj": {"comments", "trailing_commas", "single_quotes", "hjson"},
 }
 
-FILES = ["de.rs", "parser.rs", "raw.rs", "scan.rs", "stream.rs"]
+# the parser and the serializer (JSON is valid in every dialect, they share
+# the serializer, only raw values and non-finite floats differ)
+FILES = [
+    "buf.rs", "de.rs", "escape.rs", "parser.rs", "pretty.rs", "raw.rs",
+    "scan.rs", "ser.rs", "stream.rs", "trailing.rs",
+]
 
 # names in conditions which are not capabilities
 OTHER_CFGS = {"test", "miri", "doc", "docsrs", "debug_assertions", "unix", "windows"}

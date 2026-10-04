@@ -39,8 +39,8 @@
 //! assert_eq!(config.timeout, 0.5);
 //! ```
 //!
-//! JSON is valid JSON5, so values are serialized as JSON with the
-//! serializer of `deser-json` (which is re-exported).  Unlike JSON, JSON5
+//! JSON is valid JSON5, so values are serialized as JSON (with the same
+//! serializer as `deser-json`).  Unlike JSON, JSON5
 //! can represent NaN and infinite floats: [`to_string`] and [`to_writer`]
 //! write them as `NaN`, `Infinity` and `-Infinity` where `deser-json`
 //! writes `null`.  A [`SerializerConfig`] needs
@@ -65,7 +65,8 @@
 //!
 //! [`RawJson5`] holds the JSON5 text of a value.  Like `deser_json::RawJson` it
 //! keeps the text of values that are deserialized from JSON5 as it is
-//! (including comments), other values are encoded as JSON.  See
+//! (including comments), other values are encoded as JSON.  The serializer
+//! of this crate writes the text of raw JSON5 values as it is.  See
 //! [`Raw`](deser_core::ext::Raw) for more information.
 //!
 //! # Features
@@ -82,60 +83,28 @@
 extern crate alloc;
 
 // These are generated from `deser-template-json`.
+mod buf;
 mod copy;
 mod de;
+mod escape;
 mod parser;
+mod pretty;
 mod raw;
 mod scan;
+mod ser;
 mod stream;
+mod trailing;
 
 pub use self::de::{
     Deserializer, DeserializerConfig, DeserializerConfigBuilder, Iter, from_slice, from_str,
 };
 pub use self::raw::{Json5, RawJson5};
+#[cfg(feature = "io")]
+pub use self::ser::to_writer;
+pub use self::ser::{
+    Indent, InlinePolicy, Serializer, SerializerConfig, SerializerConfigBuilder, to_string,
+};
 pub use self::stream::StreamDeserializer;
 #[cfg(feature = "io")]
 pub use self::stream::from_reader;
-pub use deser_json::{
-    Indent, InlinePolicy, Serializer, SerializerConfig, SerializerConfigBuilder, Trailing,
-};
-
-use alloc::string::String;
-use deser_core::{Error, Serialize};
-
-/// The configuration of [`to_string`] and [`to_writer`].
-const SERIALIZER_CONFIG: SerializerConfig =
-    SerializerConfig::builder().non_finite_floats(true).build();
-
-/// Serializes a value to JSON5.
-///
-/// The output is JSON, except for NaN and infinite floats which are
-/// written as `NaN`, `Infinity` and `-Infinity`.
-///
-/// ```
-/// let value = vec![1.0, f64::INFINITY];
-/// assert_eq!(deser_json5::to_string(&value).unwrap(), "[1.0,Infinity]");
-/// ```
-#[inline]
-pub fn to_string<T: Serialize + ?Sized>(value: &T) -> Result<String, Error> {
-    SERIALIZER_CONFIG.to_string(value)
-}
-
-/// Serializes a value as JSON5 to a writer.
-///
-/// Like [`to_string`] the output is JSON except for NaN and infinite
-/// floats.  The output of large values is written in parts while they are
-/// serialized (see `deser::io`), the writer does not need to be buffered.
-///
-/// ```
-/// let mut out = Vec::new();
-/// deser_json5::to_writer(&mut out, &vec![f64::NAN]).unwrap();
-/// assert_eq!(out, b"[NaN]");
-/// ```
-#[cfg(feature = "io")]
-pub fn to_writer<W: std::io::Write, T: Serialize + ?Sized>(
-    writer: W,
-    value: &T,
-) -> Result<(), Error> {
-    SERIALIZER_CONFIG.to_writer(writer, value)
-}
+pub use self::trailing::Trailing;

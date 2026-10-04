@@ -23,9 +23,9 @@ assert_eq!(config.name, "api");
 assert_eq!(config.ports, [80, 443]);
 ```
 
-Otherwise it works like [`deser-json`](https://docs.rs/deser-json), which
-is also used to serialize (JSON is valid JSON5, NaN and infinite floats
-are written as `NaN`, `Infinity` and `-Infinity`).  The parser is generated
-from the one of `deser-json` (see `deser-template-json` in the
+Otherwise it works like [`deser-json`](https://docs.rs/deser-json) and
+serializes JSON (which is valid JSON5, NaN and infinite floats are written
+as `NaN`, `Infinity` and `-Infinity`).  The parser and the serializer are
+generated from the ones of `deser-json` (see `deser-template-json` in the
 repository).
 

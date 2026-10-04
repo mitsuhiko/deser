@@ -2,6 +2,16 @@
 
 All notable changes to deser are documented here.
 
+## Unreleased
+
+- **Breaking:** `deser-jsonc`, `deser-json5` and `deser-hj` no longer
+  depend on `deser-json`.  Their serializers are generated from the same
+  template as their parsers, so `Serializer`, `SerializerConfig`,
+  `Indent`, `InlinePolicy` and `Trailing` are types of their own instead of
+  re-exports of `deser-json`.  The serializers of `deser-jsonc` and
+  `deser-json5` write their own raw values (`RawJsonc`, `RawJson5`) as they
+  are, `RawJson` values are encoded like values of other formats.
+
 ## 0.10.0
 
 - **Breaking:** the APIs follow the same conventions everywhere: values

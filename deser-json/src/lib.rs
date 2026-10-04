@@ -200,19 +200,18 @@
 
 extern crate alloc;
 
-mod buf;
-mod escape;
-mod pretty;
-mod ser;
-mod trailing;
-
 // These are generated from `deser-template-json`.
+mod buf;
 mod copy;
 mod de;
+mod escape;
 mod parser;
+mod pretty;
 mod raw;
 mod scan;
+mod ser;
 mod stream;
+mod trailing;
 
 pub use self::de::{
     Deserializer, DeserializerConfig, DeserializerConfigBuilder, Iter, from_slice, from_str,
