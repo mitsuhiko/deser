@@ -27,7 +27,7 @@ use crate::ext::known::{WellKnown, impl_well_known, invalid, out_of_range, round
 /// assert_eq!(duration.to_string(), "PT1H0.5S");
 /// ```
 ///
-/// [`std::time::Duration`] serializes as [`Duration`], as do the duration
+/// [`core::time::Duration`] serializes as [`Duration`], as do the duration
 /// types of `jiff`, `chrono` and `time` with the respective features.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Duration {

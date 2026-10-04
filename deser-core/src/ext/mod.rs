@@ -66,7 +66,7 @@
 //! well-known types:
 //!
 //! * [`std::time::SystemTime`] as [`Timestamp`] and
-//!   [`std::time::Duration`] as [`Duration`].
+//!   [`core::time::Duration`] as [`Duration`].
 //! * `jiff` (feature `jiff`): `Timestamp` as [`Timestamp`], `Zoned`,
 //!   `civil::DateTime`, `civil::Date` and `civil::Time` as [`Datetime`],
 //!   `SignedDuration` as [`Duration`].
@@ -147,6 +147,12 @@
 //!     .unwrap();
 //! assert_eq!(out, Some(value));
 //! ```
+//!
+#![cfg_attr(
+    not(feature = "std"),
+    doc = "[`std::time::SystemTime`]: https://doc.rust-lang.org/std/time/struct.SystemTime.html"
+)]
+
 use alloc::string::ToString;
 use alloc::sync::Arc;
 use core::any::{Any, TypeId};
@@ -270,7 +276,7 @@ pub trait BorrowedExtension: 'static {
     ///
     /// This proves that a value can be used with a shorter lifetime.  For
     /// types that are covariant in their lifetime (which is the case for
-    /// most types that hold references or [`Cow`](std::borrow::Cow)s) the
+    /// most types that hold references or [`Cow`](alloc::borrow::Cow)s) the
     /// implementation is just `value`.
     fn shorten<'s, 'l: 's>(value: &'s Self::Value<'l>) -> &'s Self::Value<'s>;
 }

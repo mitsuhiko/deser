@@ -10,11 +10,10 @@ use crate::ser::{Begin, Describe, Emit, PlainSink, Serialize};
 
 /// The adapter that uses the derived implementation of a type.
 ///
-/// Adapters on a type (see [container
-/// adapters](crate::derive#container-adapters)) replace its derived
-/// implementation.  Adapters which wrap another adapter can wrap the
-/// derived implementation with `Derived`, which is written as `_` in the
-/// attribute.  This is how values are checked or converted after the
+/// Adapters on a type (see [container adapters][container-adapters])
+/// replace its derived implementation.  Adapters which wrap another
+/// adapter can wrap the derived implementation with `Derived`, which is
+/// written as `_` in the attribute.  This is how values are checked or converted after the
 /// derived implementation deserialized them:
 ///
 /// ```
@@ -57,6 +56,15 @@ use crate::ser::{Begin, Describe, Emit, PlainSink, Serialize};
 ///
 /// The derived implementation is only available through this adapter for
 /// the directions that have an adapter with `_`.
+///
+#[cfg_attr(
+    feature = "derive",
+    doc = "[container-adapters]: crate::derive#container-adapters"
+)]
+#[cfg_attr(
+    not(feature = "derive"),
+    doc = "[container-adapters]: https://docs.rs/deser/latest/deser/derive/index.html#container-adapters"
+)]
 pub struct Derived;
 
 /// The derived implementation of `Deserialize`.

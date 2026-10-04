@@ -218,7 +218,13 @@ pub enum VariantKind {
 /// How an enum variant is represented.
 ///
 /// This corresponds to the representations of the derive (see
-/// [`derive`](crate::derive)).
+/// [`derive`][derive-module]).
+///
+#[cfg_attr(feature = "derive", doc = "[derive-module]: crate::derive")]
+#[cfg_attr(
+    not(feature = "derive"),
+    doc = "[derive-module]: https://docs.rs/deser/latest/deser/derive/"
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum VariantRepr<'a> {
@@ -253,6 +259,7 @@ pub enum VariantRepr<'a> {
 /// the deserializer decide with this whether newtype variants of internally
 /// tagged enums are the tag alone, so they agree for all types whose
 /// descriptions agree.
+#[cfg(feature = "derive")]
 pub(crate) fn is_unit_struct(describe: impl FnOnce(&mut dyn Describe)) -> bool {
     #[derive(Default)]
     struct IsUnitStruct {

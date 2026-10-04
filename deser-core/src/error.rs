@@ -68,7 +68,7 @@ pub enum ErrorKind {
     /// bugs in the program, not problems of the input.
     Configuration,
     /// Reading or writing failed (see `deser::io`).  The IO error is
-    /// the [`source`](std::error::Error::source) of the error.
+    /// the [`source`](core::error::Error::source) of the error.
     Io,
     /// An error which has none of the other kinds.
     ///

@@ -28,11 +28,11 @@ pub(crate) fn atom_cost(atom: &Atom<'_>) -> usize {
         _ => 1,
     }
 }
+use crate::ser::{Emit, SeqEmitter, SerializeHandle, SerializeRef};
 #[cfg(feature = "derive")]
-use crate::ser::StructEmitter;
-use crate::ser::{Emit, SeqEmitter, Serialize, SerializeHandle, SerializeRef};
+use crate::ser::{Serialize, StructEmitter};
 
-/// The result of [`Serialize::__private_begin`].
+/// The result of [`Serialize::__private_begin`](crate::ser::Serialize::__private_begin).
 pub struct Begin<'a> {
     pub(crate) kind: BeginKind<'a>,
     pub(crate) shape: ContainerShape,
@@ -75,9 +75,9 @@ impl<'a> Begin<'a> {
     /// Begins a plain value (see [`PlainSink`]).
     ///
     /// The driver emits the value with
-    /// [`__private_emit_plain`](Serialize::__private_emit_plain) or if it
+    /// [`__private_emit_plain`](crate::ser::Serialize::__private_emit_plain) or if it
     /// needs to drive every value on its own, with
-    /// [`serialize`](Serialize::serialize).  `finish` is not invoked.
+    /// [`serialize`](crate::ser::Serialize::serialize).  `finish` is not invoked.
     #[inline]
     pub fn plain(value: SerializeRef<'a>, shape: ContainerShape) -> Begin<'a> {
         Begin {
@@ -330,7 +330,7 @@ pub const FIELDS_END: usize = usize::MAX;
 /// The events they produce do not depend on anything but the value, which
 /// allows the driver to hand out their events directly instead of driving
 /// every value on its own.  See
-/// [`Serialize::__private_is_plain`].
+/// [`Serialize::__private_is_plain`](crate::ser::Serialize::__private_is_plain).
 pub trait PlainSink {
     fn atom(&mut self, atom: Atom<'_>) -> Result<(), Error>;
     fn seq_start(&mut self, shape: ContainerShape) -> Result<(), Error>;

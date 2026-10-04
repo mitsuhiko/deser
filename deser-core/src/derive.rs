@@ -989,7 +989,7 @@
 //! every implementation with [`#[deser::variant]`](../attr.variant.html).
 //! Serializing needs nothing else, the variants know their names.  To
 //! deserialize, the variants are registered in an
-//! [`OpenEnums`](crate::OpenEnums) registry which is given to the
+//! [`OpenEnums`][open-enums-registry] registry which is given to the
 //! deserialization in the [`Context`](crate::Context), typically the one
 //! of the configuration of the format (for instance
 //! `deser_json::DeserializerConfig::builder().context(context)`):
@@ -1114,3 +1114,12 @@
 //!   [`Deserialize`](crate::Deserialize) without borrowing (they are
 //!   `'static`).
 //! * Unknown tags are errors, there is no catch-all or default variant yet.
+//!
+#![cfg_attr(
+    feature = "open-enums",
+    doc = "[open-enums-registry]: crate::OpenEnums"
+)]
+#![cfg_attr(
+    not(feature = "open-enums"),
+    doc = "[open-enums-registry]: https://docs.rs/deser/latest/deser/struct.OpenEnums.html"
+)]

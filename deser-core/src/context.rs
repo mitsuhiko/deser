@@ -60,8 +60,8 @@ type Entry = (TypeKey, Arc<dyn DebugAny>);
 /// assert_eq!(err.to_string(), "LimitExceeded: too many items at line 1 column 18");
 /// ```
 ///
-/// The readers and writers of [`io`](crate::io) have `set_context` methods
-/// too.
+/// The readers and writers of the [`io` module][io-module] have
+/// `set_context` methods too.
 ///
 /// The values of the context are the defaults of the extension values of
 /// the [`State`](crate::State): [`State::get`](crate::State::get) returns
@@ -109,7 +109,7 @@ type Entry = (TypeKey, Arc<dyn DebugAny>);
 ///
 /// * [`BytesFormat`](crate::BytesFormat): how bytes are represented in
 ///   formats without native bytes.  Base64 by default.
-/// * [`OpenEnums`](crate::OpenEnums) (with the `open-enums` feature): the
+/// * [`OpenEnums`][open-enums] (with the `open-enums` feature): the
 ///   registered variants of open enums.  Required to deserialize open
 ///   enums, only the registered variants can be deserialized.
 ///
@@ -128,6 +128,16 @@ type Entry = (TypeKey, Arc<dyn DebugAny>);
 /// state.set_context(Context::with(Greeting("hello")));
 /// assert_eq!(state.get::<Greeting>().unwrap().0, "hello");
 /// ```
+#[cfg_attr(feature = "io", doc = "[io-module]: crate::io")]
+#[cfg_attr(
+    not(feature = "io"),
+    doc = "[io-module]: https://docs.rs/deser/latest/deser/io/"
+)]
+#[cfg_attr(feature = "open-enums", doc = "[open-enums]: crate::OpenEnums")]
+#[cfg_attr(
+    not(feature = "open-enums"),
+    doc = "[open-enums]: https://docs.rs/deser/latest/deser/struct.OpenEnums.html"
+)]
 #[derive(Clone, Default)]
 pub struct Context {
     // `None` for the empty context so that it does not allocate.

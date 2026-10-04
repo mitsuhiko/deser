@@ -41,7 +41,7 @@
 //! `serialize_as` and `deserialize_as` select an adapter for one direction
 //! only.  All three attributes can also be placed on structs, enums and
 //! unions to serialize and deserialize the type itself with an adapter (see
-//! [container adapters](crate::derive#container-adapters)).
+//! [container adapters][container-adapters]).
 //!
 //! To use an adapter outside of the derive, the [`As`] wrapper can be used.
 //! It holds a value and serializes and deserializes it with an adapter.
@@ -49,8 +49,8 @@
 //! # Provided Adapters
 //!
 //! * [`Same`]: uses [`Serialize`] and [`Deserialize`] of the type itself.
-//! * [`DisplayFromStr`]: serializes with [`Display`](std::fmt::Display) and
-//!   deserializes with [`FromStr`](std::str::FromStr).
+//! * [`DisplayFromStr`]: serializes with [`Display`](core::fmt::Display) and
+//!   deserializes with [`FromStr`](core::str::FromStr).
 //! * [`FromInto`] and [`TryFromInto`]: convert from and into another type.
 //! * [`DefaultOnError`]: uses the [`Default`] if a value cannot be
 //!   deserialized.
@@ -216,6 +216,16 @@
 //! they are not generic over the lifetime of these (like `Vec<A>` for
 //! `Vec<T>`), they require the adapters to be `'static`, which is the case
 //! for marker types.
+//!
+#![cfg_attr(
+    feature = "derive",
+    doc = "[container-adapters]: crate::derive#container-adapters"
+)]
+#![cfg_attr(
+    not(feature = "derive"),
+    doc = "[container-adapters]: https://docs.rs/deser/latest/deser/derive/index.html#container-adapters"
+)]
+
 use alloc::borrow::Cow;
 use alloc::vec::Vec;
 use core::cmp::Ordering;

@@ -111,6 +111,11 @@ pub struct Datetime {
 /// [`std::time::SystemTime`] serializes as [`Timestamp`], as do the
 /// timestamp types of `jiff`, `chrono` and `time` with the respective
 /// features.
+///
+#[cfg_attr(
+    not(feature = "std"),
+    doc = "[`std::time::SystemTime`]: https://doc.rust-lang.org/std/time/struct.SystemTime.html"
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Timestamp {
     /// The seconds since the Unix epoch.

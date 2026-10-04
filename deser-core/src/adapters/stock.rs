@@ -951,6 +951,11 @@ impl<T: Sync, A: Serialize<T>> Serialize<Vec<T>> for VecSkipError<A> {
 ///     weights: BTreeMap<Kind, f64>,
 /// }
 /// ```
+///
+#[cfg_attr(
+    not(feature = "std"),
+    doc = "[`HashMap`]: https://doc.rust-lang.org/std/collections/struct.HashMap.html"
+)]
 pub struct MapSkipError<KA = Same, VA = Same>(PhantomData<fn() -> (KA, VA)>);
 
 pub(crate) fn skip_map_sink<'a, 'de, M, K, V, KA, VA>(

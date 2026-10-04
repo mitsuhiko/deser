@@ -169,7 +169,7 @@ pub(crate) fn default_borrowed_value_atom<'de>(
 ///
 /// For all other atoms an error is returned that is based on
 /// [`Sink::expecting`] of the sink, which is
-/// [`Deserialize::expecting`] for a
+/// [`Deserialize::expecting`](crate::de::Deserialize::expecting) for a
 /// [`Slot`](crate::de::Slot).
 ///
 /// ```
