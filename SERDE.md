@@ -624,7 +624,7 @@ with.  This makes serde very fast at runtime but produces a lot of code for
 the compiler to process and for the binary to contain.  Deser uses dynamic
 dispatch for the sinks and emitters instead and moves everything that does
 not depend on the types of the fields out of the derived code.  Release
-builds of derived code compile about 2.3 times as fast as with serde (see
+builds of derived code compile about 2.2 times as fast as with serde (see
 [compile-times](https://github.com/mitsuhiko/deser/tree/main/compile-times)),
 at some cost of runtime performance (see
 [benchmark](https://github.com/mitsuhiko/deser/tree/main/benchmark)).

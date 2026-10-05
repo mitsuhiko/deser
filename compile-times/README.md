@@ -3,7 +3,7 @@
 This folder compares the compile times and binary sizes of serde,
 miniserde and deser with JSON and derived `Serialize` and `Deserialize`.
 The results are from `make bench-compile-times` on an Apple M5 Max with
-Rust 1.98, compile times are the best of three runs.
+Rust 1.99, compile times are the best of three runs.
 
 ## Where deser Stands
 
@@ -15,9 +15,9 @@ compile incrementally (unlike crates from crates.io), which made
 
 | library   | check | build | build --release |
 |-----------|-------|-------|-----------------|
-| serde     | 2.42s | 2.53s | 2.96s           |
-| miniserde | 1.88s | 1.99s | 2.12s           |
-| deser     | 2.36s | 2.50s | 2.68s           |
+| serde     | 2.59s | 2.80s | 3.00s           |
+| miniserde | 1.91s | 2.01s | 2.16s           |
+| deser     | 2.46s | 2.53s | 2.66s           |
 
 A library with 100 structs (eight fields, one of them nested) and 100
 enums which are all read and written as JSON, without the dependencies
@@ -26,25 +26,25 @@ is a library, in a binary only the code that is used would be compiled.
 
 | library   | check | build | build --release |
 |-----------|-------|-------|-----------------|
-| serde     | 0.33s | 0.42s | 7.83s           |
-| miniserde | 0.15s | 0.19s | 1.52s           |
-| deser     | 0.37s | 0.50s | 3.75s           |
+| serde     | 0.34s | 0.42s | 7.06s           |
+| miniserde | 0.15s | 0.20s | 1.43s           |
+| deser     | 0.38s | 0.51s | 3.18s           |
 
 * Clean builds are 0.5s-0.6s slower than with miniserde.  The crates of the
   data formats only depend on `deser-core` (everything but the derive
   macros), so `deser-core` and `deser-json` are compiled while `syn` and
-  `deser-derive` are.  The critical path is `syn`, `deser-derive` (0.9s,
+  `deser-derive` are.  The critical path is `syn`, `deser-derive` (0.8s,
   miniserde's derive takes 0.15s), `deser` (which re-exports the
   derive macros) and the program.  The build script of `zmij` (the
-  float formatting of `deser-json`) costs 0.15s: it runs at the same
-  time as the one of `proc-macro2` at the start of the critical path
-  and slows it down.
-* Release builds of derived code are 2.1 times as fast as with serde
-  but 2.5 times slower than with miniserde (deser 0.8 from 2023 took
-  3.1s, with far fewer features).  deser generates 271k lines of LLVM IR
-  (`cargo llvm-lines`) for the 100 types (serde 411k, miniserde 128k).
+  float formatting of `deser-json`, miniserde uses it as well) runs at
+  the same time as the one of `proc-macro2` at the start of the
+  critical path and slows it down.
+* Release builds of derived code are 2.2 times as fast as with serde
+  but 2.2 times slower than with miniserde (deser 0.8 from 2023 took
+  3.1s, with far fewer features).  deser generates 266k lines of LLVM IR
+  (`cargo llvm-lines`) for the 100 types (serde 394k, miniserde 126k).
   The frontend (`check`) spends most of its time type and borrow checking
-  the derived code, the expanded library has 61k lines (serde 71k,
+  the derived code, the expanded library has 68k lines (serde 71k,
   miniserde 22k, formatted like `cargo expand`).
 * Multimaps (fields that are collections collect repeated keys) made
   the derived code larger: every field got a branch for collecting in
@@ -123,22 +123,22 @@ parentheses is how much larger they are than hello world (in KiB).
 |---------------------------------|------------------|-----------------|
 | hello world                     | 334 KiB          | 279 KiB         |
 | serde                           | 418 KiB (+84)    | 311 KiB (+32)   |
-| miniserde                       | 383 KiB (+49)    | 295 KiB (+16)   |
-| deser                           | 602 KiB (+268)   | 409 KiB (+129)  |
-| serde, 100 types                | 1226 KiB (+892)  | 860 KiB (+581)  |
-| miniserde, 100 types            | 644 KiB (+310)   | 491 KiB (+211)  |
-| deser, 100 types                | 996 KiB (+662)   | 671 KiB (+391)  |
+| miniserde                       | 384 KiB (+49)    | 295 KiB (+16)   |
+| deser                           | 620 KiB (+285)   | 425 KiB (+146)  |
+| serde, 100 types                | 1194 KiB (+860)  | 828 KiB (+548)  |
+| miniserde, 100 types            | 628 KiB (+293)   | 474 KiB (+195)  |
+| deser, 100 types                | 1047 KiB (+712)  | 687 KiB (+408)  |
 
-* The fixed cost of deser is high: the small program is 184 KiB larger
-  than with serde (98 KiB optimized for size).  The derived code of
+* The fixed cost of deser is high: the small program is 202 KiB larger
+  than with serde (114 KiB optimized for size).  The derived code of
   the small program is only 3.5 KiB, the rest is the runtime (the
   drivers, the JSON reader and writer, errors, extension values like big
   integers and base64 bytes) and the parts of the standard library it
   uses.
-* A type costs less than with serde: 3.9 KiB per struct and enum
-  against 8.1 KiB with serde (2.6 KiB against 5.5 KiB optimized for
-  size, miniserde 2.6 KiB and 2 KiB).  With 100 types deser is 19%
-  smaller than serde (22% optimized for size).  It was 6.5 KiB (3.9 KiB): the fields are
+* A type costs less than with serde: 4.3 KiB per struct and enum
+  against 7.8 KiB with serde (2.6 KiB against 5.2 KiB optimized for
+  size, miniserde 2.4 KiB and 1.8 KiB).  With 100 types deser is 12%
+  smaller than serde (17% optimized for size).  It was 6.5 KiB (3.9 KiB): the fields are
   deserialized by slots that exist once per type of field (see above),
   functions like `from_str` only create the sink of the value for every
   type (`deserialize_value`) and the helpers that serialize, describe
@@ -169,8 +169,16 @@ parentheses is how much larger they are than hello world (in KiB).
   drivers of the stream serializers out of `to_string` and `to_vec`
   (`drive_whole` and friends): that was 49 KiB in the small program,
   another 16 KiB was the pretty printer of JSON that constant compact
-  configurations do not refer to anymore.  Layers of the deserializer
-  are only linked into programs that add layers (16 KiB).
+  configurations do not refer to anymore.
+* **The context** made the small program 17 KiB larger (16 KiB
+  optimized for size) and the program with 100 types 49 KiB (16 KiB).
+  The configurations of the formats hold a context which the
+  deserializers and serializers start with (33 KiB with 100 types), and
+  the driver enforces the `Limits` of its context with a layer
+  (`LimitsLayer`).  Whether the context has limits is only known at
+  runtime, so every program that deserializes contains the layered path
+  of the driver (`emit_layered`) and the limits layer, which used to be
+  linked only into programs that add layers.
 * **Floats** are formatted with `zmij`.  The formats used to have a
   fallback that formatted them with the standard library's `{:e}` and
   parsed them again to pick the even digits of ties.  That linked the
