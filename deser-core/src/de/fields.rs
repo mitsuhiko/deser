@@ -335,7 +335,8 @@ pub trait StructFields<'de>: Send {
     ///
     /// If [`StructFinish::ok`] returns `false` or required fields are
     /// missing, this fails with [`StructFinish::missing`].  The fields are
-    /// not dropped afterwards, so all values have to be taken out.
+    /// not dropped after it returns (also if it fails), so all values have
+    /// to be taken out.  If it panics, the fields are dropped.
     fn finish(&mut self, finish: &mut StructFinish<'_>, state: &mut State) -> Result<(), Error>;
 }
 
@@ -579,7 +580,10 @@ pub struct StructSink<'a, 'de> {
     // the fields that collect as bits by index (see
     // `StructFields::collect_fields`)
     collects: u64,
-    // the fields are empty once they are finished, they are not dropped
+    // `true` while the fields are empty after `finish`, they are not
+    // dropped then (see `ArenaStruct`).  It's reset when a field gets a
+    // value again (a root sink can receive another value after it
+    // finished), otherwise that value would never be dropped.
     finished: bool,
 }
 
@@ -672,6 +676,8 @@ impl<'a, 'de> StructSink<'a, 'de> {
     /// [`FieldKeySink::next_index`].
     #[inline(always)]
     fn next_index(&mut self, state: &mut State) -> Result<Option<usize>, Error> {
+        // every value of a field passes here, the fields can hold values
+        self.finished = false;
         let index = core::mem::replace(&mut self.key.index, UNKNOWN);
         if index < 64 && self.seen.small & (1 << index) == 0 {
             self.seen.small |= 1 << index;
@@ -810,14 +816,18 @@ impl<'a, 'de> Sink<'de> for StructSink<'a, 'de> {
     }
 
     fn finish(&mut self, state: &mut State) -> Result<(), Error> {
-        self.finished = true;
         let mut finish = StructFinish {
             seen: &self.seen,
             errors: &mut self.errors,
             fields: self.info.fields,
         };
         // SAFETY: see `fields`
-        unsafe { self.fields.as_mut() }.finish(&mut finish, state)
+        let rv = unsafe { self.fields.as_mut() }.finish(&mut finish, state);
+        // the fields took their values (also if they failed).  This is set
+        // after the call: if it panics, the values that are left in the
+        // fields are dropped with them.
+        self.finished = true;
+        rv
     }
 }
 

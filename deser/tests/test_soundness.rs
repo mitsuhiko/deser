@@ -1477,3 +1477,66 @@ fn test_forwarded_values_dropped_in_inverse_order() {
     assert_eq!(events.len(), 6);
     assert_eq!(*log.lock().unwrap(), ["second", "first"]);
 }
+
+#[test]
+fn test_struct_sink_reused_after_finish() {
+    use std::sync::Arc;
+
+    use deser::de::{DuplicateKeys, Slot, default_atom};
+
+    /// Holds a reference count of the test, so leaked values are visible.
+    #[derive(Debug)]
+    struct Counted(#[allow(dead_code)] Arc<()>);
+
+    thread_local! {
+        static COUNT: Arc<()> = Arc::new(());
+    }
+
+    impl<'de> Deserialize<'de> for Counted {
+        fn deserialize_atom(
+            slot: &mut Slot<Self>,
+            atom: Atom,
+            state: &mut State,
+        ) -> Result<(), Error> {
+            match atom {
+                Atom::Str(_) => {
+                    slot.set(Counted(COUNT.with(Arc::clone)));
+                    Ok(())
+                }
+                other => default_atom(slot, other, state),
+            }
+        }
+    }
+
+    #[derive(Deserialize, Debug)]
+    #[allow(dead_code)]
+    struct Pair {
+        a: Counted,
+        b: Counted,
+    }
+
+    let live = || COUNT.with(Arc::strong_count) - 1;
+    // the driver delivers another value to the root sink after it finished
+    // (after it failed or, if duplicate keys are accepted, after it
+    // succeeded), the values it gets are dropped with the sink
+    for (policy, first) in [
+        (DuplicateKeys::Error, &["a"][..]),
+        (DuplicateKeys::Last, &["a", "b"][..]),
+    ] {
+        let mut out = None::<Pair>;
+        {
+            let mut driver = DeserializeDriver::new(&mut out);
+            policy.set(driver.state_mut());
+            let mut events = vec![Event::map_start()];
+            for key in first {
+                events.extend([Event::from(*key), "x".into()]);
+            }
+            events.extend([Event::MapEnd, Event::map_start(), "b".into(), "y".into()]);
+            for event in events {
+                let _ = driver.emit(event);
+            }
+        }
+        drop(out);
+        assert_eq!(live(), 0);
+    }
+}

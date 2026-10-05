@@ -468,45 +468,63 @@ impl Drop for Arena {
             return;
         }
         self.reclaim();
-        // SAFETY: the chunks of the arena are valid, the chunks after the
-        // current one only hold dead blocks
-        unsafe {
-            let next = (*self.chunk).next;
-            if !next.is_null() {
-                (*self.chunk).next = ptr::null_mut();
-                free_chunks(next);
-            }
-            if self.top != self.base {
+        if self.top != self.base {
+            // SAFETY: the chunks of the arena are valid, the chunks after
+            // the current one only hold dead blocks
+            unsafe {
+                let next = (*self.chunk).next;
+                if !next.is_null() {
+                    (*self.chunk).next = ptr::null_mut();
+                    free_chunks(next);
+                }
                 // blocks are still alive, their chunks must stay valid
                 if let Some(bufs) = self.bufs() {
                     free_buffers(bufs);
                 }
                 self.orphan();
-                return;
             }
-            // the arena is empty, the largest chunk (the current one) is
-            // parked for the next arena
-            let chunk = self.chunk;
+            return;
+        }
+        // SAFETY: the arena is empty, all of its chunks only hold dead
+        // blocks.  Starting at the first one, the chunks are linked by
+        // `next` (the ones after the current one are spares).
+        unsafe {
+            let first = self.base.wrapping_sub(CHUNK_HEADER).cast::<Chunk>();
+            // the largest chunk that can be parked is parked for the next
+            // arena, so that it does not have to grow again
+            let mut parked = ptr::null_mut::<Chunk>();
+            let mut chunk = first;
+            while !chunk.is_null() {
+                let size = (*chunk).layout.size();
+                if size <= MAX_PARKED_CHUNK_SIZE
+                    && (parked.is_null() || size > (*parked).layout.size())
+                {
+                    parked = chunk;
+                }
+                chunk = (*chunk).next;
+            }
             // the buffers are in the first chunk, they are parked with the
             // chunk that is parked (before the other chunks are freed)
-            let first = self.base.wrapping_sub(CHUNK_HEADER).cast::<Chunk>();
-            if first != chunk {
-                (*chunk).bufs = core::mem::replace(&mut (*first).bufs, NO_BUFFERS);
+            if !parked.is_null() && parked != first {
+                free_buffers(&mut (*parked).bufs);
+                (*parked).bufs = core::mem::replace(&mut (*first).bufs, NO_BUFFERS);
             }
-            let prev = (*chunk).prev;
-            if !prev.is_null() {
-                (*chunk).prev = ptr::null_mut();
-                let mut chunk = prev;
-                while !chunk.is_null() {
-                    let prev = (*chunk).prev;
+            let mut chunk = first;
+            while !chunk.is_null() {
+                let next = (*chunk).next;
+                if chunk != parked {
                     Chunk::free(chunk);
-                    chunk = prev;
                 }
+                chunk = next;
             }
-            if (*chunk).layout.size() > MAX_PARKED_CHUNK_SIZE {
-                Chunk::free(chunk);
-            } else if let Some(chunk) = parked::park(NonNull::new_unchecked(chunk)) {
-                Chunk::free(chunk.as_ptr());
+            if let Some(parked) = NonNull::new(parked) {
+                (*parked.as_ptr()).prev = ptr::null_mut();
+                (*parked.as_ptr()).next = ptr::null_mut();
+                #[cfg(test)]
+                PARKED_SIZE.with(|size| size.set((*parked.as_ptr()).layout.size()));
+                if let Some(chunk) = parked::park(parked) {
+                    Chunk::free(chunk.as_ptr());
+                }
             }
         }
     }
@@ -612,6 +630,10 @@ unsafe fn release_orphaned_chunk(chunk: *mut Chunk) {
 std::thread_local! {
     /// The number of arenas that were orphaned on this thread (for tests).
     pub(crate) static ORPHANED: core::cell::Cell<usize> = const { core::cell::Cell::new(0) };
+
+    /// The size of the chunk that was parked last on this thread (for
+    /// tests, it's recorded even if all slots are taken).
+    pub(crate) static PARKED_SIZE: core::cell::Cell<usize> = const { core::cell::Cell::new(0) };
 }
 
 /// Frees a chunk and the chunks after it.
@@ -1050,6 +1072,35 @@ mod tests {
                 assert!(vec.is_empty() && vec.capacity() == cap);
             }
         }
+    }
+
+    #[test]
+    fn test_parks_largest_chunk() {
+        // more than fits into the first chunk, the arena grows
+        let mut arena = Arena::new();
+        let boxes = (0..2000)
+            .map(|idx| ArenaBox::new([idx as u64; 4], &mut arena))
+            .collect::<Vec<_>>();
+        // SAFETY: the current chunk is valid
+        let largest = unsafe { (*arena.chunk).layout.size() };
+        assert!(largest > FIRST_CHUNK_SIZE);
+        drop(boxes);
+        drop(arena);
+        assert_eq!(PARKED_SIZE.with(|size| size.get()), largest);
+
+        // chunks that are too large are not parked, the largest one that
+        // is not too large is
+        let mut arena = Arena::new();
+        let small = ArenaBox::new(1u8, &mut arena);
+        // SAFETY: the current chunk is valid
+        let first = unsafe { (*arena.chunk).layout.size() };
+        let big = arena.alloc(Layout::from_size_align(2 * MAX_PARKED_CHUNK_SIZE, 8).unwrap());
+        // SAFETY: the block was allocated with the size and is not used
+        // after
+        unsafe { release(big.as_ptr(), 2 * MAX_PARKED_CHUNK_SIZE) };
+        drop(small);
+        drop(arena);
+        assert_eq!(PARKED_SIZE.with(|size| size.get()), first);
     }
 
     #[test]

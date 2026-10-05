@@ -180,16 +180,16 @@ impl Context {
         let values = self.values.as_deref()?;
         self.lookup(values, TypeId::of::<T>()).map(|value| {
             // SAFETY: values are always stored with the key of their type
-            unsafe { &*(value as *const dyn DebugAny).cast::<T>() }
+            unsafe { value.downcast_ref_unchecked::<T>() }
         })
     }
 
     #[inline]
-    fn lookup<'a>(&self, values: &'a [Entry], key: TypeId) -> Option<&'a dyn DebugAny> {
+    fn lookup<'a>(&self, values: &'a [Entry], key: TypeId) -> Option<&'a Arc<dyn DebugAny>> {
         values
             .iter()
             .find(|(k, _)| k.0 == key)
-            .map(|(_, value)| &**value)
+            .map(|(_, value)| value)
     }
 
     /// Returns `true` if the context holds no values.

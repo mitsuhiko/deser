@@ -1227,7 +1227,9 @@ impl Output {
 
     #[inline(always)]
     pub(crate) fn write_char(&mut self, c: char) {
-        debug_assert!(c.is_ascii());
+        // checked here as `as u8` cuts off characters above 255.  The
+        // characters are mostly constants, then the check is free.
+        assert!(c.is_ascii(), "only ASCII characters can be written");
         self.out.push(c as u8);
     }
 
@@ -1243,7 +1245,7 @@ impl Output {
             return;
         }
         self.out.reserve(key.len() + 4);
-        // SAFETY: the capacity was reserved above
+        // SAFETY: the capacity was reserved above, the bytes are ASCII
         unsafe {
             if !first {
                 self.out.push_unchecked(b',');
@@ -1394,7 +1396,7 @@ impl Output {
             return self.write_escaped_str_slow(value);
         }
         self.out.reserve(value.len() + 2);
-        // SAFETY: the capacity was reserved above
+        // SAFETY: the capacity was reserved above, the bytes are ASCII
         unsafe {
             self.out.push_unchecked(b'"');
             self.out.push_str_unchecked(value);

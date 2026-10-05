@@ -29,6 +29,12 @@ All notable changes to deser are documented here.
 - Fixed a panic ("chunk too small") when allocating sinks and emitters
   larger than the chunks of the arena whose size is not a multiple of
   eight.
+- Fixed a leak of the field values of derived structs that receive
+  another value after they finished (the driver delivers a second value
+  to its root sink) or whose `finish` panics.
+- The arena now parks its largest chunk for the next deserialization or
+  serialization (up to 1 MiB) instead of the first one, so large
+  documents do not grow it again every time.
 
 ## 0.10.0
 

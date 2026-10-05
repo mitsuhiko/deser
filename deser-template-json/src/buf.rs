@@ -35,11 +35,16 @@ impl Buffer {
     }
 
     /// Writes an ASCII byte.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the byte is not ASCII (which would make the text invalid
+    /// UTF-8).  The bytes are mostly constants, then the check is free.
     #[inline(always)]
     pub(crate) fn push(&mut self, byte: u8) {
-        debug_assert!(byte.is_ascii());
+        assert!(byte.is_ascii(), "only ASCII bytes can be pushed");
         self.reserve(1);
-        // SAFETY: the capacity was reserved above
+        // SAFETY: the capacity was reserved above, the byte is ASCII
         unsafe { self.push_unchecked(byte) };
     }
 
@@ -47,9 +52,10 @@ impl Buffer {
     ///
     /// # Safety
     ///
-    /// The capacity must have been reserved.
+    /// The capacity must have been reserved and the byte must be ASCII.
     #[inline(always)]
     pub(crate) unsafe fn push_unchecked(&mut self, byte: u8) {
+        debug_assert!(byte.is_ascii());
         unsafe {
             let len = self.bytes.len();
             self.bytes.as_mut_ptr().add(len).write(byte);
@@ -134,4 +140,11 @@ fn test_copy_small() {
             assert!(out.starts_with('x') && out.ends_with('y'));
         }
     }
+}
+
+#[test]
+#[should_panic = "only ASCII bytes can be pushed"]
+fn test_push_non_ascii() {
+    // a byte that is not ASCII would make the text invalid UTF-8
+    Buffer::with_capacity(0).push(0xc3);
 }

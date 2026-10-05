@@ -34,6 +34,7 @@ impl<T> Mutex<T> {
 #[cfg(not(feature = "std"))]
 mod spin {
     use core::cell::UnsafeCell;
+    use core::marker::PhantomData;
     use core::ops::{Deref, DerefMut};
     use core::sync::atomic::{AtomicBool, Ordering};
 
@@ -55,11 +56,17 @@ mod spin {
             {
                 core::hint::spin_loop();
             }
-            MutexGuard(self)
+            MutexGuard(self, PhantomData)
         }
     }
 
-    pub(crate) struct MutexGuard<'a, T>(&'a Mutex<T>);
+    /// Like the guard of the standard library this is neither `Send` nor
+    /// `Sync` by default: it hands out references to `T` (so it's only
+    /// `Sync` if `T` is) and it's not sent between threads.
+    pub(crate) struct MutexGuard<'a, T>(&'a Mutex<T>, PhantomData<*const ()>);
+
+    // SAFETY: shared references to the guard only give out `&T`
+    unsafe impl<T: Sync> Sync for MutexGuard<'_, T> {}
 
     impl<T> Deref for MutexGuard<'_, T> {
         type Target = T;
