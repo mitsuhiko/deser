@@ -6,6 +6,8 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::any::{Any, TypeId};
 use core::fmt;
+use core::mem::ManuallyDrop;
+use core::ops::{Deref, DerefMut};
 
 use crate::{Position, State};
 
@@ -256,7 +258,56 @@ static RAW_REQUEST: &str = "raw value requested outside of a deserialization";
 pub struct Error {
     // boxed so that results stay small.  Errors are rare but results are
     // passed around for every single value.
-    inner: Box<ErrorInner>,
+    inner: ErrorBox,
+}
+
+/// The box of an error which is dropped out of line.
+///
+/// The drop glue of the box (the messages, sources, attachments and
+/// nested errors) used to be inlined everywhere an `Error` or a
+/// `Result<_, Error>` is dropped, in release builds there were a dozen
+/// copies of it.  Now dropping an error is a call.
+struct ErrorBox(ManuallyDrop<Box<ErrorInner>>);
+
+impl ErrorBox {
+    #[inline(always)]
+    fn new(inner: ErrorInner) -> ErrorBox {
+        ErrorBox(ManuallyDrop::new(Box::new(inner)))
+    }
+
+    /// Moves the error out of the box.
+    #[inline(always)]
+    fn into_inner(self) -> ErrorInner {
+        let mut this = ManuallyDrop::new(self);
+        // SAFETY: `this` is never dropped, so the box is taken exactly once
+        // and not dropped again by `ErrorBox::drop`.
+        *unsafe { ManuallyDrop::take(&mut this.0) }
+    }
+}
+
+impl Drop for ErrorBox {
+    #[inline(never)]
+    fn drop(&mut self) {
+        // SAFETY: the box is not used after this.  `into_inner`, the only
+        // other place that takes it, does not drop the `ErrorBox`.
+        unsafe { ManuallyDrop::drop(&mut self.0) }
+    }
+}
+
+impl Deref for ErrorBox {
+    type Target = ErrorInner;
+
+    #[inline(always)]
+    fn deref(&self) -> &ErrorInner {
+        &self.0
+    }
+}
+
+impl DerefMut for ErrorBox {
+    #[inline(always)]
+    fn deref_mut(&mut self) -> &mut ErrorInner {
+        &mut self.0
+    }
 }
 
 enum ErrorInner {
@@ -294,7 +345,7 @@ impl Error {
     #[cold]
     pub fn new<M: Into<Cow<'static, str>>>(kind: ErrorKind, msg: M) -> Error {
         Error {
-            inner: Box::new(ErrorInner::Single(ErrorData {
+            inner: ErrorBox::new(ErrorInner::Single(ErrorData {
                 kind,
                 msg: msg.into(),
                 source: None,
@@ -369,11 +420,10 @@ impl Error {
     /// individually: errors do not nest (see [`errors`](Self::errors)).
     pub(crate) fn push_error(&mut self, err: Error) {
         let errors = self.make_multiple();
-        match *err.inner {
-            ErrorInner::Single(data) => errors.push(Error {
-                inner: Box::new(ErrorInner::Single(data)),
-            }),
-            ErrorInner::Multiple(others) => errors.extend(others),
+        if matches!(*err.inner, ErrorInner::Single(_)) {
+            errors.push(err);
+        } else if let ErrorInner::Multiple(others) = err.inner.into_inner() {
+            errors.extend(others);
         }
     }
 
@@ -383,7 +433,7 @@ impl Error {
             let first = core::mem::replace(&mut *self.inner, ErrorInner::Multiple(Vec::new()));
             if let ErrorInner::Multiple(ref mut errors) = *self.inner {
                 errors.push(Error {
-                    inner: Box::new(first),
+                    inner: ErrorBox::new(first),
                 });
             }
         }

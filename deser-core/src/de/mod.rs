@@ -686,6 +686,40 @@ impl<'a, 'de> SinkHandle<'a, 'de> {
             _ => false,
         }
     }
+
+    // The handling of empty lexical atoms by optionals is not inlined into
+    // `atom` and `borrowed_atom`: it clones and retries the atom, which
+    // made every copy of them (and of the functions they are inlined into,
+    // like `atom_into_handle`) much larger.
+
+    /// Delivers an empty lexical atom to an optional handle (see
+    /// `empty_lexical_or_none`).
+    #[cold]
+    #[inline(never)]
+    fn empty_lexical_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        if !empty_lexical_or_none(atom, state, |atom, state| self.sink_mut().atom(atom, state))? {
+            *self = SinkHandle::null();
+        }
+        Ok(())
+    }
+
+    /// Delivers an empty borrowed lexical atom to an optional handle (see
+    /// `empty_lexical_or_none`).
+    #[cold]
+    #[inline(never)]
+    fn empty_lexical_borrowed_atom(
+        &mut self,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        let delivered = empty_lexical_or_none(atom, state, |atom, state| {
+            self.sink_mut().borrowed_atom(atom, state)
+        })?;
+        if !delivered {
+            *self = SinkHandle::null();
+        }
+        Ok(())
+    }
 }
 
 // The handle forwards to the sink it holds.
@@ -696,11 +730,7 @@ impl<'a, 'de> Sink<'de> for SinkHandle<'a, 'de> {
             return Ok(());
         }
         if self.is_optional() && is_empty_lexical(&atom, state) {
-            if !empty_lexical_or_none(atom, state, |atom, state| self.sink_mut().atom(atom, state))?
-            {
-                *self = SinkHandle::null();
-            }
-            return Ok(());
+            return self.empty_lexical_atom(atom, state);
         }
         self.sink_mut().atom(atom, state)
     }
@@ -711,13 +741,7 @@ impl<'a, 'de> Sink<'de> for SinkHandle<'a, 'de> {
             return Ok(());
         }
         if self.is_optional() && is_empty_lexical(&atom, state) {
-            let delivered = empty_lexical_or_none(atom, state, |atom, state| {
-                self.sink_mut().borrowed_atom(atom, state)
-            })?;
-            if !delivered {
-                *self = SinkHandle::null();
-            }
-            return Ok(());
+            return self.empty_lexical_borrowed_atom(atom, state);
         }
         self.sink_mut().borrowed_atom(atom, state)
     }
