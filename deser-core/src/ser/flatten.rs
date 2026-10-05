@@ -12,12 +12,21 @@ use crate::error::{Error, ErrorKind};
 use crate::event::Atom;
 use crate::ser::driver::Held;
 use crate::ser::{Boxed, Emit, MapEmitter, SerializeHandle, SerializeRef, StructEmitter};
+use crate::unwind::pop_all;
 
 /// Holds the values a value forwarded to (see [`Emit::Forward`]).
 ///
 /// The `Emit`s of values that forward to other values borrow from the
-/// forwarded values which is why they are held here.
+/// forwarded values which is why they are held here.  Every value can
+/// borrow from the value before it (the value that forwarded to it), they
+/// are dropped from the last to the first.
 pub(crate) struct Forwarded(Vec<Held>);
+
+impl Drop for Forwarded {
+    fn drop(&mut self) {
+        pop_all(&mut self.0, drop);
+    }
+}
 
 impl Forwarded {
     /// Creates an empty list of forwarded values.

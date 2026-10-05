@@ -358,7 +358,10 @@ impl Arena {
     #[cold]
     #[inline(never)]
     fn alloc_slow(&mut self, layout: Layout) -> NonNull<u8> {
-        let needed = layout.size() + layout.align() + FOOTER_SIZE;
+        // the most `place` needs: the padding before the block (less than
+        // its alignment), the block, the padding before the footer (less
+        // than the alignment of the footer) and the footer
+        let needed = layout.size() + layout.align() + FOOTER_ALIGN + FOOTER_SIZE;
         let prev_top = self.top;
         if self.chunk.is_null() {
             let chunk =
@@ -1061,6 +1064,33 @@ mod tests {
         let c = ArenaBox::new((), &mut arena);
         drop((a, b, c));
         assert!(arena.is_empty());
+    }
+
+    #[test]
+    fn test_large_blocks() {
+        // blocks that do not fit into the chunks of the arena get a chunk
+        // of their own, whatever their size and alignment (sizes that are
+        // not a multiple of the alignment of the footers need padding)
+        for align in [1, 2, 8, 16, 64] {
+            for size in [8191, 8193, 16_383, 20_003, 40_001] {
+                let layout = Layout::from_size_align(size, align).unwrap();
+                // into a new arena and after a block in the first chunk
+                for after_small in [false, true] {
+                    let mut arena = Arena::new();
+                    let small = after_small.then(|| ArenaBox::new(1u8, &mut arena));
+                    let block = arena.alloc(layout);
+                    assert_eq!(block.as_ptr().addr() % align, 0);
+                    // SAFETY: the block was allocated with the size and is
+                    // not used after
+                    unsafe {
+                        block.as_ptr().write_bytes(0xaa, size);
+                        release(block.as_ptr(), size);
+                    }
+                    drop(small);
+                    assert!(arena.is_empty());
+                }
+            }
+        }
     }
 
     #[test]

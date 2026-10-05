@@ -40,6 +40,7 @@ mod std_impls;
 mod std_only_impls;
 mod sync;
 mod text;
+mod unwind;
 
 pub use self::bytes_format::BytesFormat;
 pub use self::context::Context;

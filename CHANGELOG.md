@@ -11,6 +11,17 @@ All notable changes to deser are documented here.
   re-exports of `deser-json`.  The serializers of `deser-jsonc` and
   `deser-json5` write their own raw values (`RawJsonc`, `RawJson5`) as they
   are, `RawJson` values are encoded like values of other formats.
+- Fixed a use after free when a flattened value forwards to a value
+  which forwards again and the second forwarded value borrows from the
+  first one: the forwarded values are now dropped from the last to the
+  first.
+- Fixed the order in which sinks and emitters are dropped when the drop
+  of one of them panics: the drivers drop the others from the innermost
+  to the outermost too, so values that borrow from the ones below them
+  are dropped first.
+- Fixed a panic ("chunk too small") when allocating sinks and emitters
+  larger than the chunks of the arena whose size is not a multiple of
+  eight.
 
 ## 0.10.0
 

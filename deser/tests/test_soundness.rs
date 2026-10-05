@@ -1200,3 +1200,280 @@ fn test_transient_driver_cannot_be_replaced() {
     }));
     assert!(rv.is_err());
 }
+
+/// The order in which values were dropped.
+type DropLog = std::sync::Arc<std::sync::Mutex<Vec<&'static str>>>;
+
+#[test]
+fn test_sink_panics_in_drop() {
+    // the sinks below a sink that panics while it's dropped are still
+    // dropped in inverse order: a child that writes into its parent when
+    // it's dropped does so before the parent is dropped.
+    struct Parent {
+        slot: Option<String>,
+        log: DropLog,
+    }
+
+    impl Drop for Parent {
+        fn drop(&mut self) {
+            self.log.lock().unwrap().push("parent");
+        }
+    }
+
+    impl<'de> Sink<'de> for Parent {
+        fn seq(&mut self, _state: &mut State) -> Result<(), Error> {
+            Ok(())
+        }
+
+        fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+            let log = self.log.clone();
+            Ok(SinkHandle::arena(
+                Child {
+                    out: &mut self.slot,
+                    log,
+                },
+                state,
+            ))
+        }
+    }
+
+    struct Child<'a> {
+        out: &'a mut Option<String>,
+        log: DropLog,
+    }
+
+    impl Drop for Child<'_> {
+        fn drop(&mut self) {
+            *self.out = Some("written by the child".into());
+            self.log.lock().unwrap().push("child");
+        }
+    }
+
+    impl<'de> Sink<'de> for Child<'_> {
+        fn seq(&mut self, _state: &mut State) -> Result<(), Error> {
+            Ok(())
+        }
+
+        fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+            let log = self.log.clone();
+            Ok(SinkHandle::arena(Panicking(log), state))
+        }
+    }
+
+    struct Panicking(DropLog);
+
+    impl Drop for Panicking {
+        fn drop(&mut self) {
+            self.0.lock().unwrap().push("panicking");
+            panic!("the sink panics while it's dropped");
+        }
+    }
+
+    impl<'de> Sink<'de> for Panicking {
+        fn seq(&mut self, _state: &mut State) -> Result<(), Error> {
+            Ok(())
+        }
+    }
+
+    let log = DropLog::default();
+    let rv = catch_unwind(AssertUnwindSafe(|| {
+        let mut driver = DeserializeDriver::from_fn(|state| {
+            SinkHandle::arena(
+                Parent {
+                    slot: Some("the value of the parent".into()),
+                    log: log.clone(),
+                },
+                state,
+            )
+        });
+        for _ in 0..3 {
+            driver.emit(Event::seq_start()).unwrap();
+        }
+    }));
+    assert!(rv.is_err());
+    assert_eq!(*log.lock().unwrap(), ["panicking", "child", "parent"]);
+}
+
+#[test]
+fn test_emitter_panics_in_drop() {
+    // the frames below an emitter that panics while it's dropped are still
+    // dropped in inverse order: a value that borrows from the emitter of
+    // the frame below it is dropped before that emitter.
+    use deser::ser::SeqEmitter;
+
+    struct Root(DropLog);
+
+    impl Serialize for Root {
+        fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
+            Ok(Emit::seq(
+                OuterEmitter {
+                    data: "owned by the outer emitter".into(),
+                    done: false,
+                    log: value.0.clone(),
+                },
+                state,
+            ))
+        }
+    }
+
+    struct OuterEmitter {
+        data: String,
+        done: bool,
+        log: DropLog,
+    }
+
+    impl Drop for OuterEmitter {
+        fn drop(&mut self) {
+            self.log.lock().unwrap().push("outer");
+        }
+    }
+
+    impl SeqEmitter for OuterEmitter {
+        fn next(&mut self, _state: &mut State) -> Result<Option<SerializeHandle<'_>>, Error> {
+            if std::mem::replace(&mut self.done, true) {
+                return Ok(None);
+            }
+            Ok(Some(SerializeHandle::heap(Borrower {
+                data: &self.data,
+                log: self.log.clone(),
+            })))
+        }
+    }
+
+    /// Borrows from the outer emitter and reads it when it's dropped.
+    struct Borrower<'a> {
+        data: &'a String,
+        log: DropLog,
+    }
+
+    impl Drop for Borrower<'_> {
+        fn drop(&mut self) {
+            assert_eq!(self.data, "owned by the outer emitter");
+            self.log.lock().unwrap().push("borrower");
+        }
+    }
+
+    impl Serialize for Borrower<'_> {
+        fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
+            Ok(Emit::seq(Middle(Some(Inner(value.log.clone()))), state))
+        }
+    }
+
+    /// The frame of the borrower stays below the one that panics.
+    struct Middle(Option<Inner>);
+
+    impl SeqEmitter for Middle {
+        fn next(&mut self, _state: &mut State) -> Result<Option<SerializeHandle<'_>>, Error> {
+            Ok(self.0.take().map(SerializeHandle::heap))
+        }
+    }
+
+    struct Inner(DropLog);
+
+    impl Serialize for Inner {
+        fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
+            Ok(Emit::seq(PanickingEmitter(value.0.clone()), state))
+        }
+    }
+
+    struct PanickingEmitter(DropLog);
+
+    impl Drop for PanickingEmitter {
+        fn drop(&mut self) {
+            self.0.lock().unwrap().push("panicking");
+            panic!("the emitter panics while it's dropped");
+        }
+    }
+
+    impl SeqEmitter for PanickingEmitter {
+        fn next(&mut self, _state: &mut State) -> Result<Option<SerializeHandle<'_>>, Error> {
+            Ok(Some(SerializeHandle::heap(1u64)))
+        }
+    }
+
+    // dropped with an open container on top and with a pending value
+    for events in [3, 4] {
+        let log = DropLog::default();
+        let root = Root(log.clone());
+        let rv = catch_unwind(AssertUnwindSafe(|| {
+            let mut driver = SerializeDriver::new(&root);
+            for _ in 0..events {
+                driver.next().unwrap();
+            }
+        }));
+        assert!(rv.is_err());
+        assert_eq!(*log.lock().unwrap(), ["panicking", "borrower", "outer"]);
+    }
+}
+
+#[test]
+fn test_forwarded_values_dropped_in_inverse_order() {
+    // a flattened value that forwards to a value which forwards again: the
+    // second forwarded value borrows from the first one and is dropped
+    // before it
+    struct Forwarding(DropLog);
+
+    impl Serialize for Forwarding {
+        fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Emit<'a>, Error> {
+            Ok(Emit::Forward(SerializeHandle::heap(First {
+                text: "owned by the first value".into(),
+                log: value.0.clone(),
+            })))
+        }
+    }
+
+    struct First {
+        text: String,
+        log: DropLog,
+    }
+
+    impl Drop for First {
+        fn drop(&mut self) {
+            self.log.lock().unwrap().push("first");
+        }
+    }
+
+    impl Serialize for First {
+        fn serialize<'a>(value: &'a Self, _state: &mut State) -> Result<Emit<'a>, Error> {
+            Ok(Emit::Forward(SerializeHandle::heap(Second {
+                first: value,
+            })))
+        }
+    }
+
+    /// Borrows from the first value and reads it when it's dropped.
+    struct Second<'a> {
+        first: &'a First,
+    }
+
+    impl Drop for Second<'_> {
+        fn drop(&mut self) {
+            assert_eq!(self.first.text, "owned by the first value");
+            self.first.log.lock().unwrap().push("second");
+        }
+    }
+
+    impl Serialize for Second<'_> {
+        fn serialize<'a>(value: &'a Self, state: &mut State) -> Result<Emit<'a>, Error> {
+            let mut fields = BTreeMap::new();
+            fields.insert("text", value.first.text.as_str());
+            Ok(Emit::Forward(SerializeHandle::arena(fields, state)))
+        }
+    }
+
+    #[derive(Serialize)]
+    struct WithForwarding {
+        before: u32,
+        #[deser(flatten)]
+        flat: Forwarding,
+    }
+
+    let log = DropLog::default();
+    let value = WithForwarding {
+        before: 1,
+        flat: Forwarding(log.clone()),
+    };
+    let events = drive_events(&value, 0, None).unwrap();
+    assert_eq!(events.len(), 6);
+    assert_eq!(*log.lock().unwrap(), ["second", "first"]);
+}

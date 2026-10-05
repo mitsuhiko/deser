@@ -10,6 +10,7 @@ use crate::de::limits::{Limits, LimitsLayer};
 use crate::de::{Deserialize, InlineEvent, Sink, SinkHandle};
 use crate::error::{Error, ErrorKind};
 use crate::event::{Atom, ContainerShape, Event};
+use crate::unwind::pop_all;
 use crate::{Context, State};
 
 /// The driver allows emitting deserialization events into a [`Deserialize`].
@@ -1181,9 +1182,9 @@ impl<'de> DriverCore<'de> {
     /// Drops the sinks and keeps the stack for the next driver.
     fn release(&mut self) {
         // sinks borrow from the sinks below them, drop them in inverse order
-        while let Some((sink, _)) = self.sink_stack.pop() {
-            sink.release(&mut self.state);
-        }
+        // (also if the drop of one panics).  The root sink is below them.
+        let state = &mut self.state;
+        pop_all(&mut self.sink_stack, |(sink, _)| sink.release(state));
         // the sinks are dropped before the state, the arena they are in is
         // only freed if they were dropped
         if let Some(root) = self.root.take() {

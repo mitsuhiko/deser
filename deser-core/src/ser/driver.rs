@@ -11,6 +11,7 @@ use crate::ser::{
     Begin, BeginKind, Boxed, ContainerShape, Emit, Erased, FIELDS_END, HandleInner, IndexedSeq,
     IndexedStruct, PLAIN_BUDGET, PlainSink, Serialize, SerializeRef, StructField,
 };
+use crate::unwind::DropInReverse;
 use crate::{Atom, Event, State};
 use crate::{Context, Text};
 
@@ -175,13 +176,20 @@ impl Drop for Held {
 impl<'a> Drop for SerializeDriver<'a> {
     fn drop(&mut self) {
         // the pending values borrow from the top frame and inner frames can
-        // borrow from outer frames, drop in inverse order.
-        self.needs_finish = None;
-        self.next_value = None;
-        while let Some(frame) = self.stack.pop() {
+        // borrow from outer frames, drop in inverse order.  This order is
+        // kept if a drop panics: the guard drops the remaining frames in
+        // inverse order and as locals are dropped in inverse order (also
+        // when unwinding), the pending values are dropped before it.
+        let frames = DropInReverse(&mut self.stack);
+        let needs_finish = self.needs_finish.take();
+        let next_value = self.next_value.take();
+        drop(next_value);
+        drop(needs_finish);
+        while let Some(frame) = frames.0.pop() {
             // the emitter borrows from the serializable, drop it first
             frame.emitter.release(&mut self.state);
         }
+        drop(frames);
         let stack = core::mem::take(&mut self.stack);
         self.state.arena.put_vec(Buffer::SerializeStack, stack);
     }
