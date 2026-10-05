@@ -218,6 +218,71 @@ fn test_other_format() {
     assert_eq!(json["own"].get(), "[1,2]");
 }
 
+/// The identity of a binary format.
+static BINARY: deser::ext::RawFormatId = deser::ext::RawFormatId::new("binary", false);
+
+/// A raw format with the identity of a binary format and the scanner of
+/// the dialect (see `test_foreign_raw_request`).
+struct Disguised;
+
+impl deser::ext::RawFormat for Disguised {
+    fn info() -> &'static deser::ext::RawFormatInfo {
+        use deser::ext::RawFormatInfo;
+
+        fn replay<'de>(
+            _input: &'de [u8],
+            _driver: &mut deser::de::DeserializeDriver<'_, 'de>,
+        ) -> Result<(), deser::Error> {
+            Ok(())
+        }
+        fn encode(_value: deser::ser::SerializeRef<'_>) -> Result<Vec<u8>, deser::Error> {
+            Ok(Vec::new())
+        }
+        fn fallback(_input: &[u8]) -> deser::Atom<'_> {
+            deser::Atom::Null
+        }
+
+        static INFO: std::sync::OnceLock<RawFormatInfo> = std::sync::OnceLock::new();
+        INFO.get_or_init(|| {
+            let mut info = RawFormatInfo::new(&BINARY, replay, encode, fallback);
+            info.set_data(super::TextFormat::info().data().unwrap());
+            info
+        })
+    }
+}
+
+/// Declares the binary format as the format of the raw values before
+/// every event.
+struct DeclareBinary;
+
+impl deser::de::Layer for DeclareBinary {
+    fn event<'de>(
+        &mut self,
+        event: deser::de::LayerEvent<'_, 'de>,
+        next: &mut deser::de::Next<'_, 'de>,
+    ) -> Result<(), deser::Error> {
+        next.state_mut().declare_raw_format(&BINARY);
+        next.emit(event)
+    }
+}
+
+#[test]
+fn test_foreign_raw_request() {
+    // requests for raw values of other formats are not passed on: the
+    // input of the dialect must never be emitted with the description of
+    // another format (the serializers of that format would write it as it
+    // is, binary formats emit bytes that are not UTF-8 like this).
+    if !KEEPS_INPUT {
+        return;
+    }
+    let rv = dialect::Deserializer::from_str("[[1, 2]]")
+        .deserialize_with::<Vec<deser::ext::Raw<'static, Disguised>>, _>(|driver| {
+            driver.push_layer(DeclareBinary)
+        });
+    let err = rv.unwrap_err();
+    assert!(err.to_string().contains("raw value"), "{err}");
+}
+
 fn recording_into<T: deser::de::DeserializeOwned>(recording: &Recording) -> T {
     let mut out = None;
     let mut state = deser::State::new();

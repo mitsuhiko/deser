@@ -11,6 +11,13 @@ All notable changes to deser are documented here.
   re-exports of `deser-json`.  The serializers of `deser-jsonc` and
   `deser-json5` write their own raw values (`RawJsonc`, `RawJson5`) as they
   are, `RawJson` values are encoded like values of other formats.
+- **Breaking:** `State::take_raw_request` takes the `RawFormatId` of the
+  format and discards requests for raw values of other formats.  This
+  fixes a soundness issue: as the declared raw format can be changed by
+  everything with access to the state, parsers could emit their input
+  with the description of another format, for instance MessagePack or
+  CBOR bytes that are not UTF-8 as raw JSON, which the JSON serializer
+  and `RawJson::get` then handed out as `str`.
 - Fixed a use after free when a flattened value forwards to a value
   which forwards again and the second forwarded value borrows from the
   first one: the forwarded values are now dropped from the last to the

@@ -780,7 +780,7 @@ impl Parser {
                         // request if it was not kept (see `raw_format`)
                         let format = match self.raw_format.take() {
                             Some(format) => format,
-                            None => match out.state_mut().take_raw_request() {
+                            None => match out.state_mut().take_raw_request(&crate::raw::ID) {
                                 Some(format) => format,
                                 None => return Err(raw_without_format()),
                             },

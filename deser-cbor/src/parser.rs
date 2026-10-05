@@ -586,7 +586,7 @@ pub(crate) fn skip_raw(cur: &mut Cursor<'_>, buffer: &mut Vec<u8>) -> Result<(),
 /// Returns the format of the raw value that the result of an event
 /// requested (see `State::take_raw_request`).
 fn requested_format(state: &mut State) -> Result<&'static RawFormatInfo, Error> {
-    state.take_raw_request().ok_or_else(|| {
+    state.take_raw_request(&crate::raw::ID).ok_or_else(|| {
         Error::new(
             ErrorKind::InvalidState,
             "raw value requested without a format",

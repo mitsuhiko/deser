@@ -32,7 +32,8 @@ use crate::ser::{Emit, Serialize, SerializeHandle, SerializeRef};
 /// * checks with [`Error::is_raw_request`](crate::Error::is_raw_request)
 ///   whether the result of an event requests the next value as raw value
 ///   and takes the description of the format with
-///   [`State::take_raw_request`](crate::State::take_raw_request).
+///   [`State::take_raw_request`](crate::State::take_raw_request) (with
+///   its [`RawFormatId`], requests of other formats are discarded).
 /// * validates a value that is wanted as raw value and emits its input as
 ///   [`RawInput`] (an [`Atom::Ext`]) with that description rather than
 ///   its events.
@@ -225,14 +226,18 @@ impl<'a> RawInput<'a> {
     /// The input must be a single, valid value of the format.  If the
     /// format is text, it must be valid UTF-8.  Serializers of the format
     /// write the input as it is.
+    ///
+    /// Descriptions of formats can be created by anybody (with the
+    /// identity of any format), formats must only emit their input with
+    /// a description of their own identity (see
+    /// [`State::take_raw_request`](crate::State::take_raw_request)).
     pub unsafe fn new<B: Into<Cow<'a, [u8]>>>(
         bytes: B,
         format: &'static RawFormatInfo,
     ) -> RawInput<'a> {
-        RawInput {
-            bytes: bytes.into(),
-            format,
-        }
+        let bytes = bytes.into();
+        debug_assert!(!format.is_text() || core::str::from_utf8(&bytes).is_ok());
+        RawInput { bytes, format }
     }
 
     /// Returns the encoded value.

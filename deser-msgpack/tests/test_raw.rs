@@ -160,3 +160,71 @@ fn test_reader_in_chunks() {
     assert_eq!(to_hex(value.payload.as_bytes()), PAYLOAD);
     assert_eq!(value.after, 42);
 }
+
+/// A raw format with the identity of JSON (a text format) and the scanner
+/// of Msgpack (see `test_foreign_raw_request`).
+struct Disguised;
+
+impl deser::ext::RawFormat for Disguised {
+    fn info() -> &'static deser::ext::RawFormatInfo {
+        use deser::ext::RawFormatInfo;
+        use deser_json::Json;
+
+        fn replay<'de>(
+            _input: &'de [u8],
+            _driver: &mut deser::de::DeserializeDriver<'_, 'de>,
+        ) -> Result<(), deser::Error> {
+            Ok(())
+        }
+        fn encode(_value: deser::ser::SerializeRef<'_>) -> Result<Vec<u8>, deser::Error> {
+            Ok(b"null".to_vec())
+        }
+        fn fallback(_input: &[u8]) -> deser::Atom<'_> {
+            deser::Atom::Null
+        }
+
+        static INFO: std::sync::OnceLock<RawFormatInfo> = std::sync::OnceLock::new();
+        INFO.get_or_init(|| {
+            let mut info = RawFormatInfo::new(Json::info().id(), replay, encode, fallback);
+            info.set_data(deser_msgpack::Msgpack::info().data().unwrap());
+            info
+        })
+    }
+}
+
+/// Declares JSON as the format of the raw values before every event.
+struct DeclareJson;
+
+impl deser::de::Layer for DeclareJson {
+    fn event<'de>(
+        &mut self,
+        event: deser::de::LayerEvent<'_, 'de>,
+        next: &mut deser::de::Next<'_, 'de>,
+    ) -> Result<(), deser::Error> {
+        use deser::ext::RawFormat;
+        next.state_mut()
+            .declare_raw_format(deser_json::Json::info().id());
+        next.emit(event)
+    }
+}
+
+#[test]
+fn test_foreign_raw_request() {
+    // Requests for raw values of other formats are not passed on: the
+    // input of Msgpack (bytes which are not UTF-8, `[bin8 ff fe]`) must
+    // never be emitted with the description of a text format, the JSON
+    // serializer would write it as text.
+    let input = [0x91, 0xc4, 0x02, 0xff, 0xfe];
+    let rv = deser_msgpack::Deserializer::from_slice(&input).deserialize_with::<Vec<
+        deser::ext::Raw<'static, Disguised>,
+    >, _>(|driver| {
+        driver.push_layer(DeclareJson)
+    });
+    match rv {
+        Ok(values) => {
+            let text = deser_json::to_string(&values).unwrap();
+            assert!(std::str::from_utf8(text.as_bytes()).is_ok());
+        }
+        Err(err) => assert!(err.to_string().contains("raw value"), "{err}"),
+    }
+}

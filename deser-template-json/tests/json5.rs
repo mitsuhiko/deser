@@ -17,6 +17,10 @@ pub const DIALECT: crate::Dialect = crate::Dialect {
 #[allow(dead_code)]
 pub type RawText<'a> = deser_json5::RawJson5<'a>;
 
+/// The format of the raw text values.
+#[allow(dead_code)]
+pub type TextFormat = deser_json5::Json5;
+
 /// `true` if raw text values keep their input.
 #[allow(dead_code)]
 pub const KEEPS_INPUT: bool = true;
