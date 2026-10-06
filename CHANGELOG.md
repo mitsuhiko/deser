@@ -68,6 +68,10 @@ All notable changes to deser are documented here.
   frame (like when Python reads pickles from a file).  The deserializer
   continued with the next pickle in the frame while the stream
   deserializer failed.
+- `deser-plist`: strings that start with `//` or `/*` are quoted in
+  OpenStep property lists, they started a comment.
+- `deser-ini`: the serializer rejects keys that start with a byte order
+  mark, which is skipped at the start of a file.
 - `deser-php`: the serializer rejects references that do not refer to a
   value before them (or `r:` references to values that are not objects)
   instead of writing output that cannot be deserialized.

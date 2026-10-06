@@ -51,7 +51,10 @@ fn format_real(value: f64) -> String {
 
 /// Writes a string, quoted if necessary.
 pub(crate) fn write_str(out: &mut String, value: &str) {
+    // `//` and `/*` start comments where a value starts
     let unquoted = !value.is_empty()
+        && !value.starts_with("//")
+        && !value.starts_with("/*")
         && value.bytes().all(|c| {
             c.is_ascii_alphanumeric() || matches!(c, b'_' | b'$' | b'/' | b':' | b'.' | b'-')
         });

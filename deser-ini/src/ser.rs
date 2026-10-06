@@ -751,10 +751,11 @@ impl Writer<'_> {
                 key.starts_with(|c: char| c.is_ascii_alphabetic())
                     && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
             }
+            // a byte order mark at the start of the file is skipped
             Syntax::Ini => {
                 !key.is_empty()
                     && key.trim_matches([' ', '\t']) == key
-                    && !key.starts_with(['[', ';', '#'])
+                    && !key.starts_with(['[', ';', '#', '\u{feff}'])
                     && !key.contains(['=', '\n', '\r'])
                     && !(self.config.colon_delimiter && key.contains(':'))
             }

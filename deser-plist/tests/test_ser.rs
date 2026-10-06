@@ -103,6 +103,13 @@ fn test_ascii() {
         "<01020304 05>\n"
     );
     assert_eq!(write_str(&Vec::<u32>::new(), Format::Ascii), "()\n");
+    // comments start with `//` and `/*`
+    assert_eq!(
+        write_str(&vec!["//x", "/*x", "a//b", "/x"], Format::Ascii),
+        "(\n\t\"//x\",\n\t\"/*x\",\n\ta//b,\n\t/x,\n)\n"
+    );
+    let value: Vec<String> = deser_plist::from_slice(b"(\"//x\", \"/*x\", a//b, /x)").unwrap();
+    assert_eq!(value, ["//x", "/*x", "a//b", "/x"]);
 }
 
 #[test]

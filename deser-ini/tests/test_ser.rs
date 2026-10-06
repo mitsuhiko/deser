@@ -229,6 +229,8 @@ fn test_git() {
     }
     let value = BTreeMap::from([("s.x", BTreeMap::from([("a", 1)]))]);
     assert!(config.to_string(&value).is_err());
+    // a byte order mark at the start is skipped when reading
+    assert!(to_string(&BTreeMap::from([("\u{feff}a", 1)])).is_err());
 
     // names of keys and sections are case insensitive, the names of
     // subsections are not
