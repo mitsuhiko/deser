@@ -241,24 +241,38 @@ pub fn check_stream<F: Format>(config: &F::Config, input: &Input<'_>) {
 /// not need to be a value of the format and configuration: types that the
 /// format does not have are converted and different keys can become the
 /// same (the integer `1` and the string `"1"` are the same key in JSON,
-/// the last one is kept).  After that the value has to be stable: it
+/// the last one is kept, which needs another round trip).  After that the
+/// value has to be stable: it
 /// deserializes to the same value and serializes to the same output
 /// again.
 pub fn check_roundtrip<F: Format>(ser_flags: u32, value: &Value) {
     let (ser, de) = F::ser_config(ser_flags, Context::with(DuplicateKeys::Last));
-    let Ok(output) = F::serialize(&ser, value) else {
+    let Ok(first_output) = F::serialize(&ser, value) else {
         return;
     };
-    let first = reparse::<F>(&de, &output);
+    let mut first = reparse::<F>(&de, &first_output);
 
+    // with duplicate keys the value can differ from what it would be
+    // without them (for instance PHP arrays are lists if their keys are),
+    // that's normalized by another round trip
     let (ser, de) = F::ser_config(ser_flags, Context::default());
-    let Ok(output) = F::serialize(&ser, &first) else {
+    let Ok(mut output) = F::serialize(&ser, &first) else {
         return;
     };
-    let second = reparse::<F>(&de, &output);
+    let mut second = reparse::<F>(&de, &output);
+    if first != second {
+        first = second;
+        let Ok(next) = F::serialize(&ser, &first) else {
+            return;
+        };
+        output = next;
+        second = reparse::<F>(&de, &output);
+    }
     if first != second {
         panic!(
-            "the value changed after a round trip\noutput: {:?}\nbefore: {first:?}\nafter:  {second:?}",
+            "the value changed after a round trip\nfirst output: {:?}\noutput: {:?}\n\
+             before: {first:?}\nafter:  {second:?}",
+            Escaped(&first_output),
             Escaped(&output)
         );
     }

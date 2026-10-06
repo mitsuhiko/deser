@@ -768,9 +768,12 @@ impl Format for Urlencoded {
     }
 
     fn ser_config(flags: u32, context: Context) -> (Self::SerConfig, Self::Config) {
-        use deser_urlencoded::ArrayFormat;
+        use deser_urlencoded::{ArrayFormat, Nesting};
+        // with `Nesting::Flat` sequences cannot be read back as sequences
+        // (`a[]` is a key)
+        let nesting = pick(flags, 0, &[Nesting::Brackets, Nesting::Dots]);
         let config = deser_urlencoded::SerializerConfig::builder()
-            .nesting(Urlencoded::nesting(flags))
+            .nesting(nesting)
             // `ArrayFormat::Repeat` is not used as sequences with a single
             // element cannot be told apart from atoms
             .arrays(pick(
@@ -782,7 +785,7 @@ impl Format for Urlencoded {
             .build();
         // the serializer does not limit the depth of values
         let de = deser_urlencoded::DeserializerConfig::builder()
-            .nesting(Urlencoded::nesting(flags))
+            .nesting(nesting)
             .max_depth(usize::MAX)
             .max_params(usize::MAX)
             .context(context)
