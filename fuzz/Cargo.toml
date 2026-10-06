@@ -1,0 +1,158 @@
+[package]
+name = "deser-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+arbitrary = "1"
+libfuzzer-sys = "0.4"
+deser = { path = "../deser", features = ["derive"] }
+deser-cbor = { path = "../deser-cbor" }
+deser-csv = { path = "../deser-csv" }
+deser-debug = { path = "../deser-debug" }
+deser-env = { path = "../deser-env" }
+deser-hj = { path = "../deser-hj" }
+deser-ini = { path = "../deser-ini" }
+deser-json = { path = "../deser-json" }
+deser-json5 = { path = "../deser-json5" }
+deser-jsonc = { path = "../deser-jsonc" }
+deser-msgpack = { path = "../deser-msgpack" }
+deser-php = { path = "../deser-php" }
+deser-pickle = { path = "../deser-pickle" }
+deser-plist = { path = "../deser-plist" }
+deser-toml = { path = "../deser-toml" }
+deser-urlencoded = { path = "../deser-urlencoded" }
+deser-value = { path = "../deser-value" }
+deser-xml = { path = "../deser-xml" }
+deser-yaml = { path = "../deser-yaml" }
+
+# not part of the main workspace (it needs a nightly compiler to build the
+# fuzz targets with sanitizers)
+[workspace]
+members = ["."]
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "cbor"
+path = "fuzz_targets/cbor.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "csv"
+path = "fuzz_targets/csv.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "env"
+path = "fuzz_targets/env.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "hj"
+path = "fuzz_targets/hj.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ini"
+path = "fuzz_targets/ini.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "json"
+path = "fuzz_targets/json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "json5"
+path = "fuzz_targets/json5.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "jsonc"
+path = "fuzz_targets/jsonc.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "msgpack"
+path = "fuzz_targets/msgpack.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "php"
+path = "fuzz_targets/php.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pickle"
+path = "fuzz_targets/pickle.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "plist"
+path = "fuzz_targets/plist.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "toml"
+path = "fuzz_targets/toml.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "urlencoded"
+path = "fuzz_targets/urlencoded.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "xml"
+path = "fuzz_targets/xml.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "yaml"
+path = "fuzz_targets/yaml.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "serialize"
+path = "fuzz_targets/serialize.rs"
+test = false
+doc = false
+bench = false

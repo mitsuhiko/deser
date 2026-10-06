@@ -61,7 +61,13 @@ NO_STD_SPEEDUPS := deser-cbor deser-json deser-jsonc deser-json5 deser-hj deser-
 NO_STD_SPEEDUPS_FEATURES := $(subst $(space),$(comma),$(foreach crate,$(NO_STD_SPEEDUPS),$(crate)/speedups))
 
 # standalone workspaces that are not part of the main workspace
-EXTRA_WORKSPACES := compile-times/deser-version compile-times/serde-version compile-times/miniserde-version
+EXTRA_WORKSPACES := compile-times/deser-version compile-times/serde-version compile-times/miniserde-version fuzz
+
+# the fuzz targets `make fuzz` runs (all by default) and for how many
+# seconds each (see fuzz/README.md).  They run in parallel.
+FUZZ_TARGETS ?= cbor csv env hj ini json json5 jsonc msgpack php pickle plist toml urlencoded xml yaml serialize
+FUZZ_TIME ?= 60
+FUZZ_JOBS ?= $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
 
 all: test
 
@@ -132,6 +138,14 @@ lint:
 codegen:
 	@$(RUN) "codegen" --show-on-output "python3 deser-template-json/generate.py"
 
+# needs cargo-fuzz (`cargo install cargo-fuzz`) and a nightly compiler
+fuzz:
+	@$(RUN) "fuzz:seed" "python3 fuzz/seed-corpus.py"
+	@$(RUN) "fuzz:build" "cd fuzz && cargo +nightly fuzz build"
+	@$(RUN) -j $(FUZZ_JOBS) \
+		$(foreach target,$(FUZZ_TARGETS), \
+			"fuzz:$(target)" "cd fuzz && cargo +nightly fuzz run $(target) -- -max_total_time=$(FUZZ_TIME) -max_len=4096")
+
 bench:
 	@$(RUN) "bench" --show-on-output "cd benchmark && RUSTC_BOOTSTRAP=1 cargo bench"
 
@@ -144,4 +158,4 @@ bench-compile-times:
 bench-binary-sizes:
 	@$(RUN) "bench-binary-sizes" --show-on-output "cd compile-times && ./bench.sh sizes"
 
-.PHONY: all test miri-test miri-slowest miri-test-full check check-no-std msrv doc format format-check lint codegen bench bench-versus bench-compile-times bench-binary-sizes
+.PHONY: all test miri-test miri-slowest miri-test-full check check-no-std msrv doc format format-check lint codegen fuzz bench bench-versus bench-compile-times bench-binary-sizes
