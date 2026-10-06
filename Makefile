@@ -65,7 +65,7 @@ EXTRA_WORKSPACES := compile-times/deser-version compile-times/serde-version comp
 
 # the fuzz targets `make fuzz` runs (all by default) and for how many
 # seconds each (see fuzz/README.md).  They run in parallel.
-FUZZ_TARGETS ?= cbor csv env hj ini json json5 jsonc msgpack php pickle plist toml urlencoded xml yaml serialize
+FUZZ_TARGETS ?= cbor csv env hj ini json json5 jsonc msgpack php pickle plist toml urlencoded xml yaml serialize transcode
 FUZZ_TIME ?= 60
 FUZZ_JOBS ?= $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
 

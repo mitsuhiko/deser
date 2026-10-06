@@ -40,6 +40,9 @@ pub trait Format {
         config: &Self::SerConfig,
         value: &T,
     ) -> Result<Vec<u8>, Error>;
+
+    /// Checks the raw values of the format (see [`check_raw`](crate::check_raw)).
+    fn check_raw(_data: &[u8]) {}
 }
 
 /// Picks one of the values with the bits of the flags at `shift`.
@@ -59,7 +62,7 @@ fn single(rv: Result<Recording, Error>) -> Values {
 }
 
 macro_rules! json_dialect {
-    ($name:ident, $krate:ident, non_finite_floats: $non_finite:expr) => {
+    ($name:ident, $krate:ident, non_finite_floats: $non_finite:expr, check_raw: $check_raw:expr) => {
         pub struct $name;
 
         impl Format for $name {
@@ -75,7 +78,7 @@ macro_rules! json_dialect {
                         0,
                         &[Trailing::Strict, Trailing::Newline, Trailing::Stop],
                     ))
-                    .exact_numbers(bit(flags, 2))
+                    .exact_numbers(!bit(flags, 2))
                     .context(context)
                     .build()
             }
@@ -93,7 +96,7 @@ macro_rules! json_dialect {
                             Indent::Spaces(0),
                         ],
                     ))
-                    .compact(bit(flags, 2))
+                    .compact(!bit(flags, 2))
                     .inline(pick(
                         flags,
                         3,
@@ -137,14 +140,22 @@ macro_rules! json_dialect {
             ) -> Result<Vec<u8>, Error> {
                 config.to_string(value).map(String::into_bytes)
             }
+
+            fn check_raw(data: &[u8]) {
+                ($check_raw)(data)
+            }
         }
     };
 }
 
-json_dialect!(Json, deser_json, non_finite_floats: false);
-json_dialect!(Jsonc, deser_jsonc, non_finite_floats: false);
-json_dialect!(Json5, deser_json5, non_finite_floats: true);
-json_dialect!(Hjson, deser_hj, non_finite_floats: false);
+json_dialect!(Json, deser_json, non_finite_floats: false,
+    check_raw: crate::check_raw::<Json, deser_json::Json>);
+json_dialect!(Jsonc, deser_jsonc, non_finite_floats: false,
+    check_raw: crate::check_raw::<Jsonc, deser_jsonc::Jsonc>);
+json_dialect!(Json5, deser_json5, non_finite_floats: true,
+    check_raw: crate::check_raw::<Json5, deser_json5::Json5>);
+// Hjson has no raw values
+json_dialect!(Hjson, deser_hj, non_finite_floats: false, check_raw: |_: &[u8]| {});
 
 /// Implements the methods for formats with values that follow each other
 /// (with an `iter` method on the deserializer).
@@ -220,7 +231,7 @@ impl Format for Yaml {
                     Indent::Spaces(1),
                 ],
             ))
-            .indent_sequences(bit(flags, 3))
+            .indent_sequences(!bit(flags, 3))
             .flow(pick(
                 flags,
                 4,
@@ -409,6 +420,10 @@ impl Format for Cbor {
 
     sequence_format!(deser_cbor);
 
+    fn check_raw(data: &[u8]) {
+        crate::check_raw::<Self, deser_cbor::Cbor>(data);
+    }
+
     fn serialize<T: Serialize + ?Sized>(
         config: &Self::SerConfig,
         value: &T,
@@ -438,6 +453,10 @@ impl Format for Msgpack {
     }
 
     sequence_format!(deser_msgpack);
+
+    fn check_raw(data: &[u8]) {
+        crate::check_raw::<Self, deser_msgpack::Msgpack>(data);
+    }
 
     fn serialize<T: Serialize + ?Sized>(
         config: &Self::SerConfig,

@@ -156,3 +156,10 @@ path = "fuzz_targets/serialize.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "transcode"
+path = "fuzz_targets/transcode.rs"
+test = false
+doc = false
+bench = false

@@ -138,8 +138,24 @@ def seeds():
     }
 
 
+# the formats of the transcode target by their index
+TRANSCODE = [
+    "json", "jsonc", "json5", "hj", "yaml", "toml", "ini", "cbor", "msgpack",
+    "xml", "plist", "php", "pickle", "csv", "urlencoded",
+]
+
+
 def main():
-    for target, inputs in seeds().items():
+    all_seeds = seeds()
+    # the transcode target reads the inputs of every format and writes
+    # them with another one
+    transcode = []
+    for index, target in enumerate(TRANSCODE):
+        for n, data in enumerate(all_seeds[target]):
+            if len(data) <= MAX_LEN:
+                output = (index + 1 + n) % len(TRANSCODE)
+                transcode.append(bytes([index, output, 0, 0, 0, 0]) + data)
+    for target, inputs in all_seeds.items():
         corpus = FUZZ / "corpus" / target
         corpus.mkdir(parents=True, exist_ok=True)
         count = 0
@@ -150,6 +166,11 @@ def main():
             (corpus / hashlib.sha1(data).hexdigest()).write_bytes(data)
             count += 1
         print(f"{target}: {count} inputs")
+    corpus = FUZZ / "corpus" / "transcode"
+    corpus.mkdir(parents=True, exist_ok=True)
+    for data in transcode:
+        (corpus / hashlib.sha1(data).hexdigest()).write_bytes(data)
+    print(f"transcode: {len(transcode)} inputs")
 
 
 if __name__ == "__main__":

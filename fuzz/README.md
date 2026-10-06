@@ -30,13 +30,18 @@ again.  Besides crashes the targets check that:
   and for values that are read from their frames.
 * the output of the serializer can be deserialized again, and that values
   survive further round trips unchanged (see `check_roundtrip` in
-  `src/lib.rs`).
+  `src/lib.rs`), also through the derived type.
+* raw values (JSON, JSONC, JSON5, CBOR and MessagePack) accept what the
+  format accepts and hold the same values (see `check_raw`).
 
 The `env` target reads its input as lines of `NAME=VALUE`.
 
 `serialize` generates dynamic values (`src/generate.rs`), serializes them
 with every format (and `deser-debug`) and checks that the output can be
-deserialized again (like the round trips above).
+deserialized again (like the round trips above).  `transcode` does the
+same with values that one format deserialized and another serializes.  Its
+input starts with the indexes of the two formats and the flags of the
+serializer.
 
 ## Inputs
 
@@ -46,8 +51,8 @@ of the deserializer (a little endian `u32`) and of the serializer (another
 header of zeroes is the default configuration with the input in one
 chunk.  The flags pick the options of the configurations (see
 `src/formats.rs`), the upper bits of the deserializer flags enable
-location tracking and the policies for duplicate keys (see `context` in
-`src/lib.rs`).  This lets the fuzzer explore the configurations, the seed
+location tracking, limits and the policies for duplicate keys (see
+`context` in `src/lib.rs`).  This lets the fuzzer explore the configurations, the seed
 corpus starts with the defaults.
 
 To look at a crash, run the target with the input:

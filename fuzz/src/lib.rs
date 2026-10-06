@@ -21,7 +21,8 @@
 use std::fmt::Write as _;
 use std::io::Read;
 
-use deser::de::{DuplicateKeys, Recording};
+use deser::de::{DuplicateKeys, Limits, Recording};
+use deser::ext::{Raw, RawFormat};
 use deser::{Context, Error, TrackLocations};
 use deser_value::Value;
 
@@ -43,8 +44,8 @@ pub const HEADER_LEN: usize = 9;
 pub struct Input<'a> {
     /// The configuration of the deserializer.
     ///
-    /// The upper bits configure the context (see [`context`]), the lower
-    /// bits the format (see [`Format::config`]).
+    /// The upper four bits configure the context (see [`context`]), the
+    /// lower bits the format (see [`Format::config`]).
     pub flags: u32,
     /// The configuration of the serializer (see [`Format::ser_config`]).
     pub ser_flags: u32,
@@ -78,6 +79,16 @@ pub fn context(flags: u32) -> Context {
         1 => context.set(DuplicateKeys::Last),
         2 => context.set(DuplicateKeys::First),
         _ => {}
+    }
+    if flags & (1 << 28) != 0 {
+        context.set(
+            Limits::builder()
+                .max_depth(8)
+                .max_events(500)
+                .max_items(50)
+                .max_len(64)
+                .build(),
+        );
     }
     context
 }
@@ -292,6 +303,126 @@ pub fn check_roundtrip<F: Format>(ser_flags: u32, value: &Value) {
     }
 }
 
+/// Checks that a value of the format survives a round trip through a
+/// type.
+///
+/// Types can change the value (an untagged enum can pick another variant
+/// for what it wrote), so this first normalizes it.  Afterwards the type
+/// has to deserialize from what it serialized and serialize the same way
+/// again.  Failures to serialize or deserialize are not checked, types can
+/// hold values that the format cannot express.
+pub fn check_typed_roundtrip<F: Format>(ser_flags: u32, value: &typed::Typed<'_>) {
+    let (ser, de) = F::ser_config(ser_flags, Context::default());
+    let Ok(output) = F::serialize(&ser, value) else {
+        return;
+    };
+    let Ok(value) = F::from_slice::<typed::Typed>(&de, &output) else {
+        return;
+    };
+    let Ok(first) = F::serialize(&ser, &value) else {
+        return;
+    };
+    let value = F::from_slice::<typed::Typed>(&de, &first).unwrap_or_else(|err| {
+        panic!(
+            "cannot deserialize the output of the serializer: {err}\noutput: {:?}",
+            Escaped(&first)
+        )
+    });
+    let second = F::serialize(&ser, &value).unwrap_or_else(|err| {
+        panic!(
+            "cannot serialize a value deserialized from the output: {err}\noutput: {:?}",
+            Escaped(&first)
+        )
+    });
+    if first != second {
+        panic!(
+            "the value serializes differently after a round trip\nbefore: {:?}\nafter:  {:?}",
+            Escaped(&first),
+            Escaped(&second)
+        );
+    }
+}
+
+/// Checks that raw values of the format hold the same values as the
+/// format deserializes.
+///
+/// Raw values are validated rather than deserialized when they are read
+/// from their own format, the validation has to accept what the parser
+/// accepts.  The top-level raw value is encoded (the format does not know
+/// that a raw value is wanted), boxed raw values and the elements of
+/// sequences hold the input.
+pub fn check_raw<F: Format, R: RawFormat>(data: &[u8]) {
+    let config = F::config(0, Context::default());
+    let (ser, _) = F::ser_config(0, Context::default());
+    let check = |raw: &Raw<'static, R>, expected: &Result<Value, Error>, what: &str| {
+        let value = raw.deserialize::<Value>();
+        match (&value, expected) {
+            (Ok(value), Ok(expected)) if value == expected => {}
+            (Err(_), Err(_)) => {}
+            _ => panic!(
+                "the raw value ({what}) holds another value\nraw: {:?}\nvalue: {value:?}\n\
+                 expected: {expected:?}",
+                Escaped(raw.as_bytes())
+            ),
+        }
+        // written as it is
+        if let (Ok(output), Ok(value)) = (F::serialize(&ser, raw), &value) {
+            let reparsed = F::from_slice::<Value>(&config, &output);
+            assert!(
+                reparsed.as_ref().is_ok_and(|reparsed| reparsed == value),
+                "the serialized raw value ({what}) holds another value\noutput: {:?}\n\
+                 value: {reparsed:?}\nexpected: {value:?}",
+                Escaped(&output)
+            );
+        }
+    };
+
+    let value = F::from_slice::<Value>(&config, data);
+    for boxed in [false, true] {
+        let raw = if boxed {
+            F::from_slice::<Box<Raw<'static, R>>>(&config, data).map(|raw| *raw)
+        } else {
+            F::from_slice::<Raw<'static, R>>(&config, data)
+        };
+        match raw {
+            Ok(raw) => check(&raw, &value, if boxed { "boxed" } else { "top-level" }),
+            // values the raw value rejects are invalid
+            Err(err) => assert!(
+                value.is_err(),
+                "the raw value (boxed: {boxed}) rejects a valid value: {err}\ninput: {:?}",
+                Escaped(data)
+            ),
+        }
+    }
+
+    let values = F::from_slice::<Vec<Value>>(&config, data);
+    match F::from_slice::<Vec<Raw<'static, R>>>(&config, data) {
+        Ok(raws) => match values {
+            Ok(values) => {
+                assert_eq!(
+                    raws.len(),
+                    values.len(),
+                    "the sequence of raw values differs"
+                );
+                for (raw, value) in raws.iter().zip(values) {
+                    check(raw, &Ok(value), "element");
+                }
+            }
+            // an element is invalid (like a map with duplicate keys)
+            Err(_) => assert!(
+                raws.iter().any(|raw| raw.deserialize::<Value>().is_err()),
+                "the sequence of raw values accepts an invalid sequence\ninput: {:?}",
+                Escaped(data)
+            ),
+        },
+        Err(err) => assert!(
+            values.is_err(),
+            "the sequence of raw values rejects a valid sequence: {err}\ninput: {:?}",
+            Escaped(data)
+        ),
+    }
+}
+
 /// Deserializes the output of a serializer.
 pub fn reparse<F: Format>(config: &F::Config, output: &[u8]) -> Value {
     F::from_slice(config, output).unwrap_or_else(|err| {
@@ -311,7 +442,7 @@ pub fn run<F: Format>(raw: &[u8]) {
     let (ser, _) = F::ser_config(input.ser_flags, Context::default());
 
     if let Ok(typed) = F::from_slice::<typed::Typed>(&config, input.data) {
-        let _ = F::serialize(&ser, &typed);
+        check_typed_roundtrip::<F>(input.ser_flags, &typed);
     }
     if let Ok(recording) = F::from_slice::<Recording>(&config, input.data) {
         let _ = F::serialize(&ser, &recording);
@@ -319,6 +450,9 @@ pub fn run<F: Format>(raw: &[u8]) {
     check_stream::<F>(&config, &input);
     if let Ok(value) = F::from_slice::<Value>(&config, input.data) {
         check_roundtrip::<F>(input.ser_flags, &value);
+    }
+    if input.flags == 0 {
+        F::check_raw(input.data);
     }
 }
 
