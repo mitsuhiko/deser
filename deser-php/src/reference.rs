@@ -27,7 +27,8 @@ pub enum ReferenceKind {
 /// with 1 for the top-level value) and a reference repeats the value of a
 /// number.  The deserializer does not resolve references: it passes them
 /// on as extension atoms of this type, the serializer writes them as they
-/// are.
+/// are.  Like when deserializing, references have to refer to a value
+/// before them (`r:` to an object), otherwise they are an error.
 ///
 /// **This is basically a marker only.**  The number refers to a position
 /// in the whole input which the value that holds the reference cannot

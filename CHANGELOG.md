@@ -53,6 +53,9 @@ All notable changes to deser are documented here.
   from their frames are indented relative to their column in the stream
   rather than in the frame.  With `Trailing::Newline` comments before a
   value can span lines in Hjson streams too.
+- `deser-php`: the serializer rejects references that do not refer to a
+  value before them (or `r:` references to values that are not objects)
+  instead of writing output that cannot be deserialized.
 - `deser-yaml`: the stream deserializer reports errors in what follows the
   last document (like directives without a document or comments that are
   not UTF-8) instead of ignoring it, like the deserializer does, and

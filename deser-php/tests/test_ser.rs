@@ -174,6 +174,27 @@ fn test_references() {
         )]))
         .is_err()
     );
+
+    // references to values that are not before them (`r:` to objects)
+    for value in [
+        (Reference::new(ReferenceKind::Value, 3), 1),
+        (Reference::new(ReferenceKind::Value, 0), 1),
+        // the array is not an object
+        (Reference::new(ReferenceKind::Object, 1), 1),
+    ] {
+        let err = to_vec(&value).unwrap_err();
+        assert_eq!(
+            err.message(),
+            "the reference does not refer to an earlier value"
+        );
+    }
+    // `r:` has a number itself
+    let value = (
+        Object::new("Foo", BTreeMap::<String, u32>::new()),
+        Reference::new(ReferenceKind::Object, 2),
+        Reference::new(ReferenceKind::Object, 3),
+    );
+    assert_eq!(ser(&value), "a:3:{i:0;O:3:\"Foo\":0:{}i:1;r:2;i:2;r:3;}");
 }
 
 #[test]

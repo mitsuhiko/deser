@@ -339,6 +339,9 @@ struct Writer {
     headers: Vec<(usize, Vec<u8>)>,
     /// `true` once the top-level value started.
     started: bool,
+    /// For every value that has a number (see [`Reference`]), `true` if
+    /// it's an object, references can only refer to earlier values.
+    objects: Vec<bool>,
 }
 
 impl EventSink for Writer {
@@ -428,9 +431,16 @@ impl Writer {
             Event::Atom(atom) => match class {
                 Some(class) => {
                     let class = class.clone();
+                    self.objects.push(true);
                     self.classed_atom(atom, &class)
                 }
-                None => self.atom(atom),
+                None => {
+                    // references are numbered when they are written
+                    if !matches!(atom, Atom::Ext(ref ext) if ext.is::<Reference>()) {
+                        self.objects.push(false);
+                    }
+                    self.atom(atom)
+                }
             },
             Event::MapStart(_) => {
                 let container = match class {
@@ -440,6 +450,7 @@ impl Writer {
                     }
                     None => Container::Array,
                 };
+                self.objects.push(matches!(container, Container::Object(_)));
                 self.open(container);
                 Ok(())
             }
@@ -450,6 +461,7 @@ impl Writer {
                         "only maps, strings and bytes can have a class",
                     ));
                 }
+                self.objects.push(false);
                 self.open(Container::List(0));
                 Ok(())
             }
@@ -524,6 +536,22 @@ impl Writer {
     #[cold]
     fn ext(&mut self, ext: &ExtValue<'_>) -> Result<(), Error> {
         if let Some(reference) = ext.downcast_ref::<Reference>() {
+            // like the deserializer, references refer to an earlier value,
+            // `r:` to an object.  `r:` has a number itself, `R:` does not.
+            let target = usize::try_from(reference.number())
+                .ok()
+                .and_then(|number| number.checked_sub(1))
+                .and_then(|index| self.objects.get(index));
+            match (reference.kind(), target) {
+                (ReferenceKind::Object, Some(true)) => self.objects.push(true),
+                (ReferenceKind::Value, Some(_)) => {}
+                _ => {
+                    return Err(Error::new(
+                        ErrorKind::InvalidValue,
+                        "the reference does not refer to an earlier value",
+                    ));
+                }
+            }
             self.out.extend_from_slice(match reference.kind() {
                 ReferenceKind::Object => b"r:",
                 ReferenceKind::Value => b"R:",
