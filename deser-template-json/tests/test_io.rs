@@ -77,6 +77,16 @@ fn test_newline_in_chunks() {
 
 #[test]
 #[cfg_attr(miri, ignore = "slow, no unsafe code under test")]
+fn test_newline_comments_before_values() {
+    if !DIALECT.comments {
+        return;
+    }
+    // comments before a value can span lines
+    check_stream(&NEWLINE, "/*\n*/ 1\n /* a\n b */\n\n2\n/*\n*/", 2);
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "slow, no unsafe code under test")]
 fn test_strict_in_chunks() {
     check_stream(&STRICT, " [1, {\"a\": [true]}] \n", 1);
     assert_eq!(read_chunked(&STRICT, "  \n", 1), Vec::<Vec<Event>>::new());

@@ -147,6 +147,26 @@ fn trailing_whitespace(input: &[u8], offset: usize, eof: bool) -> Result<Progres
 }
 
 fn frame_line(state: &mut StreamState, input: &[u8], eof: bool) -> Frame {
+    // whitespace before the value is skipped first like the deserializer
+    // does, comments in it can span lines
+    if state.pos == 0 {
+        match skip_whitespace(input, 0, eof) {
+            (0, true) => {}
+            (start, true) => return Frame::Incomplete { consumed: start },
+            (_, false) if input.is_empty() && eof => return Frame::End,
+            //#(comments) an unterminated comment is reported by the parser
+            #[cfg(comments)]
+            (start, false) if eof && start < input.len() => {
+                return Frame::Value {
+                    start,
+                    end: input.len(),
+                    consumed: input.len(),
+                };
+            }
+            //#(comments) an incomplete comment is scanned again with more input
+            (start, false) => return Frame::Incomplete { consumed: start },
+        }
+    }
     //#(hjson) every line break ends the line (see `LineScan` for why)
     #[cfg(any(not(comments), hjson))]
     let end = input[state.pos..]
@@ -172,10 +192,11 @@ fn frame_line(state: &mut StreamState, input: &[u8], eof: bool) -> Frame {
     let consumed = (end + 1).min(input.len());
     match skip_whitespace(&input[..end], 0, true) {
         (start, _) if start < end => {
-            // lines start at the start of a line
+            //#(hjson) every line break ends the line, multiline strings are
+            //#(hjson) on a single line
             #[cfg(hjson)]
             {
-                state.frame_column = crate::parser::advance_column(0, &input[..start]);
+                state.frame_column = 0;
             }
             Frame::Value {
                 start,

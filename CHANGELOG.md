@@ -51,7 +51,8 @@ All notable changes to deser are documented here.
   does, it split them at the next whitespace or punctuation when they
   were read from their frames.  Multiline strings of Hjson that are read
   from their frames are indented relative to their column in the stream
-  rather than in the frame.
+  rather than in the frame.  With `Trailing::Newline` comments before a
+  value can span lines in Hjson streams too.
 - `deser-yaml`: the stream deserializer reports errors in what follows the
   last document (like directives without a document or comments that are
   not UTF-8) instead of ignoring it, like the deserializer does, and
