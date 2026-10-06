@@ -43,6 +43,8 @@ All notable changes to deser are documented here.
   level has no value.  The serializer rejects keys that the deserializer
   would split differently into nested keys (like the key `a[b]`, or `[]`
   in a sequence with `ArrayFormat::Brackets`) and empty nested keys.
+- `deser-csv`: the stream deserializer rejects UTF-16 input also if the
+  first chunk it receives is a single byte.
 
 ## 0.10.0
 

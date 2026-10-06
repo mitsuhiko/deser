@@ -580,7 +580,10 @@ impl StreamState {
     ) -> Result<Frame, Error> {
         const BOM: &[u8] = b"\xef\xbb\xbf";
         const SEP: &[u8] = b"sep=";
-        if input.len() < BOM.len() && BOM.starts_with(input) && !eof {
+        // wait until it's known if a byte order mark is there (the UTF-16
+        // ones are two bytes)
+        let partial = |bom: &[u8]| input.len() < bom.len() && bom.starts_with(input);
+        if !eof && (partial(BOM) || partial(b"\xff\xfe") || partial(b"\xfe\xff")) {
             return Ok(Frame::Incomplete { consumed: 0 });
         }
         if input.starts_with(b"\xff\xfe") || input.starts_with(b"\xfe\xff") {

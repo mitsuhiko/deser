@@ -64,6 +64,17 @@ fn test_read_in_chunks() {
 }
 
 #[test]
+fn test_utf16_in_chunks() {
+    for input in [&b"\xff\xfea\x00,\x00b\x00"[..], b"\xfe\xff\x00a"] {
+        for size in chunk_sizes(input.len()) {
+            let mut reader = DeserializerConfig::new().reader(Chunked { input, size });
+            let err = reader.read::<Vec<String>>().unwrap_err();
+            assert_eq!(err.message(), "input is UTF-16, only UTF-8 is supported");
+        }
+    }
+}
+
+#[test]
 fn test_errors_continue() {
     let input = b"name,age\njane,42\njohn,x\n\"max\"x,1\nmoritz,1,2\nanna,7";
     for size in chunk_sizes(input.len()) {
