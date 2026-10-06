@@ -33,6 +33,9 @@ again.  Besides crashes the targets check that:
   `src/lib.rs`), also through the derived type.
 * raw values (JSON, JSONC, JSON5, CBOR and MessagePack) accept what the
   format accepts and hold the same values (see `check_raw`).
+* the elements of sequences that are handed out while they are read
+  (`Streamed`) are the elements of the sequences, and the spans of values
+  (with location tracking) are ranges of the input.
 
 The `env` target reads its input as lines of `NAME=VALUE`.
 

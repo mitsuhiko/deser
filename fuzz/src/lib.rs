@@ -242,6 +242,105 @@ pub fn check_stream<F: Format>(config: &F::Config, input: &Input<'_>) {
     }
 }
 
+/// Checks that the spans of values (with [`TrackLocations`]) are ranges
+/// of their source.
+pub fn check_spans(value: &Value, data: &[u8]) {
+    let mut stack = vec![value];
+    while let Some(value) = stack.pop() {
+        if let Some(span) = value.span() {
+            let range = span.range();
+            assert!(
+                range.start <= range.end && range.end <= span.source().len(),
+                "the span {range:?} of a value is not in its source of {} bytes\ninput: {:?}",
+                span.source().len(),
+                Escaped(data)
+            );
+            if std::str::from_utf8(data).is_ok() {
+                assert_eq!(
+                    span.source().as_bytes(),
+                    data,
+                    "the source of the spans is not the input"
+                );
+                assert!(
+                    span.text().is_some(),
+                    "the span {range:?} of a value does not start or end at a character\n\
+                     input: {:?}",
+                    Escaped(data)
+                );
+            }
+            let (start, end) = (span.start(), span.end());
+            assert!(start.offset <= end.offset, "the span ends before it starts");
+        }
+        match value.kind() {
+            deser_value::Kind::Seq(seq) => stack.extend(seq.iter()),
+            deser_value::Kind::Map(map) => {
+                for (key, value) in map.iter() {
+                    stack.push(key);
+                    stack.push(value);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Returns the events of a recording.
+fn events(recording: &Recording) -> String {
+    let mut rv = String::new();
+    for event in recording.events() {
+        write!(rv, "{event:?} ").unwrap();
+    }
+    rv
+}
+
+/// Checks that the elements of sequences that are handed out while they
+/// are read (see [`deser::stream::Streamed`]) are the elements of the
+/// sequences.
+pub fn check_elements<F: Format>(config: &F::Config, input: &Input<'_>) {
+    use deser::stream::{Part, Streamed};
+
+    let mut values =
+        deser::io::Reader::new(Chunked::new(input.data, input.chunks), F::stream(config));
+    let mut parts =
+        deser::io::Reader::new(Chunked::new(input.data, input.chunks), F::stream(config));
+    for _ in 0..=input.data.len() {
+        let expected = values.read::<Vec<Recording>>();
+        let mut elements = Vec::new();
+        let actual = loop {
+            match parts.read_next::<Streamed<Recording>, Recording>() {
+                Ok(Some(Part::Element(element))) => elements.push(element),
+                Ok(Some(Part::Done(rest))) => {
+                    elements.extend(rest.into_vec());
+                    break Ok(Some(elements));
+                }
+                Ok(None) => break Ok(None),
+                Err(err) => break Err(err),
+            }
+        };
+        match (expected, actual) {
+            (Ok(Some(expected)), Ok(Some(actual))) => {
+                let expected = expected.iter().map(events).collect::<Vec<_>>();
+                let actual = actual.iter().map(events).collect::<Vec<_>>();
+                assert_eq!(
+                    expected,
+                    actual,
+                    "the elements that were handed out differ\ninput: {:?}",
+                    Escaped(input.data)
+                );
+            }
+            (Ok(None), Ok(None)) | (Err(_), Err(_)) => return,
+            (expected, actual) => panic!(
+                "reading the elements differs from reading the sequence\ninput: {:?}\n\
+                 sequence: {:?}\nelements: {:?}",
+                Escaped(input.data),
+                expected.map(|x| x.map(|x| x.len())),
+                actual.map(|x| x.map(|x| x.len()))
+            ),
+        }
+    }
+    panic!("the stream does not end");
+}
+
 /// Checks that the output of the serializer can be deserialized again and
 /// that values survive round trips.
 ///
@@ -448,7 +547,9 @@ pub fn run<F: Format>(raw: &[u8]) {
         let _ = F::serialize(&ser, &recording);
     }
     check_stream::<F>(&config, &input);
+    check_elements::<F>(&config, &input);
     if let Ok(value) = F::from_slice::<Value>(&config, input.data) {
+        check_spans(&value, input.data);
         check_roundtrip::<F>(input.ser_flags, &value);
     }
     if input.flags == 0 {

@@ -44,6 +44,18 @@ pub struct Typed<'a> {
     pub level: Option<Level>,
     #[deser(default)]
     pub value: Option<Value>,
+    #[deser(default)]
+    pub when: Option<deser::ext::Datetime>,
+    #[deser(default)]
+    pub amount: Option<deser::ext::Decimal>,
+    #[deser(default)]
+    pub uid: Option<deser::ext::Uuid>,
+    #[deser(default)]
+    pub huge: Option<deser::ext::BigInt>,
+    #[deser(default)]
+    pub took: Option<deser::ext::Duration>,
+    #[deser(default)]
+    pub tree: Option<Box<Tree>>,
     #[deser(flatten)]
     pub nested: Nested,
     #[deser(flatten)]
@@ -122,4 +134,13 @@ pub enum Level {
     Low = 1,
     Normal,
     High = 10,
+}
+
+/// A recursive type.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct Tree {
+    #[deser(default)]
+    pub label: Option<String>,
+    #[deser(default)]
+    pub children: Vec<Tree>,
 }
