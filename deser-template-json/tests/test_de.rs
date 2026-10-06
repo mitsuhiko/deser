@@ -669,6 +669,18 @@ fn test_exact_numbers() {
     let doc: Doc = dialect::from_str(json).unwrap();
     assert_eq!(dialect::to_string(&doc).unwrap(), json);
 
+    // numbers beyond the range of floats cannot be read (Hjson reads them
+    // as strings), and are not written either
+    let huge = format!("1{}", "0".repeat(400));
+    if !DIALECT.hjson {
+        assert!(dialect::from_str::<BigInt>(&huge).is_err());
+    }
+    let value: BigInt = huge.parse().unwrap();
+    let err = dialect::to_string(&value).unwrap_err();
+    assert_eq!(err.kind(), deser::ErrorKind::OutOfRange);
+    let value = Number::new("1e400", f64::INFINITY);
+    assert!(dialect::to_string(&value).is_err());
+
     // numbers are ignored like other values
     #[derive(deser::Deserialize)]
     struct Empty {}

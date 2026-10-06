@@ -1343,14 +1343,18 @@ impl Output {
             self.write_int(val);
             return Ok(());
         } else if let Some(val) = ext.downcast_ref::<BigInt>() {
-            self.write_str(&val.to_string());
+            let text = val.to_string();
+            check_number(&text)?;
+            self.write_str(&text);
             return Ok(());
         } else if let Some(val) = ext.downcast_ref::<Decimal>() {
             // decimals use the syntax of JSON numbers
+            check_number(val.as_str())?;
             self.write_str(val.as_str());
             return Ok(());
         } else if let Some(val) = ext.downcast_value_ref::<Number>() {
             // numbers keep their text, so they roundtrip exactly
+            check_number(val.as_str())?;
             self.write_str(val.as_str());
             return Ok(());
         }
@@ -1505,6 +1509,18 @@ fn json_literal<'a>(value: &'a Implicit) -> Option<&'a str> {
         _ => false,
     };
     same.then_some(text)
+}
+
+/// Checks that the parser can read a number.
+///
+/// Numbers beyond the range of `f64` are an error when they are parsed
+/// (also with exact numbers, which carry the value as `f64`).
+#[cold]
+fn check_number(text: &str) -> Result<(), Error> {
+    match text.parse::<f64>() {
+        Ok(value) if value.is_finite() => Ok(()),
+        _ => Err(Error::new(ErrorKind::OutOfRange, "number out of range")),
+    }
 }
 
 /// Checks the syntax of JSON integers (an optional minus and digits
