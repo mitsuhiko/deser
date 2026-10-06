@@ -45,9 +45,10 @@ again.  Besides crashes the targets check that:
 
 The `env` target reads its input as lines of `NAME=VALUE`.
 
-`serialize` generates dynamic values (`src/generate.rs`), serializes them
-with every format (and `deser-debug`) and checks that the output can be
-deserialized again (like the round trips above).  `transcode` does the
+`serialize` generates dynamic values (`src/generate.rs`, including values
+of extension types and values whose type was inferred from text),
+serializes them with every format (and `deser-debug`) and checks that the
+output can be deserialized again (like the round trips above).  `transcode` does the
 same with values that one format deserialized and another serializes, and
 transcodes the stream of values of the input into a stream of the other
 format with `deser-transcode` (from chunks of the input into parts of the
