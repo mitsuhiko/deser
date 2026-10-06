@@ -36,15 +36,23 @@ again.  Besides crashes the targets check that:
 * the elements of sequences that are handed out while they are read
   (`Streamed`) are the elements of the sequences, and the spans of values
   (with location tracking) are ranges of the input.
+* the stream serializer of the format (with `deser::io::Writer`) writes
+  values like the serializer, also when it writes them in parts (with a
+  small buffer limit), and the stream deserializer reads the values of
+  the stream it writes (see `check_writer`).
+* layers that do not change the values (`deser_path::PathLayer`) do not
+  change what is read or written.
 
 The `env` target reads its input as lines of `NAME=VALUE`.
 
 `serialize` generates dynamic values (`src/generate.rs`), serializes them
 with every format (and `deser-debug`) and checks that the output can be
 deserialized again (like the round trips above).  `transcode` does the
-same with values that one format deserialized and another serializes.  Its
-input starts with the indexes of the two formats and the flags of the
-serializer.
+same with values that one format deserialized and another serializes, and
+transcodes the stream of values of the input into a stream of the other
+format with `deser-transcode` (from chunks of the input into parts of the
+output).  Its input starts with the indexes of the two formats and the
+flags of the serializer.
 
 ## Inputs
 

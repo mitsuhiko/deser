@@ -21,10 +21,12 @@ deser-json = { path = "../deser-json" }
 deser-json5 = { path = "../deser-json5" }
 deser-jsonc = { path = "../deser-jsonc" }
 deser-msgpack = { path = "../deser-msgpack" }
+deser-path = { path = "../deser-path" }
 deser-php = { path = "../deser-php" }
 deser-pickle = { path = "../deser-pickle" }
 deser-plist = { path = "../deser-plist" }
 deser-toml = { path = "../deser-toml" }
+deser-transcode = { path = "../deser-transcode" }
 deser-urlencoded = { path = "../deser-urlencoded" }
 deser-value = { path = "../deser-value" }
 deser-xml = { path = "../deser-xml" }

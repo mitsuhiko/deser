@@ -18,12 +18,16 @@
 //!   values which are read from their frames).
 //! * the output of the serializer can be deserialized again, and
 //!   serializing that value gives the same output.
+//! * the stream serializer writes values like the serializer, whether it
+//!   writes them in parts or not, and the stream deserializer reads them
+//!   (see [`check_writer`]).
 use std::fmt::Write as _;
 use std::io::Read;
 
 use deser::de::{DuplicateKeys, Limits, Recording};
 use deser::ext::{Raw, RawFormat};
-use deser::{Context, Error, TrackLocations};
+use deser::{Context, Error, Serialize, TrackLocations};
+use deser_path::PathLayer;
 use deser_value::Value;
 
 pub mod formats;
@@ -194,13 +198,17 @@ impl std::fmt::Debug for Values {
 /// Reads the values of a stream with the format's stream deserializer.
 ///
 /// With `framed` the values are read from their frames, otherwise they
-/// are deserialized while their input arrives (if the format supports it).
+/// are deserialized while their input arrives (if the format supports it),
+/// with a [`PathLayer`] if the upper bit of the seed is set.
 pub fn read_stream<F: Format>(config: &F::Config, data: &[u8], seed: u8, framed: bool) -> Values {
     let mut reader = deser::io::Reader::new(Chunked::new(data, seed), F::stream(config));
     let mut rv = Values::default();
     loop {
         let item = if framed {
             reader.read_borrowed::<Recording>()
+        } else if seed & 0x80 != 0 {
+            // layers (that do not change the values) see the events
+            reader.read_with::<Recording, _>(|driver| driver.push_layer(PathLayer::new()))
         } else {
             reader.read::<Recording>()
         };
@@ -522,6 +530,113 @@ pub fn check_raw<F: Format, R: RawFormat>(data: &[u8]) {
     }
 }
 
+/// Writes a value twice with the stream serializer of a format and a
+/// buffer limit (with a [`PathLayer`] that does not change the value if
+/// `layer` is set).
+///
+/// Returns the output, where the first value ends and the results of the
+/// writes.
+fn write_twice<F: Format, T: Serialize + ?Sized>(
+    config: &F::SerConfig,
+    value: &T,
+    limit: usize,
+    layer: bool,
+) -> (Vec<u8>, usize, [Result<(), Error>; 2]) {
+    let mut writer = deser::io::Writer::new(Vec::new(), F::serializer(config));
+    writer.set_buffer_limit(limit);
+    let write = |writer: &mut deser::io::Writer<_, _>| match layer {
+        true => writer.write_with(value, |driver| driver.push_layer(PathLayer::new())),
+        false => writer.write(value),
+    };
+    let first = write(&mut writer);
+    let len = writer.get_ref().len();
+    let second = write(&mut writer);
+    (writer.into_inner(), len, [first, second])
+}
+
+/// Checks the stream serializer of a format.
+///
+/// A value is written twice with a [`Writer`](deser::io::Writer) whose
+/// buffer limit is derived from the seed.  This checks that:
+///
+/// * the first value is written like [`Format::serialize`] writes it
+///   (followed by whitespace, which separates the values of some
+///   streams).
+/// * values that are written in parts (with a buffer limit) are written
+///   like values that are not.
+/// * the stream deserializer reads the values of the stream as the
+///   deserializer reads a single value.
+pub fn check_writer<F: Format, T: Serialize + ?Sized>(ser_flags: u32, seed: u8, value: &T) {
+    let (ser, de) = F::writer_config(ser_flags, Context::default());
+    let (output, len, results) = write_twice::<F, T>(&ser, value, usize::MAX, false);
+    let expected = F::serialize(&ser, value);
+    match (&expected, &results[0]) {
+        // streams can end values with a line break (like JSON Lines)
+        (Ok(expected), Ok(())) => assert!(
+            output[..len]
+                .strip_prefix(expected.as_slice())
+                .is_some_and(|rest| rest.iter().all(u8::is_ascii_whitespace)),
+            "the stream serializer writes another value\nwriter: {:?}\nserialize: {:?}",
+            Escaped(&output[..len]),
+            Escaped(expected)
+        ),
+        (Err(_), Err(_)) => return,
+        (expected, actual) => panic!(
+            "the stream serializer and serialize disagree\nwriter: {actual:?}\n\
+             serialize: {:?}",
+            expected.as_ref().map(|x| Escaped(x))
+        ),
+    }
+
+    // the limit `1` writes every part as soon as possible
+    let limit = match seed {
+        0 => 1,
+        seed => 1 + (usize::from(seed) * 7) % 200,
+    };
+    let (partial, partial_len, partial_results) =
+        write_twice::<F, T>(&ser, value, limit, seed & 0x80 != 0);
+    let same = match (&results, &partial_results) {
+        ([Ok(()), Ok(())], [Ok(()), Ok(())]) => output == partial,
+        ([Ok(()), Err(_)], [Ok(()), Err(_)]) => output[..len] == partial[..partial_len],
+        _ => false,
+    };
+    if !same {
+        panic!(
+            "the stream serializer writes values in parts differently (limit {limit})\n\
+             whole: {:?} {results:?}\nparts: {:?} {partial_results:?}",
+            Escaped(&output),
+            Escaped(&partial)
+        );
+    }
+
+    if !F::STREAM_VALUES || results[1].is_err() {
+        return;
+    }
+    let Ok(single) = F::from_slice::<Value>(&de, &output[..len]) else {
+        // the round trips are checked with `check_roundtrip`
+        return;
+    };
+    let mut reader = deser::io::Reader::new(Chunked::new(&output, seed), F::stream(&de));
+    for index in 0..2 {
+        match reader.read::<Value>() {
+            Ok(Some(value)) if value == single => {}
+            rv => panic!(
+                "the stream deserializer does not read the value {index} of the stream \
+                 serializer\noutput: {:?}\nread: {rv:?}\nexpected: {single:?}",
+                Escaped(&output)
+            ),
+        }
+    }
+    match reader.read::<Value>() {
+        Ok(None) => {}
+        rv => panic!(
+            "the stream deserializer reads more than the values of the stream serializer\n\
+             output: {:?}\nread: {rv:?}",
+            Escaped(&output)
+        ),
+    }
+}
+
 /// Deserializes the output of a serializer.
 pub fn reparse<F: Format>(config: &F::Config, output: &[u8]) -> Value {
     F::from_slice(config, output).unwrap_or_else(|err| {
@@ -551,6 +666,7 @@ pub fn run<F: Format>(raw: &[u8]) {
     if let Ok(value) = F::from_slice::<Value>(&config, input.data) {
         check_spans(&value, input.data);
         check_roundtrip::<F>(input.ser_flags, &value);
+        check_writer::<F, _>(input.ser_flags, input.chunks, &value);
     }
     if input.flags == 0 {
         F::check_raw(input.data);

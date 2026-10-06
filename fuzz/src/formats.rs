@@ -1,5 +1,6 @@
 //! The formats under test.
 use deser::de::{Recording, StreamDeserializer};
+use deser::ser::StreamSerializer;
 use deser::{Context, Deserialize, Error, Serialize};
 
 use crate::Values;
@@ -12,6 +13,8 @@ pub trait Format {
     type SerConfig;
     /// The stream deserializer.
     type Stream: StreamDeserializer;
+    /// The stream serializer.
+    type Ser: StreamSerializer;
 
     /// Creates the configuration of the deserializer from the flags of the
     /// fuzz input.  The flags `0` are the default configuration.
@@ -41,6 +44,23 @@ pub trait Format {
         value: &T,
     ) -> Result<Vec<u8>, Error>;
 
+    /// Creates the configurations of the stream serializer and of a
+    /// stream deserializer which reads what it writes (see
+    /// [`check_writer`](crate::check_writer)).  Its values are written like
+    /// with [`serialize`](Self::serialize).
+    fn writer_config(flags: u32, context: Context) -> (Self::SerConfig, Self::Config) {
+        Self::ser_config(flags, context)
+    }
+
+    /// Creates the stream serializer.
+    fn serializer(config: &Self::SerConfig) -> Self::Ser;
+
+    /// Whether the values of the stream serializer are the values of the
+    /// stream deserializer (they are not with CSV, which writes documents
+    /// and reads records, and form data, which joins the parameters of the
+    /// values).
+    const STREAM_VALUES: bool = true;
+
     /// Checks the raw values of the format (see [`check_raw`](crate::check_raw)).
     fn check_raw(_data: &[u8]) {}
 }
@@ -69,6 +89,7 @@ macro_rules! json_dialect {
             type Config = $krate::DeserializerConfig;
             type SerConfig = $krate::SerializerConfig;
             type Stream = $krate::StreamDeserializer;
+            type Ser = $krate::Serializer;
 
             fn config(flags: u32, context: Context) -> Self::Config {
                 use $krate::Trailing;
@@ -134,6 +155,23 @@ macro_rules! json_dialect {
                 $krate::StreamDeserializer::with_config(config.clone())
             }
 
+            fn writer_config(flags: u32, context: Context) -> (Self::SerConfig, Self::Config) {
+                use $krate::Trailing;
+                let trailing = pick(
+                    flags,
+                    6,
+                    &[Trailing::Newline, Trailing::Strict, Trailing::Stop],
+                );
+                let (mut ser, mut de) = Self::ser_config(flags, context);
+                ser.set_trailing(trailing);
+                de.set_trailing(trailing);
+                (ser, de)
+            }
+
+            fn serializer(config: &Self::SerConfig) -> Self::Ser {
+                $krate::Serializer::with_config(config.clone())
+            }
+
             fn serialize<T: Serialize + ?Sized>(
                 config: &Self::SerConfig,
                 value: &T,
@@ -176,6 +214,10 @@ macro_rules! sequence_format {
         fn stream(config: &Self::Config) -> Self::Stream {
             $krate::StreamDeserializer::with_config(config.clone())
         }
+
+        fn serializer(config: &Self::SerConfig) -> Self::Ser {
+            $krate::Serializer::with_config(config.clone())
+        }
     };
 }
 
@@ -196,6 +238,10 @@ macro_rules! single_format {
         fn stream(config: &Self::Config) -> Self::Stream {
             $krate::StreamDeserializer::with_config(config.clone())
         }
+
+        fn serializer(config: &Self::SerConfig) -> Self::Ser {
+            $krate::Serializer::with_config(config.clone())
+        }
     };
 }
 
@@ -205,6 +251,7 @@ impl Format for Yaml {
     type Config = deser_yaml::DeserializerConfig;
     type SerConfig = deser_yaml::SerializerConfig;
     type Stream = deser_yaml::StreamDeserializer;
+    type Ser = deser_yaml::Serializer;
 
     fn config(flags: u32, context: Context) -> Self::Config {
         use deser_yaml::Version;
@@ -285,6 +332,7 @@ impl Format for Toml {
     type Config = deser_toml::DeserializerConfig;
     type SerConfig = deser_toml::SerializerConfig;
     type Stream = deser_toml::StreamDeserializer;
+    type Ser = deser_toml::Serializer;
 
     fn config(_flags: u32, context: Context) -> Self::Config {
         deser_toml::DeserializerConfig::builder()
@@ -355,6 +403,7 @@ impl Format for Ini {
     type Config = deser_ini::DeserializerConfig;
     type SerConfig = deser_ini::SerializerConfig;
     type Stream = deser_ini::StreamDeserializer;
+    type Ser = deser_ini::Serializer;
 
     fn config(flags: u32, context: Context) -> Self::Config {
         deser_ini::DeserializerConfig::builder()
@@ -404,6 +453,7 @@ impl Format for Cbor {
     type Config = deser_cbor::DeserializerConfig;
     type SerConfig = deser_cbor::SerializerConfig;
     type Stream = deser_cbor::StreamDeserializer;
+    type Ser = deser_cbor::Serializer;
 
     fn config(_flags: u32, context: Context) -> Self::Config {
         deser_cbor::DeserializerConfig::builder()
@@ -438,6 +488,7 @@ impl Format for Msgpack {
     type Config = deser_msgpack::DeserializerConfig;
     type SerConfig = deser_msgpack::SerializerConfig;
     type Stream = deser_msgpack::StreamDeserializer;
+    type Ser = deser_msgpack::Serializer;
 
     fn config(_flags: u32, context: Context) -> Self::Config {
         deser_msgpack::DeserializerConfig::builder()
@@ -482,6 +533,7 @@ impl Format for Xml {
     type Config = deser_xml::DeserializerConfig;
     type SerConfig = deser_xml::SerializerConfig;
     type Stream = deser_xml::StreamDeserializer;
+    type Ser = deser_xml::Serializer;
 
     fn config(flags: u32, context: Context) -> Self::Config {
         deser_xml::DeserializerConfig::builder()
@@ -534,6 +586,7 @@ impl Format for Plist {
     type Config = deser_plist::DeserializerConfig;
     type SerConfig = deser_plist::SerializerConfig;
     type Stream = deser_plist::StreamDeserializer;
+    type Ser = deser_plist::Serializer;
 
     fn config(_flags: u32, context: Context) -> Self::Config {
         deser_plist::DeserializerConfig::builder()
@@ -569,6 +622,7 @@ impl Format for Php {
     type Config = deser_php::DeserializerConfig;
     type SerConfig = deser_php::SerializerConfig;
     type Stream = deser_php::StreamDeserializer;
+    type Ser = deser_php::Serializer;
 
     fn config(_flags: u32, context: Context) -> Self::Config {
         deser_php::DeserializerConfig::builder()
@@ -596,6 +650,7 @@ impl Format for Pickle {
     type Config = deser_pickle::DeserializerConfig;
     type SerConfig = deser_pickle::SerializerConfig;
     type Stream = deser_pickle::StreamDeserializer;
+    type Ser = deser_pickle::Serializer;
 
     fn config(flags: u32, context: Context) -> Self::Config {
         let mut builder = deser_pickle::DeserializerConfig::builder().context(context);
@@ -665,6 +720,7 @@ impl Format for Csv {
     type Config = deser_csv::DeserializerConfig;
     type SerConfig = deser_csv::SerializerConfig;
     type Stream = deser_csv::StreamDeserializer;
+    type Ser = deser_csv::Serializer;
 
     fn config(flags: u32, context: Context) -> Self::Config {
         use deser_csv::{Headers, Trim};
@@ -755,6 +811,12 @@ impl Format for Csv {
         deser_csv::StreamDeserializer::with_config(config.clone())
     }
 
+    fn serializer(config: &Self::SerConfig) -> Self::Ser {
+        deser_csv::Serializer::document(config.clone())
+    }
+
+    const STREAM_VALUES: bool = false;
+
     fn serialize<T: Serialize + ?Sized>(
         config: &Self::SerConfig,
         value: &T,
@@ -776,6 +838,7 @@ impl Format for Urlencoded {
     type Config = deser_urlencoded::DeserializerConfig;
     type SerConfig = deser_urlencoded::SerializerConfig;
     type Stream = deser_urlencoded::StreamDeserializer;
+    type Ser = deser_urlencoded::Serializer;
 
     fn config(flags: u32, context: Context) -> Self::Config {
         deser_urlencoded::DeserializerConfig::builder()
@@ -813,6 +876,9 @@ impl Format for Urlencoded {
     }
 
     single_format!(deser_urlencoded);
+
+    // the parameters of the values are joined
+    const STREAM_VALUES: bool = false;
 
     fn serialize<T: Serialize + ?Sized>(
         config: &Self::SerConfig,
