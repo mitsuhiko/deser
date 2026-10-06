@@ -147,6 +147,24 @@ fn test_errors() {
         err.message(),
         "the name \"A___B\" does not split into its keys at the separator"
     );
+    // different keys with the same name
+    let err = to_vars("", &BTreeMap::from([("a", 1), ("A", 2)])).unwrap_err();
+    assert_eq!(err.message(), "different keys have the same name");
+    #[derive(Serialize)]
+    struct Clash {
+        a: u32,
+        #[deser(rename = "A")]
+        nested: BTreeMap<String, u32>,
+    }
+    let value = Clash {
+        a: 1,
+        nested: BTreeMap::from([("b".into(), 2)]),
+    };
+    let err = to_vars("APP_", &value).unwrap_err();
+    assert_eq!(
+        err.message(),
+        "the variable \"APP_A\" has a value and nested variables"
+    );
     // keys that start with a part of the separator are fine
     let value = BTreeMap::from([("a", BTreeMap::from([("_b", 1)]))]);
     let vars = to_vars("", &value).unwrap();

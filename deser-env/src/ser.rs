@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::collections::HashMap;
 
 use deser_core::ext::Number;
 use deser_core::ser::SerializeDriver;
@@ -10,7 +11,10 @@ use crate::Case;
 ///
 /// The value has to serialize to a map (for instance a struct or a map
 /// type).  The names are the keys with the prefix in front, nested keys are
-/// joined with the separator and uppercased (see [`Case`]).  Sequences are
+/// joined with the separator and uppercased (see [`Case`]).  Keys whose
+/// names would not read back as the same keys are an error: keys that
+/// contain the separator (or end with a part of it), and different keys
+/// with the same name (like `a` and `A`).  Sequences are
 /// written with indexes (`APP_HOSTS__0`), use the
 /// [`Separated`](deser_core::adapters::Separated) adapter to write them into
 /// a single variable.  Null values (like `None`) of map entries are skipped,
@@ -165,6 +169,7 @@ impl SerializerConfig {
             stack: Vec::new(),
         };
         driver.drive(|event, state| writer.event(event, state))?;
+        writer.check_names(prefix.len())?;
         Ok(writer.out)
     }
 }
@@ -354,6 +359,43 @@ impl Writer<'_> {
                 .extend(key.chars().map(|c| c.to_ascii_uppercase())),
             Case::Preserve => self.name.push_str(key),
         }
+    }
+
+    /// Checks that no name is written twice and that no name is nested
+    /// in another one.
+    ///
+    /// Different keys can have the same name, for instance `a` and `A`
+    /// (names are uppercased) or `1` and `"1"`.
+    fn check_names(&self, prefix: usize) -> Result<(), Error> {
+        let normalize = |name: &str| match self.config.case {
+            Case::Upper => name.to_ascii_lowercase(),
+            Case::Preserve => name.to_string(),
+        };
+        let names: HashMap<String, &str> = self
+            .out
+            .iter()
+            .map(|(name, _)| (normalize(name), name.as_str()))
+            .collect();
+        if names.len() != self.out.len() {
+            return Err(Error::new(
+                ErrorKind::UnsupportedType,
+                "different keys have the same name",
+            ));
+        }
+        let mut segments = Vec::new();
+        for name in names.keys() {
+            segments.clear();
+            crate::de::split_name(&name[prefix..], self.config.separator, &mut segments);
+            for &(_, end) in &segments[..segments.len() - 1] {
+                if let Some(parent) = names.get(&name[..prefix + end]) {
+                    return Err(Error::new(
+                        ErrorKind::UnsupportedType,
+                        format!("the variable {parent:?} has a value and nested variables"),
+                    ));
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Checks that the current name splits into its keys again.

@@ -36,7 +36,8 @@ All notable changes to deser are documented here.
   serialization (up to 1 MiB) instead of the first one, so large
   documents do not grow it again every time.
 - `deser-env`: the serializer rejects names that do not split into their
-  keys again (a key ending in `_` before the separator `__`), and a
+  keys again (a key ending in `_` before the separator `__`) and
+  different keys with the same name (like `a` and `A`), and a
   `max_depth` of `usize::MAX` no longer overflows.
 
 ## 0.10.0
