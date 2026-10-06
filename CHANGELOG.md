@@ -64,6 +64,10 @@ All notable changes to deser are documented here.
 - `deser-ini`: the serializer rejects different keys with the same name
   in git's config files (like `a` and `A`, the names of keys and
   sections are case insensitive), which did not deserialize again.
+- `deser-pickle`: a pickle whose `STOP` is within a frame ends with the
+  frame (like when Python reads pickles from a file).  The deserializer
+  continued with the next pickle in the frame while the stream
+  deserializer failed.
 - `deser-php`: the serializer rejects references that do not refer to a
   value before them (or `r:` references to values that are not objects)
   instead of writing output that cannot be deserialized.

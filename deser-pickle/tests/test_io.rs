@@ -42,3 +42,46 @@ fn test_writer() {
     writer.write(&"x").unwrap();
     assert_eq!(writer.into_inner(), b"\x80\x04K\x01.\x80\x04\x8c\x01x.");
 }
+
+#[test]
+fn test_stop_in_a_frame() {
+    // a pickle that stops within its frame ends with the frame (like when
+    // Python reads pickles from a file), the rest of the frame is skipped
+    let mut input = b"\x95".to_vec();
+    input.extend_from_slice(&6u64.to_le_bytes());
+    input.extend_from_slice(b"K\x01.K\x02.K\x03.");
+
+    let mut de = deser_pickle::Deserializer::from_slice(&input);
+    let values = de.iter::<u32>().collect::<Result<Vec<_>, _>>().unwrap();
+    assert_eq!(values, [1, 3]);
+
+    for size in 1..=input.len() {
+        let mut reader = DeserializerConfig::new().reader(Chunked {
+            input: &input,
+            size,
+        });
+        let values = reader.iter::<u32>().collect::<Result<Vec<_>, _>>().unwrap();
+        assert_eq!(values, [1, 3], "size {size}");
+    }
+
+    // the frame has to be complete
+    let mut de = deser_pickle::Deserializer::from_slice(&input[..12]);
+    assert!(de.deserialize::<u32>().is_err());
+    let mut reader = DeserializerConfig::new().reader(&input[..12]);
+    assert!(reader.read::<u32>().is_err());
+}
+
+/// A reader that returns the input in chunks of a fixed size.
+struct Chunked<'a> {
+    input: &'a [u8],
+    size: usize,
+}
+
+impl std::io::Read for Chunked<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let len = self.size.min(buf.len()).min(self.input.len());
+        buf[..len].copy_from_slice(&self.input[..len]);
+        self.input = &self.input[len..];
+        Ok(len)
+    }
+}

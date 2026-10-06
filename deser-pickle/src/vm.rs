@@ -192,6 +192,8 @@ pub(crate) struct Machine<'i> {
     memo: Memo,
     /// The protocol of the last `PROTO` opcode.
     proto: u8,
+    /// The end of the last frame (`FRAME`).
+    frame_end: usize,
 }
 
 impl<'i> Machine<'i> {
@@ -206,11 +208,16 @@ impl<'i> Machine<'i> {
             marks: Vec::new(),
             memo: Memo::default(),
             proto: 0,
+            frame_end: 0,
         }
     }
 
     /// Runs the pickle up to its `STOP` and returns the value and the
     /// offset after the `STOP`.
+    ///
+    /// If the `STOP` is in a frame, the pickle ends with the frame (like
+    /// when Python reads pickles from a file, where frames are read as a
+    /// whole).
     pub(crate) fn run(mut self) -> Result<(Graph<'i>, usize), Error> {
         loop {
             self.op_start = self.pos;
@@ -226,7 +233,7 @@ impl<'i> Machine<'i> {
                         ranges: self.ranges,
                         root,
                     },
-                    self.pos,
+                    self.pos.max(self.frame_end),
                 ));
             }
             self.op(op)?;
@@ -740,6 +747,7 @@ impl<'i> Machine<'i> {
                 if len > (self.input.len() - self.pos) as u64 {
                     return Err(eof_error(self.input.len()));
                 }
+                self.frame_end = self.frame_end.max(self.pos + len as usize);
                 Ok(())
             }
 
@@ -1064,11 +1072,13 @@ impl<'i> Machine<'i> {
 
 /// Finds the end of a pickle without running it.
 ///
-/// Returns the offset after the `STOP` opcode or `None` if the input ends
-/// before.  This only reads the opcodes and their arguments, invalid
-/// pickles fail when they are run.
+/// Returns the offset after the `STOP` opcode (or the end of the frame
+/// it's in, see [`Machine::run`]) or `None` if the input ends before.
+/// This only reads the opcodes and their arguments, invalid pickles fail
+/// when they are run.
 pub(crate) fn find_end(input: &[u8], start: usize) -> Result<Option<usize>, Error> {
     let mut pos = start;
+    let mut frame_end = 0;
     // returns the length of a counted argument
     let counted = |pos: usize, size: usize, signed: bool| -> Result<Option<(usize, u64)>, Error> {
         let Some(bytes) = input.get(pos..pos + size) else {
@@ -1089,14 +1099,27 @@ pub(crate) fn find_end(input: &[u8], start: usize) -> Result<Option<usize>, Erro
         let op_start = pos;
         pos += 1;
         let skip = match op {
-            b'.' => return Ok(Some(pos)),
+            b'.' if frame_end > input.len() => return Ok(None),
+            b'.' => return Ok(Some(pos.max(frame_end))),
             b'(' | b'0' | b'1' | b'2' | b'N' | 0x88 | 0x89 | b'Q' | b'R' | b'a' | b'b' | b'd'
             | b'}' | b'e' | b'l' | b']' | b'o' | b's' | b't' | b')' | b'u' | 0x81 | 0x85 | 0x86
             | 0x87 | 0x8f | 0x90 | 0x91 | 0x92 | 0x93 | 0x94 | 0x97 | 0x98 => 0,
             b'K' | b'q' | b'h' | 0x80 | 0x82 => 1,
             b'M' | 0x83 => 2,
             b'J' | b'r' | b'j' | 0x84 => 4,
-            b'G' | 0x95 => 8,
+            0x95 => {
+                let Some((size, len)) = counted(pos, 8, false)? else {
+                    return Ok(None);
+                };
+                frame_end = frame_end.max(
+                    usize::try_from(len)
+                        .ok()
+                        .and_then(|len| (pos + size).checked_add(len))
+                        .unwrap_or(usize::MAX),
+                );
+                size
+            }
+            b'G' => 8,
             b'I' | b'L' | b'F' | b'S' | b'V' | b'P' | b'p' | b'g' | b'c' | b'i' => {
                 let lines = if matches!(op, b'c' | b'i') { 2 } else { 1 };
                 for _ in 0..lines {
