@@ -87,6 +87,14 @@ impl DeserializerConfig {
         self.context = context;
     }
 
+    /// Returns the configuration without its context (for the frames of
+    /// streams, which get the context of the stream).
+    pub(crate) fn without_context(&self) -> DeserializerConfig {
+        let mut config = self.clone();
+        config.context = deser_core::Context::default();
+        config
+    }
+
     /// Returns the context the values are deserialized in.
     pub fn context(&self) -> &deser_core::Context {
         &self.context
@@ -367,9 +375,10 @@ impl<'a> Deserializer<'a> {
 
     /// Creates a deserializer for the frame of a value in a stream.
     ///
-    /// Only whitespace may follow the value in the frame.
+    /// Only whitespace may follow the value in the frame.  The frame gets
+    /// the context of the stream.
     pub(crate) fn from_frame(input: &'a [u8], config: &DeserializerConfig) -> Deserializer<'a> {
-        let mut de = Deserializer::from_slice_with_config(input, config.clone());
+        let mut de = Deserializer::from_slice_with_config(input, config.without_context());
         de.config.trailing = Trailing::Strict;
         de
     }
@@ -486,7 +495,14 @@ impl<'a> Deserializer<'a> {
     /// Strings without escape sequences are passed on borrowed from the
     /// input (see [`emit_borrowed`](DeserializeDriver::emit_borrowed)).
     /// Errors carry the location in the input (see [`Error::line`]).
+    ///
+    /// The context of the configuration is given to the driver (values that
+    /// the context of the driver has take precedence, see
+    /// [`DeserializeDriver::set_default_context`]).
     pub fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
+        if !self.config.context.is_empty() {
+            driver.set_default_context(self.config.context.clone());
+        }
         if self.failed {
             return Err(Error::new(
                 ErrorKind::InvalidState,
@@ -614,9 +630,6 @@ impl<'b, 'a, T: Deserialize<'a>> Iterator for Iter<'b, 'a, T> {
 
 impl<'a> de::Deserializer<'a> for Deserializer<'a> {
     fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
-        if !self.config.context.is_empty() {
-            driver.set_default_context(self.config.context.clone());
-        }
         Deserializer::drive(self, driver)
     }
 }

@@ -85,4 +85,20 @@ fn test_reader_context() {
     let mut reader = config.reader(INPUT.as_bytes());
     reader.set_context(Context::new());
     assert!(reader.read::<Map>().is_err());
+    // also for values read from their frames
+    let mut reader = config.reader(INPUT.as_bytes());
+    reader.set_context(Context::new());
+    assert!(reader.read_borrowed::<Map>().is_err());
+}
+
+#[test]
+fn test_drive_context() {
+    // the deserializer gives the context of the configuration to drivers
+    let mut de = Deserializer::from_str_with_config(INPUT, last());
+    let mut out = None::<Map>;
+    {
+        let mut driver = deser::de::DeserializeDriver::new(&mut out);
+        de.drive(&mut driver).unwrap();
+    }
+    assert_eq!(out.unwrap()["a"], 2);
 }

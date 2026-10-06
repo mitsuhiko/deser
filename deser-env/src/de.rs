@@ -393,7 +393,14 @@ impl<'a> Deserializer<'a> {
     /// the variable an event comes from is attached to it and to the errors
     /// it causes (see [`EnvVar`]).  Values that are given borrowed are passed
     /// on borrowed.
+    ///
+    /// The context of the configuration is given to the driver (values that
+    /// the context of the driver has take precedence, see
+    /// [`DeserializeDriver::set_default_context`]).
     pub fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
+        if !self.config.context.is_empty() {
+            driver.set_default_context(self.config.context.clone());
+        }
         if let Some(err) = self.error.take() {
             return Err(err);
         }
@@ -410,9 +417,6 @@ impl<'a> Deserializer<'a> {
 
 impl<'a> de::Deserializer<'a> for Deserializer<'a> {
     fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
-        if !self.config.context.is_empty() {
-            driver.set_default_context(self.config.context.clone());
-        }
         Deserializer::drive(self, driver)
     }
 }

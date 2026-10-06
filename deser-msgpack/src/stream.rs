@@ -245,7 +245,7 @@ impl de::StreamDeserializer for StreamDeserializer {
         frame: &'de [u8],
         driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error> {
-        let mut de = Deserializer::from_slice_with_config(frame, self.config.clone());
+        let mut de = Deserializer::from_slice_with_config(frame, self.config.without_context());
         de.drive(driver)?;
         de.end()
     }

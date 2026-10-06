@@ -69,6 +69,14 @@ impl DeserializerConfig {
         self.context = context;
     }
 
+    /// Returns the configuration without its context (for the frames of
+    /// streams, which get the context of the stream).
+    pub(crate) fn without_context(&self) -> DeserializerConfig {
+        let mut config = self.clone();
+        config.context = deser_core::Context::default();
+        config
+    }
+
     /// Returns the context the values are deserialized in.
     pub fn context(&self) -> &deser_core::Context {
         &self.context
@@ -254,7 +262,14 @@ impl<'a> Deserializer<'a> {
     /// and strings without escape sequences are passed on borrowed from the
     /// input (see [`emit_borrowed`](DeserializeDriver::emit_borrowed)).
     /// Errors carry the location in the input (see [`Error::line`]).
+    ///
+    /// The context of the configuration is given to the driver (values that
+    /// the context of the driver has take precedence, see
+    /// [`DeserializeDriver::set_default_context`]).
     pub fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
+        if !self.config.context.is_empty() {
+            driver.set_default_context(self.config.context.clone());
+        }
         if let Some(err) = self.error.take() {
             return Err(err);
         }
@@ -272,9 +287,6 @@ impl<'a> Deserializer<'a> {
 
 impl<'a> de::Deserializer<'a> for Deserializer<'a> {
     fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
-        if !self.config.context.is_empty() {
-            driver.set_default_context(self.config.context.clone());
-        }
         Deserializer::drive(self, driver)
     }
 }

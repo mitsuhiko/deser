@@ -35,6 +35,12 @@ All notable changes to deser are documented here.
 - The arena now parks its largest chunk for the next deserialization or
   serialization (up to 1 MiB) instead of the first one, so large
   documents do not grow it again every time.
+- The `drive` methods of the deserializers of all formats give the
+  context of the configuration to the driver like `deserialize` does (it
+  was only given when they were used through the `Deserializer` trait),
+  and `deser_csv::Deserializer::drive_record` (and thus `records` and
+  `deserialize_record`) does too.  Limits and other values of the
+  context were ignored by these methods.
 - `deser-env`: the serializer rejects names that do not split into their
   keys again (a key ending in `_` before the separator `__`) and
   different keys with the same name (like `a` and `A`), and a

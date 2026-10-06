@@ -1000,6 +1000,9 @@ impl<'a> Deserializer<'a> {
     ///
     /// Returns `false` if there are no more records.
     pub fn drive_record(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<bool, Error> {
+        if !self.config.context.is_empty() {
+            driver.set_default_context(self.config.context.clone());
+        }
         let rv = self.drive_record_impl(driver);
         rv.map_err(|mut err| {
             err.resolve_position(self.input);
@@ -1066,7 +1069,14 @@ impl<'a> Deserializer<'a> {
     /// Fields that do not need to be decoded are passed on borrowed from
     /// the input (see
     /// [`emit_borrowed`](DeserializeDriver::emit_borrowed)).
+    ///
+    /// The context of the configuration is given to the driver (values that
+    /// the context of the driver has take precedence, see
+    /// [`DeserializeDriver::set_default_context`]).
     pub fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
+        if !self.config.context.is_empty() {
+            driver.set_default_context(self.config.context.clone());
+        }
         let rv = self.drive_impl(driver);
         rv.map_err(|mut err| {
             err.resolve_position(self.input);
@@ -1100,9 +1110,6 @@ impl<'a> Deserializer<'a> {
 
 impl<'a> de::Deserializer<'a> for Deserializer<'a> {
     fn drive(&mut self, driver: &mut DeserializeDriver<'_, 'a>) -> Result<(), Error> {
-        if !self.config.context.is_empty() {
-            driver.set_default_context(self.config.context.clone());
-        }
         Deserializer::drive(self, driver)
     }
 }

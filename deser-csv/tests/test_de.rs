@@ -673,3 +673,17 @@ fn test_maps_and_sequences() {
     );
     assert_eq!(de.deserialize_record::<Vec<u32>>().unwrap(), None);
 }
+
+#[test]
+fn test_records_context() {
+    use deser::Context;
+    use deser::de::{Limits, Recording};
+
+    // the records get the context of the configuration
+    let config = deser_csv::DeserializerConfig::builder()
+        .context(Context::with(Limits::builder().max_len(3).build()))
+        .build();
+    let mut de = deser_csv::Deserializer::from_str_with_config("a,b\nabcdef,x\n", config);
+    let err = de.records::<Recording>().next().unwrap().unwrap_err();
+    assert_eq!(err.kind(), deser::ErrorKind::LimitExceeded);
+}

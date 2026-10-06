@@ -80,7 +80,7 @@ impl de::StreamDeserializer for StreamDeserializer {
         frame: &'de [u8],
         driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error> {
-        Deserializer::from_slice_with_config(frame, self.config.clone()).drive(driver)
+        Deserializer::from_slice_with_config(frame, self.config.without_context()).drive(driver)
     }
 
     fn is_text(&self) -> bool {
