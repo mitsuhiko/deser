@@ -72,6 +72,10 @@ All notable changes to deser are documented here.
   OpenStep property lists, they started a comment.
 - `deser-ini`: the serializer rejects keys that start with a byte order
   mark, which is skipped at the start of a file.
+- `deser-json5`: strings in byte slices with a backslash before a UTF-8
+  continuation byte are rejected as invalid UTF-8.  The escaped byte
+  completed the character before the backslash (the bytes `D2 5C B1` were
+  read as `ұ`), and raw values (`RawJson5`) held input that is not UTF-8.
 - `deser-plist`: the serializer rejects dates in binary property lists
   that are too far from 2001 to be read again (they are stored as
   seconds in a float).

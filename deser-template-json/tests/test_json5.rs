@@ -127,6 +127,15 @@ fn test_strings() {
     assert!(from_str::<String>("'line\nbreak'").is_err());
     assert!(from_str::<String>(r"'\01'").is_err());
     assert!(from_slice::<String>(b"'\xff'").is_err());
+    // characters stand for themselves after a backslash, but continuation
+    // bytes must not complete the character before the backslash
+    assert_eq!(from_slice::<String>(b"'a\\\xd2\xb1'").unwrap(), "a\u{4b1}");
+    for input in [&b"'\xd2\\\xb1'"[..], b"\"\xd2\\\xb1\"", b"'\\\xb1'"] {
+        let err = from_slice::<String>(input).unwrap_err();
+        assert_eq!(err.message(), "invalid utf-8 in string");
+        let err = from_slice::<dialect::RawJson5>(input).unwrap_err();
+        assert_eq!(err.message(), "invalid utf-8 in string");
+    }
 }
 
 #[test]

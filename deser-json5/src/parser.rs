@@ -1042,8 +1042,9 @@ impl<'a> Cursor<'a> {
             // strings are only accepted if they are ASCII so this validates
             // the entire input.  The decoded escapes are valid UTF-8 and
             // cannot complete an invalid sequence before them as they never
-            // start with a continuation byte, so validating the unescaped
-            // string is equivalent to validating the raw one.
+            // start with a continuation byte (JSON5 rejects escaped
+            // continuation bytes), so validating the unescaped string is
+            // equivalent to validating the raw one.
             if validate_utf8 && !is_ascii(bytes) && !validate_utf8_slice(bytes) {
                 return Err(Error::new(ErrorKind::Syntax, "invalid utf-8 in string"));
             }
@@ -1333,6 +1334,12 @@ impl<'a> Cursor<'a> {
                 }
             },
             b'1'..=b'9' => return Err(invalid_escape()),
+            // a continuation byte would complete the character before the
+            // backslash (strings are validated after their escapes are
+            // decoded, see `parse_str_slow`)
+            0x80..=0xbf => {
+                return Err(Error::new(ErrorKind::Syntax, "invalid utf-8 in string"));
+            }
             // other characters stand for themselves.  The rest of a
             // character that is not ASCII is copied with the string.
             byte => buffer.push(byte),
