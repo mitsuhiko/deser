@@ -439,6 +439,47 @@ fn test_bytes() {
     );
 }
 
+/// An extension value that falls back to bytes.
+#[derive(Debug, Clone, PartialEq)]
+struct BytesExt(Vec<u8>);
+
+impl deser::ext::Extension for BytesExt {
+    fn name(&self) -> &str {
+        "blob"
+    }
+
+    fn fallback(&self) -> deser::Atom<'_> {
+        deser::Atom::Bytes(self.0.as_slice().into())
+    }
+}
+
+impl Serialize for BytesExt {
+    fn serialize<'a>(
+        value: &'a Self,
+        _state: &mut deser::State,
+    ) -> Result<deser::ser::Emit<'a>, deser::Error> {
+        Ok(deser::ser::Emit::Atom(deser::Atom::Ext(
+            deser::ext::ExtValue::borrowed(value),
+        )))
+    }
+}
+
+#[test]
+fn test_ext_bytes() {
+    // extension values are written as their fallback, long bytes are
+    // wrapped like bytes
+    let long = (0..=255u8).collect::<Vec<_>>();
+    let yaml = to_string(&BytesExt(long.clone())).unwrap();
+    assert_eq!(yaml, to_string(&long).unwrap());
+    assert_eq!(from_str::<Vec<u8>>(&yaml).unwrap(), long);
+    let yaml = to_string(&BTreeMap::from([("a", BytesExt(long.clone()))])).unwrap();
+    assert!(yaml.starts_with("a: !!binary |\n  AAECAwQF"), "{}", yaml);
+    assert_eq!(
+        to_string(&BytesExt(vec![1, 255])).unwrap(),
+        "!!binary Af8=\n"
+    );
+}
+
 #[test]
 fn test_tags() {
     let value = vec![

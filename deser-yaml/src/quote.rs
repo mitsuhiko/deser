@@ -204,6 +204,16 @@ impl<'a> BlockScalar<'a> {
         s.len() > width && fold_points(s).next().is_some()
     }
 
+    /// Detaches the block scalar from the data it borrows.
+    pub(crate) fn into_owned(self) -> BlockScalar<'static> {
+        BlockScalar {
+            content: Cow::Owned(self.content.into_owned()),
+            trailing: self.trailing,
+            needs_indicator: self.needs_indicator,
+            fold: self.fold,
+        }
+    }
+
     /// Creates a literal block from lines without leading spaces.
     pub(crate) fn from_lines(lines: String) -> BlockScalar<'static> {
         BlockScalar {

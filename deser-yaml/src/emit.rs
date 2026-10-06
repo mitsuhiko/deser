@@ -131,14 +131,14 @@ enum Scalar<'a> {
 }
 
 impl Scalar<'_> {
-    /// Detaches a scalar that is not a block scalar from the data it
-    /// borrows.
+    /// Detaches a scalar from the data it borrows.
     fn into_owned(self) -> Scalar<'static> {
         match self {
             Scalar::Text(text) => Scalar::Text(Cow::Owned(text.into_owned())),
             Scalar::Short(text) => Scalar::Short(text),
             Scalar::Empty => Scalar::Empty,
-            Scalar::Block(_) => unreachable!("only strings are block scalars"),
+            // long `!!binary` values of fallbacks
+            Scalar::Block(block) => Scalar::Block(block.into_owned()),
         }
     }
 }

@@ -72,6 +72,9 @@ All notable changes to deser are documented here.
   OpenStep property lists, they started a comment.
 - `deser-ini`: the serializer rejects keys that start with a byte order
   mark, which is skipped at the start of a file.
+- `deser-yaml`: fixed a panic when serializing extension values whose
+  fallback is long bytes (like MessagePack extension types), which are
+  written as `!!binary` block scalars.
 - `deser-ini`: the serializer rejects keys with the same name as a
   section in INI files (like the keys `1` and `"1"` of a map), which did
   not deserialize again.
