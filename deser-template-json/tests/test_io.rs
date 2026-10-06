@@ -40,6 +40,37 @@ fn test_values_without_whitespace() {
 
 #[test]
 #[cfg_attr(miri, ignore = "slow, no unsafe code under test")]
+fn test_scalars_without_whitespace() {
+    // scalars end where the parser stops, not at the next whitespace
+    if DIALECT.hjson {
+        // quoteless strings and numbers end at the end of the line
+        check_stream(
+            &STOP, "1-2
+3", 2,
+        );
+    } else if DIALECT.json5 {
+        check_stream(&STOP, "1-2 3+4 .5.5 true-1null", 9);
+    } else {
+        check_stream(&STOP, "1-2 3-4e1 truefalse-0null", 8);
+    }
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "slow, no unsafe code under test")]
+fn test_multiline_strings_in_chunks() {
+    if !DIALECT.hjson {
+        return;
+    }
+    // the indentation is relative to the column of the quotes, also if
+    // the frame of the value starts at them
+    check_stream(&STOP, "'''\n  a\n  '''\n   '''\n   b\n    c\n   '''", 2);
+    check_stream(&STRICT, "\n  '''\n  a\n   b\n  '''\n", 1);
+    let values = read_chunked(&STOP, "  '''\n  a\n   b\n  '''", 1);
+    assert_eq!(values, [vec![Event::from("a\n b")]]);
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "slow, no unsafe code under test")]
 fn test_newline_in_chunks() {
     check_stream(&NEWLINE, "[1, 2]\n\n  {\"a\": \"b\"}  \r\n\"x\"\n   \n3", 4);
 }

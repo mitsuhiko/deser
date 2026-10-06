@@ -17,12 +17,6 @@ use crate::scan::LineScan;
 use crate::scan::skip_to_escape;
 use crate::scan::skip_to_escape_single;
 
-/// Returns `true` for whitespace (the ASCII characters, not the Unicode
-/// whitespace).
-fn is_whitespace(byte: u8) -> bool {
-    matches!(byte, b' ' | b'\n' | b'\t' | b'\r' | 0x0b | 0x0c)
-}
-
 /// Returns where the next token starts and if it's there.
 ///
 /// If the input ends within a comment (and more input follows), this is
@@ -67,10 +61,11 @@ struct Value {
     single: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug)]
 enum ValueKind {
-    /// A number or literal.
-    Scalar,
+    /// A number or literal, which is scanned by parsing it (`1-2` is two
+    /// numbers).  The parser consumed the input up to `start + parsed`.
+    Scalar { parser: Parser, parsed: usize },
     /// A string, map or sequence.
     Structure,
 }
@@ -166,7 +161,14 @@ fn frame_value(state: &mut StreamState, input: &[u8], eof: bool) -> Frame {
                         consumed: start + 1,
                     };
                 }
-                _ => (ValueKind::Scalar, 0, false),
+                _ => (
+                    ValueKind::Scalar {
+                        parser: Parser::default(),
+                        parsed: 0,
+                    },
+                    0,
+                    false,
+                ),
             };
             state.pos = start + 1;
             state.value.insert(Value {
@@ -180,22 +182,29 @@ fn frame_value(state: &mut StreamState, input: &[u8], eof: bool) -> Frame {
     };
 
     let end = match value.kind {
-        ValueKind::Scalar => {
-            let end = input[state.pos..].iter().position(|&b| match b {
-                b'{' | b'}' | b'[' | b']' | b',' | b':' | b'"' => true,
-                // a comment
-                b'/' => true,
-                b'\'' => true,
-                // scalars are ASCII, this is Unicode whitespace
-                0x80..=0xff => true,
-                _ => is_whitespace(b),
-            });
-            match end {
-                Some(index) => Some(state.pos + index),
-                None => {
+        ValueKind::Scalar {
+            ref mut parser,
+            ref mut parsed,
+        } => {
+            let pos = value.start + *parsed;
+            let options = Options {
+                validate_utf8: true,
+                exact_numbers: false,
+            };
+            let mut discard = Discard(State::new());
+            match parser.parse(&input[pos..], 0, eof, 0, options, &mut discard) {
+                Ok(ParseProgress::Done(end)) => Some(pos + end),
+                Ok(ParseProgress::NeedMore(consumed)) => {
+                    *parsed += consumed;
                     state.pos = input.len();
                     None
                 }
+                // the value ends at the error, the parser reports it when
+                // the value is deserialized
+                Err(err) => Some(
+                    err.offset()
+                        .map_or(input.len(), |offset| (pos + offset + 1).min(input.len())),
+                ),
             }
         }
         ValueKind::Structure => scan_structure(input, &mut state.pos, value),
@@ -483,7 +492,8 @@ impl de::StreamDeserializer for StreamDeserializer {
         frame: &'de [u8],
         driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error> {
-        Deserializer::from_frame(frame, &self.config).drive(driver)
+        let mut de = Deserializer::from_frame(frame, &self.config);
+        de.drive(driver)
     }
 
     fn is_text(&self) -> bool {

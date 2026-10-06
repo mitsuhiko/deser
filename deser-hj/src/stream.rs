@@ -43,6 +43,10 @@ struct StreamState {
     pos: usize,
     // `Trailing::Stop`: the value being scanned
     value: Option<Value>,
+    // the column where the frame of the ready value starts (the
+    // indentation of multiline strings is relative to their column).  The
+    // column where the input starts is tracked by `parser`.
+    frame_column: usize,
 }
 
 fn frame_all(state: &mut StreamState, input: &[u8], eof: bool) -> Result<Frame, Error> {
@@ -62,6 +66,7 @@ fn frame_all(state: &mut StreamState, input: &[u8], eof: bool) -> Result<Frame, 
     let (start, _) = skip_whitespace(input, 0, eof);
     Ok(if start < input.len() {
         state.done = true;
+        state.frame_column = crate::parser::advance_column(state.parser.column(), &input[..start]);
         Frame::Value {
             start,
             end: input.len(),
@@ -105,11 +110,15 @@ fn frame_line(state: &mut StreamState, input: &[u8], eof: bool) -> Frame {
     state.pos = 0;
     let consumed = (end + 1).min(input.len());
     match skip_whitespace(&input[..end], 0, true) {
-        (start, _) if start < end => Frame::Value {
-            start,
-            end,
-            consumed,
-        },
+        (start, _) if start < end => {
+            // lines start at the start of a line
+            state.frame_column = crate::parser::advance_column(0, &input[..start]);
+            Frame::Value {
+                start,
+                end,
+                consumed,
+            }
+        }
         _ if consumed == 0 => Frame::End,
         // blank lines are skipped
         _ => Frame::Incomplete { consumed },
@@ -135,7 +144,10 @@ fn frame_value(state: &mut StreamState, input: &[u8], eof: bool) -> Frame {
             let start = match skip_whitespace(input, 0, eof) {
                 (start, true) => start,
                 (_, false) if input.is_empty() && eof => return Frame::End,
-                (consumed, false) => return Frame::Incomplete { consumed },
+                (consumed, false) => {
+                    state.parser.advance(&input[..consumed]);
+                    return Frame::Incomplete { consumed };
+                }
             };
             state.value.insert(Value {
                 start,
@@ -161,6 +173,7 @@ fn frame_value(state: &mut StreamState, input: &[u8], eof: bool) -> Frame {
             value.parsed += consumed;
             // discard the whitespace before the value
             value.start = 0;
+            state.parser.advance(&input[..start]);
             return Frame::Incomplete { consumed: start };
         }
         // the value ends at the error, the parser reports it when the value
@@ -170,6 +183,8 @@ fn frame_value(state: &mut StreamState, input: &[u8], eof: bool) -> Frame {
             .map_or(input.len(), |offset| (pos + offset + 1).min(input.len())),
     };
     state.value = None;
+    state.frame_column = crate::parser::advance_column(state.parser.column(), &input[..start]);
+    state.parser.advance(&input[..end]);
     Frame::Value {
         start,
         end,
@@ -352,7 +367,9 @@ impl de::StreamDeserializer for StreamDeserializer {
         frame: &'de [u8],
         driver: &mut DeserializeDriver<'_, 'de>,
     ) -> Result<(), Error> {
-        Deserializer::from_frame(frame, &self.config).drive(driver)
+        let mut de = Deserializer::from_frame(frame, &self.config);
+        de.set_column(self.state.frame_column);
+        de.drive(driver)
     }
 
     fn is_text(&self) -> bool {
@@ -410,7 +427,11 @@ impl de::StreamDeserializer for StreamDeserializer {
             return Ok(None);
         }
         Ok(Some(match self.skip_to_value(input, 0, eof)? {
-            Ok(pos) => Progress::Done { consumed: pos },
+            Ok(pos) => {
+                // the whitespace before the value is consumed
+                self.state.parser.advance(&input[..pos]);
+                Progress::Done { consumed: pos }
+            }
             Err(progress) => progress,
         }))
     }

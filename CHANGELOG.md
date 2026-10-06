@@ -45,6 +45,13 @@ All notable changes to deser are documented here.
   in a sequence with `ArrayFormat::Brackets`) and empty nested keys.
 - `deser-csv`: the stream deserializer rejects UTF-16 input also if the
   first chunk it receives is a single byte.
+- `deser-json`, `deser-jsonc`, `deser-json5` and `deser-hj`: with
+  `Trailing::Stop` the stream deserializer splits numbers and literals
+  where the parser stops (`1-2` is `1` and `-2`) like the deserializer
+  does, it split them at the next whitespace or punctuation when they
+  were read from their frames.  Multiline strings of Hjson that are read
+  from their frames are indented relative to their column in the stream
+  rather than in the frame.
 - `deser-yaml`: the stream deserializer reports errors in what follows the
   last document (like directives without a document or comments that are
   not UTF-8) instead of ignoring it, like the deserializer does.

@@ -373,6 +373,13 @@ impl<'a> Deserializer<'a> {
         de
     }
 
+    /// Sets the column where the input starts.
+    ///
+    /// The indentation of multiline strings is relative to their column.
+    pub(crate) fn set_column(&mut self, column: usize) {
+        self.parser.set_column(column);
+    }
+
     /// Returns the configuration.
     pub fn config(&self) -> &DeserializerConfig {
         &self.config

@@ -342,6 +342,19 @@ impl Parser {
         self.column = advance_column(self.column, input);
     }
 
+    /// Sets the column where the input starts (for instance the frame of
+    /// a value in a stream which starts in the middle of a line).
+    #[cfg(hjson)]
+    pub(crate) fn set_column(&mut self, column: usize) {
+        self.column = column;
+    }
+
+    /// Returns the column where the input that follows starts.
+    #[cfg(hjson)]
+    pub(crate) fn column(&self) -> usize {
+        self.column
+    }
+
     /// Parses a value (or continues it) from `input[pos..]`.
     ///
     /// `eof` is `true` if no input follows, `base` is the offset of the
@@ -2998,7 +3011,7 @@ fn count_chars(bytes: &[u8]) -> usize {
 
 /// Returns the column after the input starting at `column`.
 #[cfg(hjson)]
-fn advance_column(column: usize, input: &[u8]) -> usize {
+pub(crate) fn advance_column(column: usize, input: &[u8]) -> usize {
     match input.iter().rposition(|&byte| byte == b'\n') {
         Some(index) => count_chars(&input[index + 1..]),
         None => column + count_chars(input),
