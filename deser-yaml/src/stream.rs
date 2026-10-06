@@ -142,11 +142,16 @@ impl de::StreamDeserializer for StreamDeserializer {
             };
             if line_end == state.pos {
                 // the end of the stream
-                return Ok(if state.has_document {
-                    state.document(input.len())
-                } else {
-                    Frame::End
-                });
+                if state.has_document {
+                    return Ok(state.document(input.len()));
+                }
+                // what follows the last document has to be valid too (like
+                // directives without a document or comments which are not
+                // UTF-8)
+                if !input.is_empty() {
+                    Deserializer::from_slice_with_config(input, self.config.clone()).end()?;
+                }
+                return Ok(Frame::End);
             }
             match classify(&input[state.pos..line_end]) {
                 Line::DocumentStart if state.has_document => return Ok(state.document(state.pos)),

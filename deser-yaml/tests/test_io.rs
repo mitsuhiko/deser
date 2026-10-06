@@ -80,6 +80,34 @@ fn test_documents_in_chunks() {
 }
 
 #[test]
+fn test_errors_after_the_last_document() {
+    // directives without a document and comments that are not UTF-8
+    for input in [
+        &b"%"[..],
+        b"%YAML 1.2\n",
+        b"# \xff\n",
+        b"a\n...\n%YAML 1.2\n",
+    ] {
+        let mut de = Deserializer::from_slice(input);
+        let expected = de
+            .iter::<Recording>()
+            .find_map(Result::err)
+            .expect("an error");
+        for size in 1..=input.len() {
+            let mut reader = DeserializerConfig::new().reader(Chunked { input, size });
+            let err = loop {
+                match reader.read::<Recording>() {
+                    Ok(Some(_)) => {}
+                    Ok(None) => panic!("no error for {input:?} size {size}"),
+                    Err(err) => break err,
+                }
+            };
+            assert_eq!(err.message(), expected.message(), "{input:?} size {size}");
+        }
+    }
+}
+
+#[test]
 fn test_no_read_while_a_document_is_complete() {
     let mut reader = DeserializerConfig::new().reader(Blocking(b"a\n...\n--- b\n...\n"));
     assert_eq!(reader.read::<String>().unwrap().as_deref(), Some("a"));

@@ -45,6 +45,9 @@ All notable changes to deser are documented here.
   in a sequence with `ArrayFormat::Brackets`) and empty nested keys.
 - `deser-csv`: the stream deserializer rejects UTF-16 input also if the
   first chunk it receives is a single byte.
+- `deser-yaml`: the stream deserializer reports errors in what follows the
+  last document (like directives without a document or comments that are
+  not UTF-8) instead of ignoring it, like the deserializer does.
 
 ## 0.10.0
 
