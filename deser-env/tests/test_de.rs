@@ -203,6 +203,13 @@ fn test_config() {
         .unwrap_err();
     assert_eq!(err.message(), "name is nested too deeply");
     assert_eq!(env_var(&err), Some("A__B__C"));
+    // also without a limit
+    let value: Nested = DeserializerConfig::builder()
+        .max_depth(usize::MAX)
+        .build()
+        .from_vars("", [("A__B", "1")])
+        .unwrap();
+    assert_eq!(value["a"]["b"], "1");
 
     // bytes are base64
     let value: BTreeMap<String, Vec<u8>> = from_vars("", [("KEY", "AQID")]).unwrap();

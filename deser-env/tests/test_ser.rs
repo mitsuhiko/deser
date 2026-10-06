@@ -139,6 +139,20 @@ fn test_errors() {
 
     let err = to_vars("", &BTreeMap::from([("a__b", 1)])).unwrap_err();
     assert_eq!(err.message(), "key \"a__b\" contains the separator");
+    // the end of a key followed by the separator looks like the separator
+    // (`A___B` splits into `A` and `_B`)
+    let value = BTreeMap::from([("a_", BTreeMap::from([("b", 1)]))]);
+    let err = to_vars("", &value).unwrap_err();
+    assert_eq!(
+        err.message(),
+        "the name \"A___B\" does not split into its keys at the separator"
+    );
+    // keys that start with a part of the separator are fine
+    let value = BTreeMap::from([("a", BTreeMap::from([("_b", 1)]))]);
+    let vars = to_vars("", &value).unwrap();
+    assert_eq!(vars, [("A___B".to_string(), "1".to_string())]);
+    let back: BTreeMap<String, BTreeMap<String, u32>> = deser_env::from_vars("", vars).unwrap();
+    assert_eq!(back["a"]["_b"], 1);
     let err = to_vars("", &BTreeMap::from([("", 1)])).unwrap_err();
     assert_eq!(
         err.message(),

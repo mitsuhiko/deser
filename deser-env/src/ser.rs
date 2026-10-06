@@ -260,6 +260,14 @@ enum Frame {
     Seq { prefix: usize, index: usize },
 }
 
+impl Frame {
+    fn prefix(&self) -> usize {
+        match *self {
+            Frame::Map { prefix } | Frame::Seq { prefix, .. } => prefix,
+        }
+    }
+}
+
 /// Writes the events of a value.
 struct Writer<'c> {
     config: &'c SerializerConfig,
@@ -348,6 +356,42 @@ impl Writer<'_> {
         }
     }
 
+    /// Checks that the current name splits into its keys again.
+    ///
+    /// Keys do not contain the separator, but the end of a key and the
+    /// separator after it can (`A_` and `__` are `A___`, which splits into
+    /// `A` and `_`).
+    fn check_name(&self) -> Result<(), Error> {
+        let Some(base) = self.stack.first().map(Frame::prefix) else {
+            return Ok(());
+        };
+        let separator = self.config.separator;
+        let mut segments = Vec::new();
+        crate::de::split_name(&self.name[base..], separator, &mut segments);
+        let expected = self.stack.iter().enumerate().map(|(index, frame)| {
+            let start = match index {
+                0 => frame.prefix(),
+                _ => frame.prefix() + separator.len(),
+            };
+            let end = match self.stack.get(index + 1) {
+                Some(next) => next.prefix(),
+                None => self.name.len(),
+            };
+            (start - base, end - base)
+        });
+        if segments.iter().copied().eq(expected) {
+            Ok(())
+        } else {
+            Err(Error::new(
+                ErrorKind::UnsupportedType,
+                format!(
+                    "the name {:?} does not split into its keys at the separator",
+                    self.name
+                ),
+            ))
+        }
+    }
+
     /// Writes a value for the current name.
     fn value(&mut self, event: Event, in_seq: bool) -> Result<(), Error> {
         match event {
@@ -359,6 +403,7 @@ impl Writer<'_> {
                     None if in_seq => Cow::Borrowed(""),
                     None => return Ok(()),
                 };
+                self.check_name()?;
                 self.out.push((self.name.clone(), value.into_owned()));
             }
             Event::MapStart(_) | Event::SeqStart(_) if self.config.separator.is_empty() => {

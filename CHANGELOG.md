@@ -35,6 +35,9 @@ All notable changes to deser are documented here.
 - The arena now parks its largest chunk for the next deserialization or
   serialization (up to 1 MiB) instead of the first one, so large
   documents do not grow it again every time.
+- `deser-env`: the serializer rejects names that do not split into their
+  keys again (a key ending in `_` before the separator `__`), and a
+  `max_depth` of `usize::MAX` no longer overflows.
 
 ## 0.10.0
 

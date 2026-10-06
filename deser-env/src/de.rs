@@ -513,7 +513,7 @@ impl Tree {
         for (index, var) in vars.iter().enumerate() {
             segments.clear();
             split_name(&var.name[var.prefix_len..], config.separator, &mut segments);
-            if segments.len() > config.max_depth + 1 {
+            if segments.len().saturating_sub(1) > config.max_depth {
                 return Err(var_error(
                     ErrorKind::LimitExceeded,
                     "name is nested too deeply",
@@ -762,7 +762,7 @@ fn emit_value<'a>(driver: &mut DeserializeDriver<'_, 'a>, var: &Var<'a>) -> Resu
 ///
 /// Names that start or end with the separator or have two separators in a
 /// row are not split, they are taken as they are.
-fn split_name(name: &str, separator: &str, segments: &mut Vec<(usize, usize)>) {
+pub(crate) fn split_name(name: &str, separator: &str, segments: &mut Vec<(usize, usize)>) {
     if !separator.is_empty() {
         let mut start = 0;
         for (pos, _) in name.match_indices(separator) {
