@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 use deser_core::ext::Number;
 use deser_core::ser::{self, SerializeDriver, SerializeRef};
@@ -514,9 +514,10 @@ struct Table {
     tables: String,
     /// The key of the next value.
     key: Option<String>,
-    /// The names of the keys and tables in git's config files (lowercased
-    /// like git reads them, except for subsections).
-    names: HashSet<String>,
+    /// The names of the keys and tables (lowercased like git reads them in
+    /// git's config files, except for subsections), with whether they are
+    /// tables.
+    names: HashMap<String, bool>,
 }
 
 enum Frame {
@@ -559,7 +560,7 @@ impl Writer<'_> {
                     body: String::new(),
                     tables: String::new(),
                     key: None,
-                    names: HashSet::new(),
+                    names: HashMap::new(),
                 })),
                 Event::Atom(Atom::Null) => {}
                 _ => {
@@ -584,13 +585,13 @@ impl Writer<'_> {
                         if let Some(value) = self.value_text(atom)? {
                             let mut line = String::new();
                             self.write_entry(&mut line, &key, Some(&value))?;
-                            self.claim_name(&key, false)?;
+                            self.claim_name(&key, false, false)?;
                             self.top_table().body.push_str(&line);
                         }
                     }
                     Event::SeqStart(_) => {
                         self.check_key(&key)?;
-                        self.claim_name(&key, false)?;
+                        self.claim_name(&key, false, false)?;
                         self.stack.push(Frame::Seq(key));
                     }
                     Event::MapStart(_) => self.start_table(key)?,
@@ -677,7 +678,7 @@ impl Writer<'_> {
                 ));
             }
         };
-        self.claim_name(&key, depth == 2)?;
+        self.claim_name(&key, true, depth == 2)?;
         self.stack.push(Frame::Table(Table {
             name: key,
             depth,
@@ -685,7 +686,7 @@ impl Writer<'_> {
             body: String::new(),
             tables: String::new(),
             key: None,
-            names: HashSet::new(),
+            names: HashMap::new(),
         }));
         Ok(())
     }
@@ -722,25 +723,30 @@ impl Writer<'_> {
     /// Records the name of a key or table in the table on the top of the
     /// stack.
     ///
-    /// The names of keys and sections in git's config files are case
-    /// insensitive, different keys (like `a` and `A`) cannot have the same
-    /// name.  The names of subsections are case sensitive.
-    fn claim_name(&mut self, name: &str, case_sensitive: bool) -> Result<(), Error> {
-        if self.config.syntax != Syntax::Git {
-            return Ok(());
-        }
-        let name = if case_sensitive {
+    /// A key and a section cannot have the same name, they would be read
+    /// back as the same value.  In git's config files no two keys can have
+    /// the same name, and the names of keys and sections are case
+    /// insensitive (`a` and `A` are the same name).  The names of
+    /// subsections are case sensitive.
+    fn claim_name(&mut self, name: &str, table: bool, case_sensitive: bool) -> Result<(), Error> {
+        let git = self.config.syntax == Syntax::Git;
+        let name = if case_sensitive || !git {
             name.to_string()
         } else {
             name.to_ascii_lowercase()
         };
-        if self.top_table().names.insert(name) {
-            Ok(())
-        } else {
-            Err(Error::new(
+        match self.top_table().names.insert(name, table) {
+            None => Ok(()),
+            // repeated keys and sections of INI files are merged
+            Some(was_table) if !git && was_table == table => Ok(()),
+            Some(_) => Err(Error::new(
                 ErrorKind::UnsupportedType,
-                "different keys have the same name in git's config files",
-            ))
+                if git {
+                    "different keys have the same name in git's config files"
+                } else {
+                    "a key and a section have the same name"
+                },
+            )),
         }
     }
 

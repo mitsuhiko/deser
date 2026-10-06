@@ -72,6 +72,9 @@ All notable changes to deser are documented here.
   OpenStep property lists, they started a comment.
 - `deser-ini`: the serializer rejects keys that start with a byte order
   mark, which is skipped at the start of a file.
+- `deser-ini`: the serializer rejects keys with the same name as a
+  section in INI files (like the keys `1` and `"1"` of a map), which did
+  not deserialize again.
 - `deser-php`: the serializer rejects references that do not refer to a
   value before them (or `r:` references to values that are not objects)
   instead of writing output that cannot be deserialized.

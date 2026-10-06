@@ -158,6 +158,28 @@ fn test_unsupported() {
     let section = |name: &str| BTreeMap::from([(name.to_string(), BTreeMap::from([("a", 1)]))]);
     assert!(to_string(&section("a] ;b")).is_err());
     assert_eq!(to_string(&section("a]b")).unwrap(), "[a]b]\na = 1\n");
+
+    // keys with the same name as a section (`1` and `"1"` are different
+    // keys of a map) would be read back as one value
+    let mut map = deser_value::Map::new();
+    map.insert(
+        deser_value::Value::from(1u64),
+        deser_value::Value::from(1u64),
+    );
+    let mut section = deser_value::Map::new();
+    section.insert(
+        deser_value::Value::from("b"),
+        deser_value::Value::from(2u64),
+    );
+    map.insert(
+        deser_value::Value::from("1"),
+        deser_value::Value::from(section),
+    );
+    let err = to_string(&deser_value::Value::from(map)).unwrap_err();
+    assert_eq!(err.message(), "a key and a section have the same name");
+    // repeated keys and sections are merged
+    let value = BTreeMap::from([("a", vec![1, 2])]);
+    assert_eq!(to_string(&value).unwrap(), "a = 1\na = 2\n");
 }
 
 #[test]
