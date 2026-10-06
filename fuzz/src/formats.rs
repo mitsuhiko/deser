@@ -1,7 +1,7 @@
 //! The formats under test.
 use deser::de::{Recording, StreamDeserializer};
 use deser::ser::StreamSerializer;
-use deser::{Context, Deserialize, Error, Serialize};
+use deser::{BytesFormat, Context, Deserialize, Error, Serialize};
 
 use crate::Values;
 
@@ -23,7 +23,27 @@ pub trait Format {
     /// Creates the configuration of the serializer from the flags of the
     /// fuzz input, together with the configuration of a deserializer which
     /// reads what it writes.
-    fn ser_config(flags: u32, context: Context) -> (Self::SerConfig, Self::Config);
+    ///
+    /// The bits 20 to 22 of the flags pick the [`BytesFormat`] of both (see
+    /// [`bytes_format`]), the other bits are the format's.
+    fn ser_config(flags: u32, context: Context) -> (Self::SerConfig, Self::Config) {
+        let mut ser_context = Context::new();
+        let mut context = context;
+        if let Some(format) = bytes_format(flags) {
+            ser_context.set(format);
+            context.set(format);
+        }
+        let (mut config, de) = Self::format_ser_config(flags, context);
+        Self::set_ser_context(&mut config, ser_context);
+        (config, de)
+    }
+
+    /// Creates the configurations of [`ser_config`](Self::ser_config)
+    /// from the bits of the format.
+    fn format_ser_config(flags: u32, context: Context) -> (Self::SerConfig, Self::Config);
+
+    /// Sets the context of the serializer.
+    fn set_ser_context(config: &mut Self::SerConfig, context: Context);
 
     /// Deserializes a complete input.
     fn from_slice<'de, T: Deserialize<'de>>(
@@ -65,6 +85,27 @@ pub trait Format {
     fn check_raw(_data: &[u8]) {}
 }
 
+/// Picks the format of bytes in formats without native bytes with the bits
+/// 20 to 22 of the flags of the serializer (`None` for the default).
+pub fn bytes_format(flags: u32) -> Option<BytesFormat> {
+    use deser::adapters::Base64UrlNoPad;
+    use deser_encoding::{Base32, Base32Dnssec, Base32NoPad, Hex, HexUpper};
+    pick(
+        flags,
+        20,
+        &[
+            None,
+            Some(BytesFormat::SEQ),
+            Some(BytesFormat::encoded::<Hex>()),
+            Some(BytesFormat::encoded::<HexUpper>()),
+            Some(BytesFormat::encoded::<Base32>()),
+            Some(BytesFormat::encoded::<Base32NoPad>()),
+            Some(BytesFormat::encoded::<Base32Dnssec>()),
+            Some(BytesFormat::encoded::<Base64UrlNoPad>()),
+        ],
+    )
+}
+
 /// Picks one of the values with the bits of the flags at `shift`.
 fn pick<T: Copy>(flags: u32, shift: u32, choices: &[T]) -> T {
     let bits = choices.len().next_power_of_two().trailing_zeros();
@@ -91,6 +132,10 @@ macro_rules! json_dialect {
             type Stream = $krate::StreamDeserializer;
             type Ser = $krate::Serializer;
 
+            fn set_ser_context(config: &mut Self::SerConfig, context: Context) {
+                config.set_context(context);
+            }
+
             fn config(flags: u32, context: Context) -> Self::Config {
                 use $krate::Trailing;
                 $krate::DeserializerConfig::builder()
@@ -104,7 +149,7 @@ macro_rules! json_dialect {
                     .build()
             }
 
-            fn ser_config(flags: u32, context: Context) -> (Self::SerConfig, Self::Config) {
+            fn format_ser_config(flags: u32, context: Context) -> (Self::SerConfig, Self::Config) {
                 use $krate::{Indent, InlinePolicy};
                 let config = $krate::SerializerConfig::builder()
                     .indent(pick(
@@ -253,6 +298,10 @@ impl Format for Yaml {
     type Stream = deser_yaml::StreamDeserializer;
     type Ser = deser_yaml::Serializer;
 
+    fn set_ser_context(config: &mut Self::SerConfig, context: Context) {
+        config.set_context(context);
+    }
+
     fn config(flags: u32, context: Context) -> Self::Config {
         use deser_yaml::Version;
         deser_yaml::DeserializerConfig::builder()
@@ -263,7 +312,7 @@ impl Format for Yaml {
             .build()
     }
 
-    fn ser_config(flags: u32, context: Context) -> (Self::SerConfig, Self::Config) {
+    fn format_ser_config(flags: u32, context: Context) -> (Self::SerConfig, Self::Config) {
         use deser_yaml::{FlowPolicy, Indent, MultilineStyle, NullStyle, QuoteStyle, Version};
         let version = pick(flags, 0, &[Version::V1_2, Version::V1_1]);
         let config = deser_yaml::SerializerConfig::builder()
@@ -334,13 +383,17 @@ impl Format for Toml {
     type Stream = deser_toml::StreamDeserializer;
     type Ser = deser_toml::Serializer;
 
+    fn set_ser_context(config: &mut Self::SerConfig, context: Context) {
+        config.set_context(context);
+    }
+
     fn config(_flags: u32, context: Context) -> Self::Config {
         deser_toml::DeserializerConfig::builder()
             .context(context)
             .build()
     }
 
-    fn ser_config(_flags: u32, context: Context) -> (Self::SerConfig, Self::Config) {
+    fn format_ser_config(_flags: u32, context: Context) -> (Self::SerConfig, Self::Config) {
         (
             deser_toml::SerializerConfig::new(),
             Self::config(0, context),
@@ -405,6 +458,10 @@ impl Format for Ini {
     type Stream = deser_ini::StreamDeserializer;
     type Ser = deser_ini::Serializer;
 
+    fn set_ser_context(config: &mut Self::SerConfig, context: Context) {
+        config.set_context(context);
+    }
+
     fn config(flags: u32, context: Context) -> Self::Config {
         deser_ini::DeserializerConfig::builder()
             .syntax(Ini::syntax(flags))
@@ -418,7 +475,7 @@ impl Format for Ini {
             .build()
     }
 
-    fn ser_config(flags: u32, context: Context) -> (Self::SerConfig, Self::Config) {
+    fn format_ser_config(flags: u32, context: Context) -> (Self::SerConfig, Self::Config) {
         let config = deser_ini::SerializerConfig::builder()
             .syntax(Ini::syntax(flags))
             .inline_comments(Ini::inline_comments(flags))
@@ -455,13 +512,17 @@ impl Format for Cbor {
     type Stream = deser_cbor::StreamDeserializer;
     type Ser = deser_cbor::Serializer;
 
+    fn set_ser_context(config: &mut Self::SerConfig, context: Context) {
+        config.set_context(context);
+    }
+
     fn config(_flags: u32, context: Context) -> Self::Config {
         deser_cbor::DeserializerConfig::builder()
             .context(context)
             .build()
     }
 
-    fn ser_config(flags: u32, context: Context) -> (Self::SerConfig, Self::Config) {
+    fn format_ser_config(flags: u32, context: Context) -> (Self::SerConfig, Self::Config) {
         let config = deser_cbor::SerializerConfig::builder()
             .canonical(bit(flags, 0))
             .build();
@@ -490,13 +551,17 @@ impl Format for Msgpack {
     type Stream = deser_msgpack::StreamDeserializer;
     type Ser = deser_msgpack::Serializer;
 
+    fn set_ser_context(config: &mut Self::SerConfig, context: Context) {
+        config.set_context(context);
+    }
+
     fn config(_flags: u32, context: Context) -> Self::Config {
         deser_msgpack::DeserializerConfig::builder()
             .context(context)
             .build()
     }
 
-    fn ser_config(flags: u32, context: Context) -> (Self::SerConfig, Self::Config) {
+    fn format_ser_config(flags: u32, context: Context) -> (Self::SerConfig, Self::Config) {
         let config = deser_msgpack::SerializerConfig::builder()
             .canonical(bit(flags, 0))
             .build();
@@ -535,6 +600,10 @@ impl Format for Xml {
     type Stream = deser_xml::StreamDeserializer;
     type Ser = deser_xml::Serializer;
 
+    fn set_ser_context(config: &mut Self::SerConfig, context: Context) {
+        config.set_context(context);
+    }
+
     fn config(flags: u32, context: Context) -> Self::Config {
         deser_xml::DeserializerConfig::builder()
             .attribute_prefix(Xml::attribute_prefix(flags))
@@ -544,7 +613,7 @@ impl Format for Xml {
             .build()
     }
 
-    fn ser_config(flags: u32, context: Context) -> (Self::SerConfig, Self::Config) {
+    fn format_ser_config(flags: u32, context: Context) -> (Self::SerConfig, Self::Config) {
         use deser_xml::Indent;
         let config = deser_xml::SerializerConfig::builder()
             .attribute_prefix(Xml::attribute_prefix(flags))
@@ -588,13 +657,17 @@ impl Format for Plist {
     type Stream = deser_plist::StreamDeserializer;
     type Ser = deser_plist::Serializer;
 
+    fn set_ser_context(config: &mut Self::SerConfig, context: Context) {
+        config.set_context(context);
+    }
+
     fn config(_flags: u32, context: Context) -> Self::Config {
         deser_plist::DeserializerConfig::builder()
             .context(context)
             .build()
     }
 
-    fn ser_config(flags: u32, context: Context) -> (Self::SerConfig, Self::Config) {
+    fn format_ser_config(flags: u32, context: Context) -> (Self::SerConfig, Self::Config) {
         use deser_plist::Format;
         let config = deser_plist::SerializerConfig::builder()
             .format(pick(
@@ -624,13 +697,17 @@ impl Format for Php {
     type Stream = deser_php::StreamDeserializer;
     type Ser = deser_php::Serializer;
 
+    fn set_ser_context(config: &mut Self::SerConfig, context: Context) {
+        config.set_context(context);
+    }
+
     fn config(_flags: u32, context: Context) -> Self::Config {
         deser_php::DeserializerConfig::builder()
             .context(context)
             .build()
     }
 
-    fn ser_config(_flags: u32, context: Context) -> (Self::SerConfig, Self::Config) {
+    fn format_ser_config(_flags: u32, context: Context) -> (Self::SerConfig, Self::Config) {
         (deser_php::SerializerConfig::new(), Self::config(0, context))
     }
 
@@ -652,6 +729,10 @@ impl Format for Pickle {
     type Stream = deser_pickle::StreamDeserializer;
     type Ser = deser_pickle::Serializer;
 
+    fn set_ser_context(config: &mut Self::SerConfig, context: Context) {
+        config.set_context(context);
+    }
+
     fn config(flags: u32, context: Context) -> Self::Config {
         let mut builder = deser_pickle::DeserializerConfig::builder().context(context);
         if bit(flags, 0) {
@@ -660,7 +741,7 @@ impl Format for Pickle {
         builder.build()
     }
 
-    fn ser_config(flags: u32, context: Context) -> (Self::SerConfig, Self::Config) {
+    fn format_ser_config(flags: u32, context: Context) -> (Self::SerConfig, Self::Config) {
         let config = deser_pickle::SerializerConfig::builder()
             .protocol(pick(flags, 0, &[4, 0, 1, 2, 3, 5]))
             .build();
@@ -722,6 +803,10 @@ impl Format for Csv {
     type Stream = deser_csv::StreamDeserializer;
     type Ser = deser_csv::Serializer;
 
+    fn set_ser_context(config: &mut Self::SerConfig, context: Context) {
+        config.set_context(context);
+    }
+
     fn config(flags: u32, context: Context) -> Self::Config {
         use deser_csv::{Headers, Trim};
         deser_csv::DeserializerConfig::builder()
@@ -755,7 +840,7 @@ impl Format for Csv {
             .build()
     }
 
-    fn ser_config(flags: u32, context: Context) -> (Self::SerConfig, Self::Config) {
+    fn format_ser_config(flags: u32, context: Context) -> (Self::SerConfig, Self::Config) {
         use deser_csv::{Headers, QuoteStyle};
         let headers = !bit(flags, 12);
         let config = deser_csv::SerializerConfig::builder()
@@ -840,6 +925,10 @@ impl Format for Urlencoded {
     type Stream = deser_urlencoded::StreamDeserializer;
     type Ser = deser_urlencoded::Serializer;
 
+    fn set_ser_context(config: &mut Self::SerConfig, context: Context) {
+        config.set_context(context);
+    }
+
     fn config(flags: u32, context: Context) -> Self::Config {
         deser_urlencoded::DeserializerConfig::builder()
             .nesting(Urlencoded::nesting(flags))
@@ -849,7 +938,7 @@ impl Format for Urlencoded {
             .build()
     }
 
-    fn ser_config(flags: u32, context: Context) -> (Self::SerConfig, Self::Config) {
+    fn format_ser_config(flags: u32, context: Context) -> (Self::SerConfig, Self::Config) {
         use deser_urlencoded::{ArrayFormat, Nesting};
         // with `Nesting::Flat` sequences cannot be read back as sequences
         // (`a[]` is a key)

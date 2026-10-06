@@ -63,8 +63,10 @@ header of zeroes is the default configuration with the input in one
 chunk.  The flags pick the options of the configurations (see
 `src/formats.rs`), the upper bits of the deserializer flags enable
 location tracking, limits and the policies for duplicate keys (see
-`context` in `src/lib.rs`).  This lets the fuzzer explore the configurations, the seed
-corpus starts with the defaults.
+`context` in `src/lib.rs`) and the bits 20 to 22 of the serializer flags
+pick how bytes are written in formats without native bytes (see
+`bytes_format` in `src/formats.rs`).  This lets the fuzzer explore the
+configurations, the seed corpus starts with the defaults.
 
 To look at a crash, run the target with the input:
 

@@ -14,6 +14,7 @@ deser = { path = "../deser", features = ["derive"] }
 deser-cbor = { path = "../deser-cbor" }
 deser-csv = { path = "../deser-csv" }
 deser-debug = { path = "../deser-debug" }
+deser-encoding = { path = "../deser-encoding" }
 deser-env = { path = "../deser-env" }
 deser-hj = { path = "../deser-hj" }
 deser-ini = { path = "../deser-ini" }
