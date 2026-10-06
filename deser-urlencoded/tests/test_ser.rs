@@ -289,6 +289,49 @@ fn test_top_level() {
         "keys of query strings must be strings, numbers or booleans"
     );
 
+    // pairs need a value
+    let err = to_string(&vec![vec!["a"]]).unwrap_err();
+    assert_eq!(err.message(), "key-value pairs need a value");
+
+    // keys that would be split differently into nested keys
+    let dots = SerializerConfig::builder().nesting(Nesting::Dots).build();
+    let brackets = SerializerConfig::builder()
+        .arrays(ArrayFormat::Brackets)
+        .build();
+    // a key that starts with a bracket is not split (`[]=1`), but `[][]`
+    // is not a sequence either
+    assert_eq!(to_string(&BTreeMap::from([("[]", 1)])).unwrap(), "%5B%5D=1");
+    for (config, value) in [
+        (
+            &SerializerConfig::new(),
+            BTreeMap::from([("a[b]", vec![1])]),
+        ),
+        (&brackets, BTreeMap::from([("[]", vec![1])])),
+        (&dots, BTreeMap::from([("a.b", vec![1])])),
+    ] {
+        let err = config.to_string(&value).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::UnsupportedType);
+        assert!(err.message().contains("split differently"), "{err}");
+    }
+    let nested = BTreeMap::from([("a", BTreeMap::from([("b]", 1)]))]);
+    assert!(to_string(&nested).is_err());
+    let nested = BTreeMap::from([("a", BTreeMap::from([("", 1)]))]);
+    assert_eq!(
+        to_string(&nested).unwrap_err().message(),
+        "nested keys of query strings must not be empty"
+    );
+    // brackets in nested keys are fine with dots and the other way round,
+    // flat keys are taken as they are
+    let value = BTreeMap::from([("a", BTreeMap::from([("[b]", 1)]))]);
+    assert_eq!(dots.to_string(&value).unwrap(), "a.%5Bb%5D=1");
+    let value = BTreeMap::from([("a.b", BTreeMap::from([("c.d", 1)]))]);
+    assert_eq!(to_string(&value).unwrap(), "a.b%5Bc.d%5D=1");
+    let flat = SerializerConfig::builder().nesting(Nesting::Flat).build();
+    assert_eq!(
+        flat.to_string(&BTreeMap::from([("a[b]", 1)])).unwrap(),
+        "a%5Bb%5D=1"
+    );
+
     // more than one value is joined
     let mut serializer = Serializer::new();
     serializer.serialize(&BTreeMap::from([("a", 1)])).unwrap();

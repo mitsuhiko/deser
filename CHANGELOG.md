@@ -39,6 +39,10 @@ All notable changes to deser are documented here.
   keys again (a key ending in `_` before the separator `__`) and
   different keys with the same name (like `a` and `A`), and a
   `max_depth` of `usize::MAX` no longer overflows.
+- `deser-urlencoded`: fixed a panic when a key-value pair at the top
+  level has no value.  The serializer rejects keys that the deserializer
+  would split differently into nested keys (like the key `a[b]`, or `[]`
+  in a sequence with `ArrayFormat::Brackets`) and empty nested keys.
 
 ## 0.10.0
 

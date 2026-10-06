@@ -661,6 +661,13 @@ impl Writer {
                     };
                     self.key.truncate(prefix);
                     if prefix > 0 {
+                        // `a[]` is a sequence and `a.` is not nested
+                        if key.is_empty() {
+                            return Err(Error::new(
+                                ErrorKind::UnsupportedType,
+                                "nested keys of query strings must not be empty",
+                            ));
+                        }
                         self.push_nested(&key);
                     } else {
                         self.key.push_str(&key);
@@ -709,6 +716,12 @@ impl Writer {
                 self.key.clear();
                 self.key.push_str(&key);
             }
+            (Some(Frame::Pair(1)), Event::SeqEnd) => {
+                return Err(Error::new(
+                    ErrorKind::UnsupportedType,
+                    "key-value pairs need a value",
+                ));
+            }
             (Some(Frame::Pair(state @ 1)), event) => {
                 *state = 2;
                 self.value(event, false)?;
@@ -737,6 +750,7 @@ impl Writer {
                     None if in_seq => Cow::Borrowed(""),
                     None => return Ok(()),
                 };
+                self.check_key()?;
                 if self.separate {
                     self.out.push('&');
                 }
@@ -767,6 +781,61 @@ impl Writer {
             Event::MapEnd | Event::SeqEnd => unreachable!("ends are handled by the frames"),
         }
         Ok(())
+    }
+
+    /// Checks that the current key splits into its parts again.
+    ///
+    /// Keys can contain brackets (or dots), which the deserializer would
+    /// take as nested keys (`a[b]` is the key `b` in `a`).  As the
+    /// deserializer decodes keys before it splits them, this cannot be
+    /// escaped.  With [`Nesting::Flat`] keys are taken as they are.
+    fn check_key(&self) -> Result<(), Error> {
+        if self.config.nesting == Nesting::Flat {
+            return Ok(());
+        }
+        // the parts of the key start where the containers start
+        let mut bounds = Vec::new();
+        for frame in &self.stack {
+            match *frame {
+                Frame::Map { prefix } | Frame::Seq { prefix, .. } => bounds.push(prefix),
+                Frame::Pairs | Frame::Pair(_) => bounds.push(0),
+            }
+        }
+        bounds.push(self.key.len());
+        // sequences without indices do not add a part
+        bounds.dedup();
+
+        let mut segments = Vec::new();
+        let first = crate::de::split_key(&self.key, self.config.nesting, &mut segments);
+        let ok = first == bounds.get(1).copied().unwrap_or(self.key.len())
+            && segments.len() + 2 == bounds.len().max(2)
+            && segments
+                .iter()
+                .zip(bounds[1..].windows(2))
+                .all(|(segment, part)| {
+                    let end = match self.config.nesting {
+                        Nesting::Brackets => part[1] - 1,
+                        _ => part[1],
+                    };
+                    match *segment {
+                        crate::de::Segment::Name(start, end2)
+                        | crate::de::Segment::Index(_, start, end2) => {
+                            start == part[0] + 1 && end2 == end
+                        }
+                        crate::de::Segment::Push => &self.key[part[0]..part[1]] == "[]",
+                    }
+                });
+        if ok {
+            Ok(())
+        } else {
+            Err(Error::new(
+                ErrorKind::UnsupportedType,
+                format!(
+                    "the key {:?} would be split differently into nested keys",
+                    self.key
+                ),
+            ))
+        }
     }
 
     /// Appends a nested key (or index) to the current key.

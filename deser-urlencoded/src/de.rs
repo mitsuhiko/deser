@@ -391,7 +391,7 @@ enum ChildId<'a> {
 
 /// A segment of a key.
 #[derive(Clone, Copy)]
-enum Segment {
+pub(crate) enum Segment {
     Name(usize, usize),
     Index(usize, usize, usize),
     Push,
@@ -734,7 +734,7 @@ fn sub_cow<'a>(key: &Cow<'a, str>, start: usize, end: usize) -> Cow<'a, str> {
 ///
 /// Returns the end of the first name.  Keys that do not follow the syntax
 /// of the nesting (like `a[b` or `[a]`) are taken as they are.
-fn split_key(key: &str, nesting: Nesting, segments: &mut Vec<Segment>) -> usize {
+pub(crate) fn split_key(key: &str, nesting: Nesting, segments: &mut Vec<Segment>) -> usize {
     let bytes = key.as_bytes();
     let (open, first_end) = match nesting {
         Nesting::Flat => return key.len(),
