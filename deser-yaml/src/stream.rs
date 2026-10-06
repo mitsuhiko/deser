@@ -134,7 +134,12 @@ impl de::StreamDeserializer for StreamDeserializer {
     fn frame(&mut self, input: &[u8], eof: bool) -> Result<Frame, Error> {
         let state = &mut self.state;
         loop {
-            let line_end = match input[state.pos..].iter().position(|&b| b == b'\n') {
+            // a carriage return alone is a line break too (`\r\n` is a
+            // line followed by an empty one)
+            let line_end = match input[state.pos..]
+                .iter()
+                .position(|&b| b == b'\n' || b == b'\r')
+            {
                 Some(index) => state.pos + index + 1,
                 None if eof => input.len(),
                 // wait for the whole line

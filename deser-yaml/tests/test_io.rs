@@ -63,6 +63,7 @@ const STREAMS: &[(&str, usize)] = &[
     ("\u{feff}# with a byte order mark\n--- a\n--- b", 2),
     ("text: |\n  line\n  # not a comment\n\n  more\n--- 2\n", 2),
     ("a\r\n---\r\nb\r\n", 2),
+    ("a\r---\rb\r...\r--- c\r", 3),
     ("--- |\n  foo\n...\n--- >\n  bar\n  baz\n", 2),
     ("--- # comment\n[1, 2]\n...\n...\n{a: b}", 2),
     ("- &anchor x\n- *anchor\n---\n- y", 2),

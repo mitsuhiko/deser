@@ -54,7 +54,8 @@ All notable changes to deser are documented here.
   rather than in the frame.
 - `deser-yaml`: the stream deserializer reports errors in what follows the
   last document (like directives without a document or comments that are
-  not UTF-8) instead of ignoring it, like the deserializer does.
+  not UTF-8) instead of ignoring it, like the deserializer does, and
+  splits documents at carriage returns (which are line breaks in YAML).
 
 ## 0.10.0
 
