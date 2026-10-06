@@ -52,7 +52,9 @@ All notable changes to deser are documented here.
   were read from their frames.  Multiline strings of Hjson that are read
   from their frames are indented relative to their column in the stream
   rather than in the frame.  With `Trailing::Newline` comments before a
-  value can span lines in Hjson streams too.
+  value can span lines in Hjson streams too, and the frame of a value that
+  ends within a comment is no longer cut off before the comment (where
+  the value was valid).
 - `deser-ini`: the serializer rejects different keys with the same name
   in git's config files (like `a` and `A`, the names of keys and
   sections are case insensitive), which did not deserialize again.

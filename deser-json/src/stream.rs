@@ -203,10 +203,7 @@ fn frame_value(state: &mut StreamState, input: &[u8], eof: bool) -> Frame {
                 }
                 // the value ends at the error, the parser reports it when
                 // the value is deserialized
-                Err(err) => Some(
-                    err.offset()
-                        .map_or(input.len(), |offset| (pos + offset + 1).min(input.len())),
-                ),
+                Err(err) => Some(error_end(&err, input, pos)),
             }
         }
         ValueKind::Structure => scan_structure(input, &mut state.pos, value),
@@ -239,6 +236,20 @@ fn frame_value(state: &mut StreamState, input: &[u8], eof: bool) -> Frame {
             state.pos -= start;
             Frame::Incomplete { consumed: start }
         }
+    }
+}
+
+/// Returns where the frame of a value which failed to parse ends.
+///
+/// The frame ends after the byte that failed, the parser fails there
+/// again when the value is deserialized.  If the input ended within the
+/// value (where the error is located at the start of the token, like a
+/// comment, which is valid if it's cut off) the frame is the rest of the
+/// input.
+fn error_end(err: &Error, input: &[u8], pos: usize) -> usize {
+    match err.offset() {
+        Some(offset) if err.kind() != ErrorKind::EndOfFile => (pos + offset + 1).min(input.len()),
+        _ => input.len(),
     }
 }
 

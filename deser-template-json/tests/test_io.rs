@@ -77,6 +77,25 @@ fn test_newline_in_chunks() {
 
 #[test]
 #[cfg_attr(miri, ignore = "slow, no unsafe code under test")]
+fn test_unterminated_comment_in_frame() {
+    if !DIALECT.comments {
+        return;
+    }
+    // the frame of a value that ends within a comment is not cut off
+    // before the comment (where it would be valid)
+    let input = if DIALECT.hjson { "a: /*" } else { "[1, /*" };
+    for size in chunk_sizes(input.len()) {
+        let mut reader = STOP.reader(Chunked {
+            input: input.as_bytes(),
+            size,
+        });
+        let err = reader.read_borrowed::<Recording>().unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::EndOfFile, "size {size}");
+    }
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "slow, no unsafe code under test")]
 fn test_newline_comments_before_values() {
     if !DIALECT.comments {
         return;
