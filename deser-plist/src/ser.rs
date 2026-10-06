@@ -9,6 +9,7 @@ use deser_core::ser::SerializeRef;
 use deser_core::ser::{self, SerializeDriver};
 use deser_core::{Atom, Error, ErrorKind, Event, Serialize};
 
+use crate::common::{timestamp_from_plist, timestamp_to_plist};
 use crate::format::Format;
 use crate::uid::Uid;
 use crate::write_binary;
@@ -678,6 +679,15 @@ impl Builder {
         let id = self.nodes.len();
         let node = match event {
             Event::Atom(atom) => match convert_atom(atom)? {
+                // binary property lists store dates as seconds in a float
+                Some(Node::Date(value))
+                    if timestamp_from_plist(timestamp_to_plist(&value)).is_none() =>
+                {
+                    return Err(Error::new(
+                        ErrorKind::OutOfRange,
+                        "date out of range for binary property lists",
+                    ));
+                }
                 Some(node) => node,
                 None => return Ok(None),
             },

@@ -334,6 +334,19 @@ fn test_dates() {
         nanosecond: 500_000_000,
     };
     assert_eq!(parse(&write(&old, Format::Binary)), Value::Date(old));
+    // binary property lists hold dates as seconds in a float, XML property
+    // lists also hold dates beyond that
+    let far = Timestamp {
+        seconds: i64::MAX,
+        nanosecond: 0,
+    };
+    let err = SerializerConfig::builder()
+        .format(Format::Binary)
+        .build()
+        .to_vec(&far)
+        .unwrap_err();
+    assert_eq!(err.message(), "date out of range for binary property lists");
+    assert_eq!(parse(&write(&far, Format::Xml)), Value::Date(far));
 }
 
 #[test]
