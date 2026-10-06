@@ -53,6 +53,9 @@ All notable changes to deser are documented here.
   from their frames are indented relative to their column in the stream
   rather than in the frame.  With `Trailing::Newline` comments before a
   value can span lines in Hjson streams too.
+- `deser-ini`: the serializer rejects different keys with the same name
+  in git's config files (like `a` and `A`, the names of keys and
+  sections are case insensitive), which did not deserialize again.
 - `deser-php`: the serializer rejects references that do not refer to a
   value before them (or `r:` references to values that are not objects)
   instead of writing output that cannot be deserialized.

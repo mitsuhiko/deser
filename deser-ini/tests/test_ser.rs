@@ -229,6 +229,40 @@ fn test_git() {
     }
     let value = BTreeMap::from([("s.x", BTreeMap::from([("a", 1)]))]);
     assert!(config.to_string(&value).is_err());
+
+    // names of keys and sections are case insensitive, the names of
+    // subsections are not
+    #[derive(Serialize)]
+    struct Clash {
+        a: u32,
+        #[deser(rename = "A")]
+        section: BTreeMap<String, u32>,
+    }
+    let value = Clash {
+        a: 1,
+        section: BTreeMap::from([("b".into(), 2)]),
+    };
+    let err = config.to_string(&value).unwrap_err();
+    assert_eq!(
+        err.message(),
+        "different keys have the same name in git's config files"
+    );
+    let value = BTreeMap::from([("s", BTreeMap::from([("a", 1), ("A", 2)]))]);
+    assert!(config.to_string(&value).is_err());
+    let value = BTreeMap::from([(
+        "s",
+        BTreeMap::from([
+            ("A", BTreeMap::from([("x", 1)])),
+            ("a", BTreeMap::from([("x", 2)])),
+        ]),
+    )]);
+    assert_eq!(
+        config.to_string(&value).unwrap(),
+        "[s \"A\"]\n\tx = 1\n\n[s \"a\"]\n\tx = 2\n"
+    );
+    // sequences repeat their key
+    let value = BTreeMap::from([("s", BTreeMap::from([("a", vec![1, 2])]))]);
+    assert_eq!(config.to_string(&value).unwrap(), "[s]\n\ta = 1\n\ta = 2\n");
 }
 
 #[test]
