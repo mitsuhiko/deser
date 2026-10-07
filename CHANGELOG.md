@@ -76,6 +76,10 @@ All notable changes to deser are documented here.
   continuation byte are rejected as invalid UTF-8.  The escaped byte
   completed the character before the backslash (the bytes `D2 5C B1` were
   read as `ұ`), and raw values (`RawJson5`) held input that is not UTF-8.
+- `deser-urlencoded`: the serializer rejects maps and sequences (other
+  than with `ArrayFormat::Repeat`) under an empty key.  Their keys were
+  written like keys at the top level (`{"": {"a": 1}}` as `a=1`) or are
+  not split when they are read (`[0]=1`).
 - `deser-plist`: the serializer rejects dates in binary property lists
   that are too far from 2001 to be read again (they are stored as
   seconds in a float).

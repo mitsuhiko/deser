@@ -320,6 +320,29 @@ fn test_top_level() {
         to_string(&nested).unwrap_err().message(),
         "nested keys of query strings must not be empty"
     );
+    // the nested keys of an empty key are not split (`[b]=1` is the key
+    // `[b]`), only repeated empty keys are a sequence
+    for config in [&SerializerConfig::new(), &brackets, &dots] {
+        let nested = BTreeMap::from([("", BTreeMap::from([("b", 1)]))]);
+        assert_eq!(
+            config.to_string(&nested).unwrap_err().message(),
+            "maps and sequences in query strings need a key that is not empty"
+        );
+    }
+    assert!(
+        brackets
+            .to_string(&BTreeMap::from([("", vec![1])]))
+            .is_err()
+    );
+    let repeat = SerializerConfig::builder()
+        .arrays(ArrayFormat::Repeat)
+        .build();
+    assert_eq!(
+        repeat
+            .to_string(&BTreeMap::from([("", vec![1, 2])]))
+            .unwrap(),
+        "=1&=2"
+    );
     // brackets in nested keys are fine with dots and the other way round,
     // flat keys are taken as they are
     let value = BTreeMap::from([("a", BTreeMap::from([("[b]", 1)]))]);

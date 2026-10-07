@@ -763,6 +763,18 @@ impl Writer {
                 self.out.push('=');
                 encode(value.as_bytes(), self.config.space_as_plus, &mut self.out);
             }
+            // the nested keys of an empty key (`[a]` or `.a`) are not split
+            // (only repeated empty keys are a sequence)
+            Event::MapStart(_) | Event::SeqStart(_)
+                if self.key.is_empty()
+                    && (matches!(event, Event::MapStart(_))
+                        || self.config.arrays != ArrayFormat::Repeat) =>
+            {
+                return Err(Error::new(
+                    ErrorKind::UnsupportedType,
+                    "maps and sequences in query strings need a key that is not empty",
+                ));
+            }
             Event::MapStart(_) => {
                 if self.config.nesting == Nesting::Flat {
                     return Err(Error::new(
