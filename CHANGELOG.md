@@ -4,13 +4,11 @@ All notable changes to deser are documented here.
 
 ## Unreleased
 
-- **Breaking:** `deser-jsonc`, `deser-json5` and `deser-hj` no longer
-  depend on `deser-json`.  Their serializers are generated from the same
-  template as their parsers, so `Serializer`, `SerializerConfig`,
-  `Indent`, `InlinePolicy` and `Trailing` are types of their own instead of
-  re-exports of `deser-json`.  The serializers of `deser-jsonc` and
-  `deser-json5` write their own raw values (`RawJsonc`, `RawJson5`) as they
-  are, `RawJson` values are encoded like values of other formats.
+- `deser-jsonc`, `deser-json5` and `deser-hj` no longer depend on
+  `deser-json`, their serializers are generated from the same template
+  as their parsers.  The serializers of `deser-jsonc` and `deser-json5`
+  write their own raw values (`RawJsonc`, `RawJson5`) as they are,
+  `RawJson` values are encoded like values of other formats.
 - Fixed a soundness issue in the raw values of `deser-msgpack` and
   `deser-cbor` (and checked the same in `deser-json`, `deser-jsonc` and
   `deser-json5`): the parsers emitted their input with the description
