@@ -607,7 +607,7 @@ impl Parser {
                         // request if it was not kept (see `raw_format`)
                         let format = match self.raw_format.take() {
                             Some(format) => format,
-                            None => match out.state_mut().take_raw_request(&crate::raw::ID) {
+                            None => match out.state_mut().take_raw_request() {
                                 Some(format) => format,
                                 None => return Err(raw_without_format()),
                             },
@@ -754,10 +754,14 @@ fn raw_value<'i, O: Out<'i>>(
 ) -> RawValue {
     let start = cur.pos;
     // the scanner comes with the description of the format of the raw value
-    // (see `raw::Scanner`): programs without raw values do not contain it
+    // (see `raw::Scanner`): programs without raw values do not contain it.
+    // The request can be for any format and descriptions can be created by
+    // anybody (also with the data of this dialect), the input is only
+    // emitted with a description of the identity of this dialect.
     let scanned = match format
         .data()
         .and_then(|data| data.downcast_ref::<crate::raw::Scanner>())
+        .filter(|_| core::ptr::eq(format.id(), &crate::raw::ID))
     {
         Some(scanner) => (scanner.0)(cur, scratch, eof, base, out.state_mut()),
         None => Err(Error::new(
@@ -774,9 +778,9 @@ fn raw_value<'i, O: Out<'i>>(
     // SAFETY: the value was validated (see `skip_raw`).  The input is valid
     // UTF-8: strings were validated if the input is a byte slice,
     // everything else is ASCII (or validated like comments).
-    // The format is the one of the raw value that requested it, which is
-    // this dialect: referring to its description here would bring its
-    // functions (like the serializer) into every program.
+    // The format is the one of the raw value that requested it, which was
+    // checked to be this dialect above: referring to its description here
+    // would bring its functions (like the serializer) into every program.
     let value = unsafe { RawInput::new(input, format) };
     out.state_mut()
         .set_input_range(base + start, base + cur.pos);

@@ -441,10 +441,14 @@ impl Parser {
             self.position = start;
             // the scanner comes with the description of the format of the
             // raw value (see `raw::Scanner`): programs without raw values
-            // do not contain it
+            // do not contain it.  The request can be for any format and
+            // descriptions can be created by anybody (also with the data
+            // of Msgpack), the input is only emitted with a description of
+            // the identity of Msgpack.
             let Some(scanner) = format
                 .data()
                 .and_then(|data| data.downcast_ref::<crate::raw::Scanner>())
+                .filter(|_| core::ptr::eq(format.id(), &crate::raw::ID))
             else {
                 return Err(Err(Error::new(
                     ErrorKind::InvalidState,
@@ -470,10 +474,11 @@ impl Parser {
                     current.in_value = !current.in_value;
                 }
             }
-            // SAFETY: the item was validated
-            // The format is the one of the raw value that requested it:
-            // referring to the description of the format here would bring
-            // its functions (like the serializer) into every program.
+            // SAFETY: the item was validated and the format was checked to
+            // be Msgpack above.  The format is the one of the raw value
+            // that requested it: referring to the description of the
+            // format here would bring its functions (like the serializer)
+            // into every program.
             let value = unsafe { RawInput::new(&input[start..cur.pos], format) };
             let event = Event::Atom(Atom::Ext(ExtValue::owned_value::<RawInput>(value)));
             self.position = cur.pos;
@@ -512,7 +517,7 @@ pub(crate) fn skip_raw(cur: &mut Cursor<'_>) -> Result<(), Error> {
 /// Returns the format of the raw value that the result of an event
 /// requested (see `State::take_raw_request`).
 fn requested_format(state: &mut State) -> Result<&'static RawFormatInfo, Error> {
-    state.take_raw_request(&crate::raw::ID).ok_or_else(|| {
+    state.take_raw_request().ok_or_else(|| {
         Error::new(
             ErrorKind::InvalidState,
             "raw value requested without a format",

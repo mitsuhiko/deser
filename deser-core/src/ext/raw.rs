@@ -32,11 +32,12 @@ use crate::ser::{Emit, Serialize, SerializeHandle, SerializeRef};
 /// * checks with [`Error::is_raw_request`](crate::Error::is_raw_request)
 ///   whether the result of an event requests the next value as raw value
 ///   and takes the description of the format with
-///   [`State::take_raw_request`](crate::State::take_raw_request) (with
-///   its [`RawFormatId`], requests of other formats are discarded).
-/// * validates a value that is wanted as raw value and emits its input as
-///   [`RawInput`] (an [`Atom::Ext`]) with that description rather than
-///   its events.
+///   [`State::take_raw_request`](crate::State::take_raw_request).
+/// * checks that the description has the [`RawFormatId`] of the format
+///   (requests can be for raw values of any format, they are an error
+///   then), validates a value that is wanted as raw value and emits its
+///   input as [`RawInput`] (an [`Atom::Ext`]) with that description
+///   rather than its events.
 /// * writes the [`RawInput`] of its format as it is when serializing
 ///   (see [`RawInput::is_format`]).
 ///
@@ -228,9 +229,12 @@ impl<'a> RawInput<'a> {
     /// write the input as it is.
     ///
     /// Descriptions of formats can be created by anybody (with the
-    /// identity of any format), formats must only emit their input with
-    /// a description of their own identity (see
-    /// [`State::take_raw_request`](crate::State::take_raw_request)).
+    /// identity of any format) and requests for raw values can be for any
+    /// format: formats must check that the description has the identity
+    /// of their own format (see
+    /// [`State::take_raw_request`](crate::State::take_raw_request)) rather
+    /// than rely on where it comes from or on its
+    /// [`data`](RawFormatInfo::data).
     pub unsafe fn new<B: Into<Cow<'a, [u8]>>>(
         bytes: B,
         format: &'static RawFormatInfo,

@@ -319,27 +319,22 @@ impl State {
     /// Takes the description of the format of the raw value that the
     /// result of an event requested (see [`Error::is_raw_request`]).
     ///
-    /// `format` is the identity of the format of the caller, a request for
-    /// a raw value of another format is discarded and `None` is returned.
-    /// Formats emit the input of the value with the description (see
+    /// Formats emit the input of the value with it (see
     /// [`RawInput::new`](crate::ext::RawInput::new)): it's the description
     /// of their own format, but as it comes from the raw value the
     /// functions of the format are only in programs that use its raw
     /// values.
     ///
-    /// The identity is checked here as what is declared with
+    /// The description is not guaranteed to be the one of the caller's
+    /// format: what is declared with
     /// [`declare_raw_format`](Self::declare_raw_format) can be changed by
-    /// everything that has access to the state: a format must never emit
-    /// its input with the description of another format (for instance
-    /// bytes that are not UTF-8 with the description of a text format).
+    /// everything that has access to the state, and descriptions can be
+    /// created with the identity of any format.  Formats check its
+    /// [`id`](crate::ext::RawFormatInfo::id) before they emit their input
+    /// with it.
     #[inline]
-    pub fn take_raw_request(
-        &mut self,
-        format: &'static RawFormatId,
-    ) -> Option<&'static RawFormatInfo> {
-        self.raw_requested
-            .take()
-            .filter(|requested| core::ptr::eq(requested.id(), format))
+    pub fn take_raw_request(&mut self) -> Option<&'static RawFormatInfo> {
+        self.raw_requested.take()
     }
 
     /// Requests the next value as raw value of a format.
