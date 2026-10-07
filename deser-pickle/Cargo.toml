@@ -1,7 +1,7 @@
 [package]
 name = "deser-pickle"
 authors = ["Armin Ronacher <armin.ronacher@active-4.com>"]
-version = "0.10.0"
+version = "0.10.1"
 edition.workspace = true
 rust-version.workspace = true
 description = "Python pickle format support for deser"
@@ -23,10 +23,10 @@ std = ["deser-core/std"]
 io = ["std", "deser-core/io"]
 
 [dependencies]
-deser-core = { version = "0.10.0", path = "../deser-core", default-features = false }
+deser-core = { version = "0.10.1", path = "../deser-core", default-features = false }
 
 [dev-dependencies]
-deser = { version = "0.10.0", path = "../deser", features = ["derive"] }
+deser = { version = "0.10.1", path = "../deser", features = ["derive"] }
 deser-json = { path = "../deser-json" }
 deser-value = { path = "../deser-value" }
 

@@ -1,7 +1,7 @@
 [package]
 name = "deser-validate"
 authors = ["Armin Ronacher <armin.ronacher@active-4.com>"]
-version = "0.10.0"
+version = "0.10.1"
 edition.workspace = true
 rust-version.workspace = true
 description = "Validation for deser"
@@ -14,12 +14,12 @@ documentation = "https://docs.rs/deser-validate"
 autotests = false
 
 [dependencies]
-deser-core = { version = "0.10.0", path = "../deser-core", default-features = false }
-deser-location = { version = "0.10.0", path = "../deser-location" }
-deser-path = { version = "0.10.0", path = "../deser-path" }
+deser-core = { version = "0.10.1", path = "../deser-core", default-features = false }
+deser-location = { version = "0.10.1", path = "../deser-location" }
+deser-path = { version = "0.10.1", path = "../deser-path" }
 
 [dev-dependencies]
-deser = { version = "0.10.0", path = "../deser", features = ["derive"] }
+deser = { version = "0.10.1", path = "../deser", features = ["derive"] }
 deser-json = { path = "../deser-json" }
 
 [[test]]

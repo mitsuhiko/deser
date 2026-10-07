@@ -2,7 +2,7 @@
 
 All notable changes to deser are documented here.
 
-## Unreleased
+## 0.10.1
 
 - `deser-jsonc`, `deser-json5` and `deser-hj` no longer depend on
   `deser-json`, their serializers are generated from the same template

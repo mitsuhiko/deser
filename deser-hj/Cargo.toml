@@ -1,7 +1,7 @@
 [package]
 name = "deser-hj"
 authors = ["Armin Ronacher <armin.ronacher@active-4.com>"]
-version = "0.10.0"
+version = "0.10.1"
 edition.workspace = true
 rust-version.workspace = true
 description = "Hjson support for deser"
@@ -25,16 +25,16 @@ io = ["std", "deser-core/io"]
 speedups = ["dep:simdutf8"]
 
 [dependencies]
-deser-core = { version = "0.10.0", path = "../deser-core", default-features = false }
+deser-core = { version = "0.10.1", path = "../deser-core", default-features = false }
 itoa = "1.0.18"
 zmij = "1.0.23"
 simdutf8 = { version = "0.1.5", optional = true, default-features = false }
 
 [dev-dependencies]
 # the expected values of the test suite are JSON
-deser-json = { version = "0.10.0", path = "../deser-json" }
-deser = { version = "0.10.0", path = "../deser", features = ["derive"] }
-deser-value = { version = "0.10.0", path = "../deser-value" }
+deser-json = { version = "0.10.1", path = "../deser-json" }
+deser = { version = "0.10.1", path = "../deser", features = ["derive"] }
+deser-value = { version = "0.10.1", path = "../deser-value" }
 
 [[test]]
 name = "integration"

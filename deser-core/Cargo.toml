@@ -1,7 +1,7 @@
 [package]
 name = "deser-core"
 authors = ["Armin Ronacher <armin.ronacher@active-4.com>"]
-version = "0.10.0"
+version = "0.10.1"
 edition.workspace = true
 rust-version.workspace = true
 description = "Core traits and types of deser, use the deser crate instead"
