@@ -100,7 +100,7 @@ impl FromStr for Duration {
         }
 
         let overflow = || out_of_range("duration out of range");
-        let mut seconds: i64 = 0;
+        let mut seconds: u64 = 0;
         let mut nanosecond: i64 = 0;
         // the units have to be in order: hours, minutes, seconds
         let mut last_unit = 0;
@@ -110,7 +110,7 @@ impl FromStr for Duration {
             if int_len == 0 {
                 return Err(invalid("invalid duration"));
             }
-            let value: i64 = core::str::from_utf8(&rest[..int_len])
+            let value: u64 = core::str::from_utf8(&rest[..int_len])
                 .unwrap()
                 .parse()
                 .map_err(|_| overflow())?;
@@ -152,10 +152,13 @@ impl FromStr for Duration {
             nanosecond = fraction.unwrap_or(0);
         }
 
-        if negative {
-            seconds = -seconds;
+        let seconds = if negative {
             nanosecond = -nanosecond;
+            0i64.checked_sub_unsigned(seconds)
+        } else {
+            i64::try_from(seconds).ok()
         }
+        .ok_or_else(overflow)?;
         Ok(Duration {
             seconds,
             nanosecond: nanosecond as i32,
@@ -196,10 +199,17 @@ impl WellKnown for Duration {
                 if !value.is_finite() || value.abs() >= 9.2e18 {
                     return Err(out_of_range("duration out of range"));
                 }
-                let seconds = trunc(value);
+                let whole = trunc(value);
+                let mut seconds = whole as i64;
+                let mut nanosecond = round((value - whole) * 1e9) as i32;
+                // Rounding can carry the fraction into the next second.
+                if nanosecond.unsigned_abs() == 1_000_000_000 {
+                    seconds += i64::from(nanosecond.signum());
+                    nanosecond = 0;
+                }
                 Duration {
-                    seconds: seconds as i64,
-                    nanosecond: round((value - seconds) * 1e9) as i32,
+                    seconds,
+                    nanosecond,
                 }
             }
             _ => return Ok(None),

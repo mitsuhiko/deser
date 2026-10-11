@@ -176,6 +176,45 @@ fn test_duration() {
 }
 
 #[test]
+fn test_duration_boundaries() {
+    for nanosecond in [0, -1, -999_999_999] {
+        let value = Duration {
+            seconds: i64::MIN,
+            nanosecond,
+        };
+        roundtrip(value, &value.to_string());
+    }
+    assert_eq!(
+        "-PT9223372036854775808S"
+            .parse::<Duration>()
+            .unwrap()
+            .seconds,
+        i64::MIN
+    );
+    for text in [
+        "PT9223372036854775808S",
+        "-PT9223372036854775809S",
+        "PT18446744073709551616S",
+        "PT18446744073709551615H",
+    ] {
+        assert!(text.parse::<Duration>().is_err(), "{text}");
+    }
+}
+
+#[test]
+fn test_duration_float_rounding() {
+    for value in [0.9999999999999999f64, 1.9999999999999998, 59.99999999999999] {
+        for sign in [1.0, -1.0] {
+            let duration = deserialize::<Duration, _>(value * sign).unwrap();
+            assert!(duration.is_valid(), "{duration:?}");
+            assert_eq!(duration.nanosecond, 0);
+            assert_eq!(duration.seconds, (value.round() * sign) as i64);
+            roundtrip(duration, &duration.to_string());
+        }
+    }
+}
+
+#[test]
 fn test_uuid() {
     let uuid: Uuid = "67e55044-10b1-426f-9247-bb680e5fe0c8".parse().unwrap();
     roundtrip(uuid, "67e55044-10b1-426f-9247-bb680e5fe0c8");
