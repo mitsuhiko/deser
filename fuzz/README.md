@@ -45,6 +45,12 @@ again.  Besides crashes the targets check that:
 
 The `env` target reads its input as lines of `NAME=VALUE`.
 
+`extensions` checks the extension types directly: parsing and formatting of
+arbitrary text, round trips of generated durations, timestamps and big integers,
+float conversions, and decimal mantissa/exponent conversions. Its first byte
+selects the check (text, duration, timestamp, float, big integer bytes, or decimal
+parts); the rest is text or little-endian numeric input consumed by `arbitrary`.
+
 `serialize` generates dynamic values (`src/generate.rs`, including values
 of extension types and values whose type was inferred from text),
 serializes them with every format (and `deser-debug`) and checks that the

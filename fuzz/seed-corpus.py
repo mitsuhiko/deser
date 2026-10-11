@@ -145,6 +145,32 @@ TRANSCODE = [
 ]
 
 
+def extensions():
+    """Direct extension inputs (without the format targets' header)."""
+    for text in [
+        "0", "-0", "1.50", "1e-9223372036854775808", "1e9223372036854775808",
+        "-340282366920938463463374607431768211456",
+        "PT0S", "-PT9223372036854775808S", "PT9223372036854775808S",
+        "PT1H30M0.000000001S",
+        "2000-02-29T23:59:60.999999999+23:59", "0000-01-01T00:00:00Z",
+        "+9223372036854775807-01-01T00:00:00Z",
+        "-9223372036854775807-01-01T00:00:00Z",
+        "67e55044-10b1-426f-9247-bb680e5fe0c8",
+    ]:
+        yield b"\0" + text.encode()
+    for seconds in [-(1 << 63), -(1 << 63) + 1, -1, 0, 1, (1 << 63) - 1]:
+        for mode in [1, 2]:
+            yield struct.pack("<BqI", mode, seconds, 0)
+    for value in [0.0, 0.9999999999999999, 1.9999999999999998, 1e-300, 9.2e18,
+                  float("inf"), float("nan")]:
+        for sign in [1, -1]:
+            yield struct.pack("<Bd", 3, value * sign)
+    for negative in [0, 1]:
+        yield bytes([4, negative, 0, 0, 1])
+    for exponent in [-(1 << 63), -40, -1, 0, 1, (1 << 63) - 1]:
+        yield bytes([5]) + (1250).to_bytes(16, "little", signed=True) + struct.pack("<q", exponent)
+
+
 def main():
     all_seeds = seeds()
     # the transcode target reads the inputs of every format and writes
@@ -171,6 +197,13 @@ def main():
     for data in transcode:
         (corpus / hashlib.sha1(data).hexdigest()).write_bytes(data)
     print(f"transcode: {len(transcode)} inputs")
+    corpus = FUZZ / "corpus" / "extensions"
+    corpus.mkdir(parents=True, exist_ok=True)
+    count = 0
+    for data in extensions():
+        (corpus / hashlib.sha1(data).hexdigest()).write_bytes(data)
+        count += 1
+    print(f"extensions: {count} inputs")
 
 
 if __name__ == "__main__":

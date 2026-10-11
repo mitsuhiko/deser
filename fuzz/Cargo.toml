@@ -154,6 +154,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "extensions"
+path = "fuzz_targets/extensions.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "serialize"
 path = "fuzz_targets/serialize.rs"
 test = false
