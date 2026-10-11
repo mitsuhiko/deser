@@ -287,13 +287,17 @@ impl Timestamp {
     /// Creates a timestamp from a civil date-time with an offset.
     fn from_civil(year: i64, date: Date, time: Time, offset: Offset) -> Option<Timestamp> {
         let days = days_from_civil(year, date.month, date.day);
-        let seconds = days.checked_mul(86400)?.checked_add(
-            i64::from(time.hour) * 3600
-                    + i64::from(time.minute) * 60
-                    // leap seconds are clamped
-                    + i64::from(time.second.min(59))
-                - i64::from(offset.minutes()) * 60,
-        )?;
+        // Use a wider intermediate: midnight can be below i64::MIN even
+        // when the time and offset bring the timestamp back into range.
+        let seconds = i64::try_from(
+            days * 86400
+                + i128::from(time.hour) * 3600
+                + i128::from(time.minute) * 60
+                // leap seconds are clamped
+                + i128::from(time.second.min(59))
+                - i128::from(offset.minutes()) * 60,
+        )
+        .ok()?;
         Some(Timestamp {
             seconds,
             nanosecond: time.nanosecond,
@@ -364,8 +368,10 @@ pub(crate) fn days_in_month(year: i64, month: u8) -> u8 {
 /// Returns the days since the Unix epoch for a proleptic Gregorian date.
 ///
 /// See <http://howardhinnant.github.io/date_algorithms.html>.
-pub(crate) fn days_from_civil(year: i64, month: u8, day: u8) -> i64 {
-    let (month, day) = (i64::from(month), i64::from(day));
+pub(crate) fn days_from_civil(year: i64, month: u8, day: u8) -> i128 {
+    // Expanded years can span i64, so their day counts need more bits.
+    let year = i128::from(year);
+    let (month, day) = (i128::from(month), i128::from(day));
     let year = if month <= 2 { year - 1 } else { year };
     let era = year.div_euclid(400);
     let yoe = year - era * 400;
@@ -742,7 +748,7 @@ fn test_civil_roundtrip() {
         10_000_000,
     ] {
         let (y, m, d) = civil_from_days(days);
-        assert_eq!(days_from_civil(y, m, d), days);
+        assert_eq!(days_from_civil(y, m, d), i128::from(days));
     }
     assert_eq!(civil_from_days(0), (1970, 1, 1));
     assert_eq!(days_from_civil(2000, 3, 1), 11017);

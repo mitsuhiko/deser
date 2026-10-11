@@ -215,6 +215,27 @@ fn test_duration_float_rounding() {
 }
 
 #[test]
+fn test_timestamp_boundaries() {
+    for seconds in [i64::MIN, i64::MIN + 1, i64::MIN + 86400, i64::MAX] {
+        for nanosecond in [0, 999_999_999] {
+            let value = Timestamp {
+                seconds,
+                nanosecond,
+            };
+            roundtrip(value, &value.to_string());
+        }
+    }
+    for text in [
+        "+9223372036854775807-01-01T00:00:00Z",
+        "-9223372036854775807-01-01T00:00:00Z",
+        "+300000000000-01-01T00:00:00Z",
+        "-300000000000-01-01T00:00:00Z",
+    ] {
+        assert!(text.parse::<Timestamp>().is_err(), "{text}");
+    }
+}
+
+#[test]
 fn test_uuid() {
     let uuid: Uuid = "67e55044-10b1-426f-9247-bb680e5fe0c8".parse().unwrap();
     roundtrip(uuid, "67e55044-10b1-426f-9247-bb680e5fe0c8");
