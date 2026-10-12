@@ -103,7 +103,8 @@ impl Limits {
         self.max_items
     }
 
-    /// Limits the length of strings and bytes (in bytes).
+    /// Limits the length of strings and bytes (in bytes), including the
+    /// original text of values whose type was inferred from text.
     pub const fn set_max_len(&mut self, len: usize) {
         self.max_len = Some(len);
     }
@@ -237,11 +238,7 @@ impl RawLimits {
                 self.items.pop();
             }
             Event::Atom(atom) => {
-                let len = match atom {
-                    Atom::Str(s) | Atom::Lexical(s) => s.len(),
-                    Atom::Bytes(b) => b.len(),
-                    _ => 0,
-                };
+                let len = atom_len(&atom);
                 if self.limits.max_len.is_some_and(|max| len > max) {
                     return Err(limit_error("string or bytes too long"));
                 }
@@ -279,6 +276,15 @@ impl LimitsLayer {
             }
         }
         Ok(())
+    }
+}
+
+fn atom_len(atom: &Atom<'_>) -> usize {
+    match atom {
+        Atom::Str(s) | Atom::Lexical(s) => s.len(),
+        Atom::Bytes(b) => b.len(),
+        Atom::Implicit(value) => value.text().len(),
+        _ => 0,
     }
 }
 
@@ -329,11 +335,7 @@ impl Layer for LimitsLayer {
             }
             Event::Atom(atom) => {
                 if let Some(max) = self.limits.max_len {
-                    let len = match atom {
-                        Atom::Str(s) | Atom::Lexical(s) => s.len(),
-                        Atom::Bytes(b) => b.len(),
-                        _ => 0,
-                    };
+                    let len = atom_len(atom);
                     if len > max {
                         return Err(limit_error("string or bytes too long"));
                     }

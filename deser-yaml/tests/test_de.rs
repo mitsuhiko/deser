@@ -51,6 +51,48 @@ limits: {cpu: 2, memory: 512}
 }
 
 #[test]
+fn test_implicit_string_length_limit() {
+    use deser::{Context, de::Limits};
+
+    for input in [
+        "123456789",
+        "'123456789'",
+        "false",
+        "null",
+        ".inf",
+        "0000000000000000000000000000000000001",
+    ] {
+        let config = DeserializerConfig::builder()
+            .context(Context::with(Limits::builder().max_len(3).build()))
+            .build();
+        let err = config.from_str::<String>(input).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::LimitExceeded, "{input}");
+        assert_eq!(err.message(), "string or bytes too long", "{input}");
+        assert_eq!(
+            config
+                .from_slice::<String>(input.as_bytes())
+                .unwrap_err()
+                .kind(),
+            ErrorKind::LimitExceeded
+        );
+        #[cfg(feature = "io")]
+        assert_eq!(
+            config
+                .from_reader::<String, _>(input.as_bytes())
+                .unwrap_err()
+                .kind(),
+            ErrorKind::LimitExceeded
+        );
+    }
+    let config = DeserializerConfig::builder()
+        .context(Context::with(Limits::builder().max_len(3).build()))
+        .build();
+    assert_eq!(config.from_str::<String>("123").unwrap(), "123");
+    assert_eq!(config.from_str::<u32>("123").unwrap(), 123);
+    assert_eq!(config.from_str::<String>("'123'").unwrap(), "123");
+}
+
+#[test]
 fn test_scalars() {
     assert_eq!(from_str::<u64>("42").unwrap(), 42);
     assert_eq!(from_str::<i64>("-42").unwrap(), -42);

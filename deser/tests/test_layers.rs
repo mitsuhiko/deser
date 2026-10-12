@@ -283,6 +283,39 @@ fn test_limits() {
 }
 
 #[test]
+fn test_implicit_length_limits() {
+    use deser::{Implicit, ImplicitValue};
+
+    for (text, value) in [
+        ("123456789", ImplicitValue::U64(123456789)),
+        ("-123456789", ImplicitValue::I64(-123456789)),
+        (".inf", ImplicitValue::F64(f64::INFINITY)),
+        ("false", ImplicitValue::Bool(false)),
+        ("null", ImplicitValue::Null),
+        ("éé", ImplicitValue::U64(1)),
+    ] {
+        for atom in [
+            Atom::Implicit(Implicit::new(text, value)),
+            Atom::Implicit(Implicit::new(text.to_owned(), value)),
+        ] {
+            let check = |len| {
+                Events(vec![atom.clone().into()]).deserialize_with::<deser::de::Recording, _>(
+                    |driver| {
+                        driver.set_context(deser::Context::with(
+                            Limits::builder().max_len(len).build(),
+                        ))
+                    },
+                )
+            };
+            check(text.len()).unwrap();
+            let err = check(text.len() - 1).unwrap_err();
+            assert_eq!(err.kind(), deser::ErrorKind::LimitExceeded);
+            assert_eq!(err.message(), "string or bytes too long");
+        }
+    }
+}
+
+#[test]
 fn test_error_context() {
     // sink errors get the offset of the event
     let mut out = None::<Vec<Vec<u32>>>;
