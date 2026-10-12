@@ -327,6 +327,14 @@ enum Node<'a> {
     Alias { range: (usize, usize) },
 }
 
+/// The most recent definition of an anchor.  Open collections cannot be
+/// replayed yet, but already shadow any earlier definition with the name.
+#[derive(PartialEq, Eq)]
+enum Anchor {
+    Open(usize),
+    Closed((usize, usize)),
+}
+
 /// The per document state.
 #[derive(Default)]
 struct Document<'a> {
@@ -334,8 +342,8 @@ struct Document<'a> {
     /// The recorded nodes.  Nodes are only recorded while an anchored
     /// collection is open.  Nested anchors share the recording.
     nodes: Vec<Node<'a>>,
-    /// The anchors and the range of their nodes in `nodes`.
-    anchors: HashMap<Cow<'a, str>, (usize, usize)>,
+    /// The most recent anchor definitions, identified by their start in `nodes`.
+    anchors: HashMap<Cow<'a, str>, Anchor>,
     /// The collections that are currently recorded.
     open: Vec<OpenNode<'a>>,
     /// The range of the last collection that was captured (recorded
@@ -411,8 +419,11 @@ impl<'a> Document<'a> {
                     let depth = self.depth + 1;
                     if let Some(open) = self.open.pop_if(|x| x.depth == depth) {
                         let range = (open.start, self.nodes.len());
-                        if let Some(name) = open.anchor {
-                            self.anchors.insert(name, range);
+                        if let Some(name) = open.anchor
+                            && self.anchors.get(&name) == Some(&Anchor::Open(open.start))
+                        {
+                            // A newer definition may have shadowed this collection.
+                            self.anchors.insert(name, Anchor::Closed(range));
                         }
                         if open.capture {
                             self.captured = Some(range);
@@ -422,11 +433,9 @@ impl<'a> Document<'a> {
                 return Ok(node);
             }
             EventKind::Alias { anchor } => {
-                if self.open.iter().any(|x| x.anchor.as_ref() == Some(&anchor)) {
-                    return Err(error_at(start, "recursive alias"));
-                }
                 let range = match self.anchors.get(&anchor) {
-                    Some(&range) => range,
+                    Some(Anchor::Closed(range)) => *range,
+                    Some(Anchor::Open(_)) => return Err(error_at(start, "recursive alias")),
                     None => return Err(error_at(start, &format!("unknown anchor `{}`", anchor))),
                 };
                 let node = Node::Alias { range };
@@ -443,6 +452,9 @@ impl<'a> Document<'a> {
             let index = self.nodes.len();
             self.nodes.push(node.clone());
             if is_start && (anchor.is_some() || capture) {
+                if let Some(ref name) = anchor {
+                    self.anchors.insert(name.clone(), Anchor::Open(index));
+                }
                 self.open.push(OpenNode {
                     anchor,
                     start: index,
@@ -450,7 +462,8 @@ impl<'a> Document<'a> {
                     capture,
                 });
             } else if let Some(name) = anchor {
-                self.anchors.insert(name, (index, index + 1));
+                self.anchors
+                    .insert(name, Anchor::Closed((index, index + 1)));
             }
         }
         Ok(node)

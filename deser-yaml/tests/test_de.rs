@@ -510,6 +510,60 @@ again: *s
 }
 
 #[test]
+fn test_anchor_rebinding_in_open_collections() {
+    for (input, expected) in [
+        ("&a [&a hello, *a]", seq!["hello", "hello"]),
+        (
+            "first: &a [&a hello]\nsecond: *a\n",
+            map! { "first" => seq!["hello"], "second" => "hello" },
+        ),
+        (
+            "[&a [&a [hello], *a], *a]",
+            seq![seq![seq!["hello"], seq!["hello"]], seq!["hello"]],
+        ),
+        (
+            "[&a [hello], &a [&a world], *a]",
+            seq![seq!["hello"], seq!["world"], "world"],
+        ),
+        (
+            "first: &a {inner: &a {x: hello}, again: *a}\nsecond: *a\n",
+            map! { "first" => map! { "inner" => map! { "x" => "hello" }, "again" => map! { "x" => "hello" } }, "second" => map! { "x" => "hello" } },
+        ),
+        // Aliases already recorded in another anchor keep their old target.
+        (
+            "[&a hello, &b [*a], &a [&a world], *b, *a]",
+            seq![
+                "hello",
+                seq!["hello"],
+                seq!["world"],
+                seq!["hello"],
+                "world"
+            ],
+        ),
+    ] {
+        assert_eq!(from_str::<Value>(input).unwrap(), expected, "{input}");
+        assert_eq!(
+            from_slice::<Value>(input.as_bytes()).unwrap(),
+            expected,
+            "{input}"
+        );
+        #[cfg(feature = "io")]
+        assert_eq!(
+            deser_yaml::from_reader::<Value, _>(input.as_bytes()).unwrap(),
+            expected,
+            "{input}"
+        );
+    }
+
+    // Only the most recent definition matters for detecting recursion.
+    for input in ["&a [&a [*a]]", "&a [&b [*a]]", "[&a hello, &a [*a]]"] {
+        let err = from_str::<Value>(input).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::Syntax, "{input}");
+        assert_eq!(err.message(), "recursive alias", "{input}");
+    }
+}
+
+#[test]
 fn test_alias_limit() {
     // the "billion laughs" attack
     let mut input = String::from("a: &a [lol, lol, lol, lol, lol, lol, lol, lol, lol]\n");
