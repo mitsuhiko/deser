@@ -585,7 +585,24 @@ impl Parser {
 /// Skips an item that is requested as raw value while validating it (see
 /// `Parser::raw_values` and `raw::Scanner`).
 pub(crate) fn skip_raw(cur: &mut Cursor<'_>, buffer: &mut Vec<u8>) -> Result<(), Error> {
-    cur.skip_item(buffer)
+    cur.skip_item(buffer, None)
+}
+
+/// Checks the encoded structure without interpreting tags.
+pub(crate) fn check_raw_limits(
+    input: &[u8],
+    limits: &mut deser_core::de::RawLimits,
+) -> Result<(), Error> {
+    let mut cur = Cursor {
+        input,
+        pos: 0,
+        base: 0,
+        hit_end: false,
+        sink_failed: false,
+        opened: None,
+        tags: Vec::new(),
+    };
+    cur.skip_item(&mut Vec::new(), Some(limits))
 }
 
 /// Returns the format of the raw value that the result of an event
@@ -731,10 +748,21 @@ impl<'a> Cursor<'a> {
     }
 
     /// Skips a data item (including its tags) while validating it.
-    fn skip_item(&mut self, buffer: &mut Vec<u8>) -> Result<(), Error> {
+    fn skip_item(
+        &mut self,
+        buffer: &mut Vec<u8>,
+        mut limits: Option<&mut deser_core::de::RawLimits>,
+    ) -> Result<(), Error> {
         // the open containers: the number of items that are left (`None`
         // for indefinite lengths, maps have two per entry), if it's a map
         // and if an odd number of items was read
+        macro_rules! check {
+            ($event:expr) => {
+                if let Some(limits) = limits.as_deref_mut() {
+                    limits.event($event)?;
+                }
+            };
+        }
         let mut stack: Vec<(Option<u64>, bool, bool)> = Vec::new();
         loop {
             // the item is one of its container
@@ -750,9 +778,16 @@ impl<'a> Cursor<'a> {
                 head = self.read_head()?;
             }
             match head.major {
-                MAJOR_UNSIGNED | MAJOR_NEGATIVE => {}
+                MAJOR_UNSIGNED | MAJOR_NEGATIVE => check!(Atom::Null.into()),
                 MAJOR_BYTES | MAJOR_TEXT => {
-                    self.read_string(head, buffer)?;
+                    let bytes = self.read_string(head, buffer)?;
+                    if head.major == MAJOR_TEXT {
+                        let text = str::from_utf8(bytes)
+                            .map_err(|_| syntax_error(start, "invalid UTF-8"))?;
+                        check!(Atom::Str(text.into()).into());
+                    } else {
+                        check!(Atom::Bytes(Bytes::borrowed(bytes)).into());
+                    }
                 }
                 MAJOR_ARRAY | MAJOR_MAP => {
                     let is_map = head.major == MAJOR_MAP;
@@ -765,6 +800,11 @@ impl<'a> Cursor<'a> {
                         ),
                         false => Some(head.arg),
                     };
+                    check!(if is_map {
+                        Event::map_start()
+                    } else {
+                        Event::seq_start()
+                    });
                     stack.push((remaining, is_map, false));
                 }
                 _ => match head.info {
@@ -772,7 +812,7 @@ impl<'a> Cursor<'a> {
                         return Err(syntax_error(self.base + start, "invalid simple value"));
                     }
                     INDEFINITE => return Err(syntax_error(self.base + start, "unexpected break")),
-                    _ => {}
+                    _ => check!(Atom::Null.into()),
                 },
             }
             // close the containers that are complete
@@ -793,7 +833,8 @@ impl<'a> Cursor<'a> {
                         }
                     },
                 }
-                stack.pop();
+                let (_, is_map, _) = stack.pop().unwrap();
+                check!(if is_map { Event::MapEnd } else { Event::SeqEnd });
             }
         }
     }

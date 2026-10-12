@@ -514,6 +514,58 @@ pub(crate) fn skip_raw(cur: &mut Cursor<'_>) -> Result<(), Error> {
     cur.skip_item()
 }
 
+/// Checks the encoded structure, without interpreting extension payloads.
+pub(crate) fn check_raw_limits(
+    input: &[u8],
+    limits: &mut deser_core::de::RawLimits,
+) -> Result<(), Error> {
+    let mut cur = Cursor {
+        input,
+        pos: 0,
+        base: 0,
+        hit_end: false,
+        sink_failed: false,
+        opened: None,
+    };
+    let mut stack: Vec<(u64, Event<'static>)> = Vec::new();
+    loop {
+        if let Some((remaining, _)) = stack.last_mut() {
+            *remaining -= 1;
+        }
+        let (head, len) = decode_head(&input[cur.pos..])
+            .map_err(|_| syntax_error(cur.pos, "invalid raw item"))?;
+        cur.pos += len;
+        let container = match head {
+            Head::Str(len) => {
+                let text = str::from_utf8(cur.read_body(len)?)
+                    .map_err(|_| syntax_error(cur.pos, "invalid UTF-8"))?;
+                limits.event(Atom::Str(text.into()).into())?;
+                None
+            }
+            Head::Bin(len) | Head::Ext(_, len) => {
+                limits.event(Atom::Bytes(Bytes::borrowed(cur.read_body(len)?)).into())?;
+                None
+            }
+            Head::Array(len) => Some((u64::from(len), Event::seq_start(), Event::SeqEnd)),
+            Head::Map(len) => Some((2 * u64::from(len), Event::map_start(), Event::MapEnd)),
+            _ => {
+                limits.event(Atom::Null.into())?;
+                None
+            }
+        };
+        if let Some((len, start, end)) = container {
+            limits.event(start)?;
+            stack.push((len, end));
+        }
+        while stack.last().is_some_and(|(len, _)| *len == 0) {
+            limits.event(stack.pop().unwrap().1)?;
+        }
+        if stack.is_empty() {
+            return Ok(());
+        }
+    }
+}
+
 /// Returns the format of the raw value that the result of an event
 /// requested (see `State::take_raw_request`).
 fn requested_format(state: &mut State) -> Result<&'static RawFormatInfo, Error> {

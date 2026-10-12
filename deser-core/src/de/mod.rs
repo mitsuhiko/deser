@@ -272,6 +272,8 @@ pub use self::duplicates::DuplicateKeys;
 pub use self::impls::DeserializeArc;
 pub use self::layer::{Layer, LayerEvent, Next};
 pub use self::lexical::{ContentKey, LexicalRules};
+#[doc(hidden)]
+pub use self::limits::RawLimits;
 pub use self::limits::{Limits, LimitsBuilder};
 pub use self::owned::{OwnedDriver, OwnedSink};
 pub use self::recording::{RecordBuf, Recording};

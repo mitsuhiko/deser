@@ -78,6 +78,8 @@ pub(crate) static ID: RawFormatId = RawFormatId::new(NAME, true);
 static FORMAT: RawFormatInfo = {
     let mut info = RawFormatInfo::new(&ID, replay, encode, fallback);
     info.set_data(&SCANNER);
+    #[cfg(not(any(comments, trailing_commas, single_quotes, json5, hjson)))]
+    info.set_check_limits(crate::parser::check_raw_limits);
     info
 };
 

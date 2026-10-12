@@ -21,6 +21,114 @@ const ENVELOPE: &str = "83 a4 6b696e64 a1 78 a7 7061796c6f6164 92 cc01 02 \
 const PAYLOAD: &str = "92cc0102";
 
 #[test]
+fn test_limits() {
+    use deser::de::Limits;
+    use deser::{Context, ErrorKind};
+    use deser_msgpack::DeserializerConfig;
+
+    for (encoded, limits, message) in [
+        (
+            "91919100",
+            Limits::builder().max_depth(1).build(),
+            "recursion limit exceeded",
+        ),
+        (
+            "929090",
+            Limits::builder().max_events(5).build(),
+            "too many events",
+        ),
+        (
+            "920102",
+            Limits::builder().max_items(1).build(),
+            "too many items",
+        ),
+        (
+            "82a16101a16202",
+            Limits::builder().max_items(1).build(),
+            "too many items",
+        ),
+        (
+            "a461626364",
+            Limits::builder().max_len(3).build(),
+            "string or bytes too long",
+        ),
+        (
+            "c40461626364",
+            Limits::builder().max_len(3).build(),
+            "string or bytes too long",
+        ),
+        (
+            "81a46162636400",
+            Limits::builder().max_len(3).build(),
+            "string or bytes too long",
+        ),
+        (
+            "a2c3a9",
+            Limits::builder().max_len(1).build(),
+            "string or bytes too long",
+        ),
+    ] {
+        let input = hex(encoded);
+        let config = DeserializerConfig::builder()
+            .context(Context::with(limits))
+            .build();
+        let err = config.from_slice::<RawMsgpack>(&input).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::LimitExceeded, "{encoded}");
+        assert_eq!(err.message(), message, "{encoded}");
+        #[cfg(feature = "io")]
+        {
+            struct Chunked<'a>(&'a [u8]);
+            impl std::io::Read for Chunked<'_> {
+                fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
+                    let len = out.len().min(self.0.len()).min(1);
+                    out[..len].copy_from_slice(&self.0[..len]);
+                    self.0 = &self.0[len..];
+                    Ok(len)
+                }
+            }
+            let err = config
+                .from_reader::<RawMsgpack, _>(Chunked(&input))
+                .unwrap_err();
+            assert_eq!(err.kind(), ErrorKind::LimitExceeded, "{encoded}");
+        }
+    }
+
+    let input = hex("9291a2c3a99102");
+    let config = DeserializerConfig::builder()
+        .context(Context::with(
+            Limits::builder()
+                .max_depth(2)
+                .max_events(8)
+                .max_items(2)
+                .max_len(2)
+                .build(),
+        ))
+        .build();
+    let values: Vec<RawMsgpack> = config.from_slice(&input).unwrap();
+    assert_eq!(values.len(), 2);
+    let config = DeserializerConfig::builder()
+        .context(Context::with(Limits::builder().max_events(7).build()))
+        .build();
+    assert_eq!(
+        config
+            .from_slice::<Vec<RawMsgpack>>(&input)
+            .unwrap_err()
+            .message(),
+        "too many events"
+    );
+    let config = DeserializerConfig::builder()
+        .context(Context::with(Limits::builder().max_depth(1).build()))
+        .build();
+    assert_eq!(
+        config
+            .from_slice::<Vec<RawMsgpack>>(&input)
+            .unwrap_err()
+            .message(),
+        "recursion limit exceeded"
+    );
+}
+
+#[test]
 fn test_borrowed() {
     let input = hex(ENVELOPE);
     let envelope: Envelope = deser_msgpack::from_slice(&input).unwrap();

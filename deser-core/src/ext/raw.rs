@@ -1,4 +1,4 @@
-use alloc::borrow::Cow;
+use alloc::borrow::{Cow, ToOwned};
 use alloc::vec::Vec;
 use core::any::Any;
 use core::fmt;
@@ -7,7 +7,7 @@ use core::marker::PhantomData;
 use crate::State;
 use crate::adapters::Borrowed;
 use crate::de::recording::Capture;
-use crate::de::{Deserialize, DeserializeDriver, RecordBuf, Sink, SinkHandle};
+use crate::de::{Deserialize, DeserializeDriver, RawLimits, RecordBuf, Sink, SinkHandle};
 use crate::error::{Error, ErrorKind};
 use crate::event::Atom;
 use crate::ext::{BorrowedExtension, ExtValue};
@@ -106,6 +106,8 @@ impl fmt::Debug for RawFormatId {
     }
 }
 
+type CheckRawLimits = fn(&[u8], &mut RawLimits) -> Result<(), Error>;
+
 /// Describes a [`RawFormat`] at runtime.
 ///
 /// Formats that can pass on the input of values define a static of this
@@ -118,6 +120,7 @@ pub struct RawFormatInfo {
     encode: fn(SerializeRef<'_>) -> Result<Vec<u8>, Error>,
     fallback: for<'v> fn(&'v [u8]) -> Atom<'v>,
     data: Option<&'static (dyn Any + Send + Sync)>,
+    check_limits: Option<CheckRawLimits>,
 }
 
 impl RawFormatInfo {
@@ -142,6 +145,7 @@ impl RawFormatInfo {
             encode,
             fallback,
             data: None,
+            check_limits: None,
         }
     }
 
@@ -154,6 +158,12 @@ impl RawFormatInfo {
     /// description, other programs do not contain it.
     pub const fn set_data(&mut self, data: &'static (dyn Any + Send + Sync)) {
         self.data = Some(data);
+    }
+
+    /// Installs a scanner that checks limits without interpreting raw data.
+    #[doc(hidden)]
+    pub const fn set_check_limits(&mut self, check: CheckRawLimits) {
+        self.check_limits = Some(check);
     }
 
     /// Returns the data of the format (see [`set_data`](Self::set_data)).
@@ -311,6 +321,23 @@ impl<'a> RawInput<'a> {
         })
     }
 
+    /// Checks limits on the encoded contents, not on the opaque extension atom.
+    pub(crate) fn check_limits(&self, limits: &mut RawLimits) -> Result<(), Error> {
+        let result = match self.format.check_limits {
+            Some(check) => check(&self.bytes, limits),
+            None => {
+                let mut state = State::new();
+                self.replay(
+                    SinkHandle::arena(LimitSink { limits, end: None }, &mut state),
+                    &mut state,
+                )
+            }
+        };
+        // Scanner offsets refer to the raw input, not the enclosing stream.
+        // Let the outer driver attach the location and context of the raw value.
+        result.map_err(|err| Error::new(err.kind(), err.message().to_owned()))
+    }
+
     /// Deserializes the value.
     ///
     /// The value can borrow from the input (and the data it borrows).
@@ -334,6 +361,49 @@ pub(crate) fn parse_into<'de>(
         // the input lives shorter than the data of the sink
         driver.transient(|driver| (input.format.replay)(&input.bytes, driver))
     })
+}
+
+/// Counts the events of formats without a dedicated raw limit scanner.
+struct LimitSink<'a> {
+    limits: &'a mut RawLimits,
+    end: Option<crate::Event<'static>>,
+}
+
+impl<'de> Sink<'de> for LimitSink<'_> {
+    fn atom(&mut self, atom: Atom, _state: &mut State) -> Result<(), Error> {
+        self.limits.event(atom.into())
+    }
+
+    fn map(&mut self, _state: &mut State) -> Result<(), Error> {
+        self.end = Some(crate::Event::MapEnd);
+        self.limits.event(crate::Event::map_start())
+    }
+
+    fn seq(&mut self, _state: &mut State) -> Result<(), Error> {
+        self.end = Some(crate::Event::SeqEnd);
+        self.limits.event(crate::Event::seq_start())
+    }
+
+    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+        self.next_value(state)
+    }
+
+    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+        Ok(SinkHandle::arena(
+            LimitSink {
+                limits: self.limits,
+                end: None,
+            },
+            state,
+        ))
+    }
+
+    fn finish(&mut self, _state: &mut State) -> Result<(), Error> {
+        match self.end.take() {
+            Some(event) => self.limits.event(event),
+            None => Ok(()),
+        }
+    }
 }
 
 /// Forwards to a sink except for [`Sink::finish`].

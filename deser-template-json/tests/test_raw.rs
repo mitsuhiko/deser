@@ -293,6 +293,124 @@ fn recording_into<T: deser::de::DeserializeOwned>(recording: &Recording) -> T {
 }
 
 #[test]
+fn test_limits() {
+    use deser::de::Limits;
+    use deser::{Context, ErrorKind};
+
+    for (input, limits, message) in [
+        (
+            "[[[0]]]",
+            Limits::builder().max_depth(1).build(),
+            "recursion limit exceeded",
+        ),
+        (
+            "[[],[]]",
+            Limits::builder().max_events(5).build(),
+            "too many events",
+        ),
+        (
+            "[1,2]",
+            Limits::builder().max_items(1).build(),
+            "too many items",
+        ),
+        (
+            r#"{"a":1,"b":2}"#,
+            Limits::builder().max_items(1).build(),
+            "too many items",
+        ),
+        (
+            r#""abcd""#,
+            Limits::builder().max_len(3).build(),
+            "string or bytes too long",
+        ),
+        (
+            r#"{"abcd":0}"#,
+            Limits::builder().max_len(3).build(),
+            "string or bytes too long",
+        ),
+        (
+            r#""\u00e9""#,
+            Limits::builder().max_len(1).build(),
+            "string or bytes too long",
+        ),
+    ] {
+        let config = dialect::DeserializerConfig::builder()
+            .context(Context::with(limits))
+            .build();
+        let err = config.from_str::<RawText>(input).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::LimitExceeded, "{input}");
+        assert_eq!(err.message(), message, "{input}");
+        assert_eq!(
+            config
+                .from_slice::<RawText>(input.as_bytes())
+                .unwrap_err()
+                .kind(),
+            ErrorKind::LimitExceeded
+        );
+        #[cfg(feature = "io")]
+        for size in super::common::chunk_sizes(input.len()) {
+            let err = config
+                .from_reader::<RawText, _>(super::common::Chunked {
+                    input: input.as_bytes(),
+                    size,
+                })
+                .unwrap_err();
+            assert_eq!(
+                err.kind(),
+                ErrorKind::LimitExceeded,
+                "{input}, chunk {size}"
+            );
+        }
+    }
+
+    let config = dialect::DeserializerConfig::builder()
+        .context(Context::with(
+            Limits::builder()
+                .max_depth(2)
+                .max_events(8)
+                .max_items(2)
+                .max_len(2)
+                .build(),
+        ))
+        .build();
+    let input = r#"[["\u00e9"],[2]]"#;
+    let values: Vec<RawText> = config.from_str(input).unwrap();
+    assert_eq!(values.len(), 2);
+    if KEEPS_INPUT {
+        assert_eq!(values[0].get(), r#"["\u00e9"]"#);
+    }
+    let config = dialect::DeserializerConfig::builder()
+        .context(Context::with(Limits::builder().max_events(7).build()))
+        .build();
+    assert_eq!(
+        config
+            .from_str::<Vec<RawText>>(input)
+            .unwrap_err()
+            .message(),
+        "too many events"
+    );
+    let config = dialect::DeserializerConfig::builder()
+        .context(Context::with(Limits::builder().max_depth(1).build()))
+        .build();
+    assert_eq!(
+        config
+            .from_str::<Vec<RawText>>(input)
+            .unwrap_err()
+            .message(),
+        "recursion limit exceeded"
+    );
+
+    // Limits must not normalize the text or narrow the range of raw JSON numbers.
+    if IS_JSON {
+        let config = dialect::DeserializerConfig::builder()
+            .context(Context::with(Limits::builder().max_events(5).build()))
+            .build();
+        let input = "[ 1e400, -0, 2 ]";
+        assert_eq!(config.from_str::<RawText>(input).unwrap().get(), input);
+    }
+}
+
+#[test]
 fn test_invalid() {
     for input in [
         r#"{"kind": "x", "payload": [1, }, "after": 1}"#,

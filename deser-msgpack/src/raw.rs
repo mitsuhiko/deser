@@ -33,6 +33,7 @@ pub(crate) static ID: RawFormatId = RawFormatId::new("msgpack", false);
 static FORMAT: RawFormatInfo = {
     let mut info = RawFormatInfo::new(&ID, replay, encode, fallback);
     info.set_data(&SCANNER);
+    info.set_check_limits(crate::parser::check_raw_limits);
     info
 };
 

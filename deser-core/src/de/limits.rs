@@ -3,6 +3,7 @@ use alloc::vec::Vec;
 use crate::de::{Layer, LayerEvent, Next};
 use crate::error::{Error, ErrorKind};
 use crate::event::{Atom, Event};
+use crate::ext::RawInput;
 
 /// Limits the size of the deserialized data (a value of the
 /// [`Context`](crate::Context)).
@@ -35,6 +36,8 @@ use crate::event::{Atom, Event};
 /// [`set_context`](crate::de::DeserializeDriver::set_context)).  They see
 /// the events as the sinks receive them, after all [`Layer`]s, so their
 /// errors have the context that layers add (for instance the path).
+/// Raw values are checked against their encoded contents: their containers,
+/// atoms and string or byte payloads count, rather than a single opaque atom.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Limits {
     max_depth: Option<usize>,
@@ -180,6 +183,74 @@ impl Default for LimitsBuilder {
     }
 }
 
+/// Checks the events inside a raw value without delivering them to sinks.
+///
+/// Format scanners use this to account for the encoded structure without
+/// converting its numbers or interpreting its tags.
+#[doc(hidden)]
+pub struct RawLimits {
+    limits: Limits,
+    events: usize,
+    depth: usize,
+    // map or sequence, number of items, whether the next item is a map key
+    items: Vec<(bool, usize, bool)>,
+}
+
+impl RawLimits {
+    pub(crate) fn new(limits: Limits, events: usize, depth: usize) -> Self {
+        Self {
+            limits,
+            events,
+            depth,
+            items: Vec::new(),
+        }
+    }
+
+    /// Accounts for an encoded event.  Numeric atoms can be replaced by null.
+    pub fn event(&mut self, event: Event<'_>) -> Result<(), Error> {
+        self.events += 1;
+        if self.limits.max_events.is_some_and(|max| self.events > max) {
+            return Err(limit_error("too many events"));
+        }
+        if !matches!(event, Event::MapEnd | Event::SeqEnd)
+            && let Some((is_map, count, key)) = self.items.last_mut()
+        {
+            if !*is_map || *key {
+                *count += 1;
+                if self.limits.max_items.is_some_and(|max| *count > max) {
+                    return Err(limit_error("too many items"));
+                }
+            }
+            *key = !*key;
+        }
+        match event {
+            Event::MapStart(_) | Event::SeqStart(_) => {
+                if self.limits.max_depth.is_some_and(|max| self.depth >= max) {
+                    return Err(limit_error("recursion limit exceeded"));
+                }
+                self.depth += 1;
+                self.items
+                    .push((matches!(event, Event::MapStart(_)), 0, true));
+            }
+            Event::MapEnd | Event::SeqEnd => {
+                self.depth -= 1;
+                self.items.pop();
+            }
+            Event::Atom(atom) => {
+                let len = match atom {
+                    Atom::Str(s) | Atom::Lexical(s) => s.len(),
+                    Atom::Bytes(b) => b.len(),
+                    _ => 0,
+                };
+                if self.limits.max_len.is_some_and(|max| len > max) {
+                    return Err(limit_error("string or bytes too long"));
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 /// The layer that enforces [`Limits`] (installed by the driver).
 pub(crate) struct LimitsLayer {
     limits: Limits,
@@ -222,6 +293,15 @@ impl Layer for LimitsLayer {
         event: LayerEvent<'_, 'de>,
         next: &mut Next<'_, 'de>,
     ) -> Result<(), Error> {
+        if let Event::Atom(Atom::Ext(ext)) = event.event()
+            && let Some(input) = ext.downcast_value_ref::<RawInput>()
+        {
+            self.count_item(next.state().is_map_key())?;
+            let mut limits = RawLimits::new(self.limits, self.events, next.state().depth());
+            input.check_limits(&mut limits)?;
+            self.events = limits.events;
+            return next.emit(event);
+        }
         if let Some(max) = self.limits.max_events {
             self.events += 1;
             if self.events > max {

@@ -1098,7 +1098,7 @@ pub(crate) fn skip_raw(
     _base: usize,
     _state: &mut State,
 ) -> Result<bool, Error> {
-    cur.skip_value(scratch, eof)
+    cur.skip_value(scratch, eof, None)
 }
 
 //# The dialects parse the value without passing on its events, which
@@ -1144,6 +1144,17 @@ impl<'i> Out<'i> for Skip<'_> {
     fn emit_input(&mut self, _atom: Atom<'i>) -> Result<(), Error> {
         Ok(())
     }
+}
+
+/// Checks the encoded structure without converting numbers to floats.
+#[cfg(not(any(comments, trailing_commas, single_quotes, json5, hjson)))]
+pub(crate) fn check_raw_limits(
+    input: &[u8],
+    limits: &mut deser_core::de::RawLimits,
+) -> Result<(), Error> {
+    let mut cur = Cursor::new(input, 0);
+    cur.skip_value(&mut Vec::new(), true, Some(limits))
+        .map(|_| ())
 }
 
 /// Takes the scratch space that was kept with the state.
@@ -1423,18 +1434,34 @@ impl<'a> Cursor<'a> {
     /// value is skipped again once more input is there.
     #[cfg(not(any(comments, trailing_commas, single_quotes, json5, hjson)))]
     #[inline(never)]
-    fn skip_value(&mut self, scratch: &mut Vec<u8>, eof: bool) -> Result<bool, Error> {
+    fn skip_value(
+        &mut self,
+        scratch: &mut Vec<u8>,
+        eof: bool,
+        limits: Option<&mut deser_core::de::RawLimits>,
+    ) -> Result<bool, Error> {
         self.hit_end = false;
-        match self.skip_value_inner(scratch) {
+        match self.skip_value_inner(scratch, limits) {
             _ if self.hit_end && !eof => Ok(false),
             rv => rv.map(|()| true),
         }
     }
 
     #[cfg(not(any(comments, trailing_commas, single_quotes, json5, hjson)))]
-    fn skip_value_inner(&mut self, scratch: &mut Vec<u8>) -> Result<(), Error> {
+    fn skip_value_inner(
+        &mut self,
+        scratch: &mut Vec<u8>,
+        mut limits: Option<&mut deser_core::de::RawLimits>,
+    ) -> Result<(), Error> {
         // the open containers, `true` for maps.  The innermost 64 are bits,
         // the ones below them go to `outer`.
+        macro_rules! check {
+            ($event:expr) => {
+                if let Some(limits) = limits.as_deref_mut() {
+                    limits.event($event)?;
+                }
+            };
+        }
         let mut depth = 0usize;
         let mut maps = 0u64;
         let mut outer = Vec::new();
@@ -1464,26 +1491,42 @@ impl<'a> Cursor<'a> {
             self.pos += 1;
             match byte {
                 b'"' => {
-                    self.parse_str(scratch, start, None)?;
+                    let text = self.parse_str(scratch, start, None)?;
+                    let text = match text {
+                        Str::Borrowed(text) | Str::Scratch(text) => text,
+                    };
+                    check!(Atom::Str(text.into()).into());
                 }
-                b'-' | b'0'..=b'9' => self.skip_number(byte)?,
-                b'n' => self.parse_ident(b"ull")?,
-                b't' => self.parse_ident(b"rue")?,
-                b'f' => self.parse_ident(b"alse")?,
+                b'-' | b'0'..=b'9' => {
+                    self.skip_number(byte)?;
+                    check!(Atom::Null.into());
+                }
+                b'n' | b't' | b'f' => {
+                    self.parse_ident(match byte {
+                        b'n' => b"ull",
+                        b't' => b"rue",
+                        _ => b"alse",
+                    })?;
+                    check!(Atom::Null.into());
+                }
                 b'[' => {
+                    check!(Event::seq_start());
                     if self.parse_whitespace() == Some(b']') {
                         self.pos += 1;
+                        check!(Event::SeqEnd);
                     } else {
                         push!(false);
                         continue;
                     }
                 }
                 b'{' => {
+                    check!(Event::map_start());
                     if self.parse_whitespace() == Some(b'}') {
                         self.pos += 1;
+                        check!(Event::MapEnd);
                     } else {
                         push!(true);
-                        self.skip_key(scratch)?;
+                        self.skip_key(scratch, limits.as_deref_mut())?;
                         continue;
                     }
                 }
@@ -1512,16 +1555,18 @@ impl<'a> Cursor<'a> {
                     Some(b',') => {
                         self.pos += 1;
                         if is_map {
-                            self.skip_key(scratch)?;
+                            self.skip_key(scratch, limits.as_deref_mut())?;
                         }
                         break;
                     }
                     Some(b']') if !is_map => {
                         self.pos += 1;
+                        check!(Event::SeqEnd);
                         pop!();
                     }
                     Some(b'}') if is_map => {
                         self.pos += 1;
+                        check!(Event::MapEnd);
                         pop!();
                     }
                     Some(b']' | b'}') => {
@@ -1545,12 +1590,22 @@ impl<'a> Cursor<'a> {
 
     /// Skips a map key and the colon after it.
     #[cfg(not(any(comments, trailing_commas, single_quotes, json5, hjson)))]
-    fn skip_key(&mut self, scratch: &mut Vec<u8>) -> Result<(), Error> {
+    fn skip_key(
+        &mut self,
+        scratch: &mut Vec<u8>,
+        limits: Option<&mut deser_core::de::RawLimits>,
+    ) -> Result<(), Error> {
         match self.parse_whitespace() {
             Some(b'"') => {
                 let start = self.pos;
                 self.pos += 1;
-                self.parse_str(scratch, start, None)?;
+                let text = self.parse_str(scratch, start, None)?;
+                if let Some(limits) = limits {
+                    let text = match text {
+                        Str::Borrowed(text) | Str::Scratch(text) => text,
+                    };
+                    limits.event(Atom::Str(text.into()).into())?;
+                }
             }
             Some(_) => return Err(Error::new(ErrorKind::Syntax, "expected map key")),
             None => return Err(eof_error()),
