@@ -57,58 +57,42 @@ impl<T: DebugAny + Sync> EventAny for T {}
 // value in it) into a `&dyn DebugAny` compiles and would cast the box.
 // The casts are methods of the trait objects so that they are called on
 // the value: the boxes do not have them, they are reached by auto-deref.
-// The type is checked in debug builds.
+// The values are always stored with the key of their type, the casts only
+// fail if that's broken.
 
 impl dyn DebugAny {
     /// Returns the value as `T`.
-    ///
-    /// # Safety
-    ///
-    /// The value must be of type `T`.
     #[inline(always)]
-    pub(crate) unsafe fn downcast_ref_unchecked<T: Any>(&self) -> &T {
-        debug_assert!(self.as_any().is::<T>());
-        // SAFETY: see above
-        unsafe { &*(self as *const dyn DebugAny).cast::<T>() }
+    pub(crate) fn downcast_ref<T: Any>(&self) -> Option<&T> {
+        (self as &dyn Any).downcast_ref()
     }
 
     /// Returns the value as `T` mutably.
-    ///
-    /// # Safety
-    ///
-    /// The value must be of type `T`.
     #[inline(always)]
-    pub(crate) unsafe fn downcast_mut_unchecked<T: Any>(&mut self) -> &mut T {
-        debug_assert!(self.as_any_mut().is::<T>());
-        // SAFETY: see above
-        unsafe { &mut *(self as *mut dyn DebugAny).cast::<T>() }
+    pub(crate) fn downcast_mut<T: Any>(&mut self) -> Option<&mut T> {
+        (self as &mut dyn Any).downcast_mut()
     }
 }
 
 impl dyn EventAny {
     /// Returns the value as `T`.
-    ///
-    /// # Safety
-    ///
-    /// The value must be of type `T`.
     #[inline(always)]
-    unsafe fn downcast_ref_unchecked<T: Any>(&self) -> &T {
-        debug_assert!(self.as_any().is::<T>());
-        // SAFETY: see above
-        unsafe { &*(self as *const dyn EventAny).cast::<T>() }
+    fn downcast_ref<T: Any>(&self) -> Option<&T> {
+        (self as &dyn Any).downcast_ref()
     }
 
     /// Returns the value as `T` mutably.
-    ///
-    /// # Safety
-    ///
-    /// The value must be of type `T`.
     #[inline(always)]
-    unsafe fn downcast_mut_unchecked<T: Any>(&mut self) -> &mut T {
-        debug_assert!(self.as_any_mut().is::<T>());
-        // SAFETY: see above
-        unsafe { &mut *(self as *mut dyn EventAny).cast::<T>() }
+    fn downcast_mut<T: Any>(&mut self) -> Option<&mut T> {
+        (self as &mut dyn Any).downcast_mut()
     }
+}
+
+/// Panics if a value is not stored with the key of its type.
+#[cold]
+#[inline(never)]
+fn wrong_type() -> ! {
+    panic!("value stored with the key of another type")
 }
 
 /// Functions to clone values of a type behind a `dyn DebugAny`.
@@ -204,8 +188,7 @@ impl Extensions {
     #[inline]
     pub(crate) fn get<T: Debug + Send + Sync + 'static>(&self) -> Option<&T> {
         let index = self.position(TypeId::of::<T>())?;
-        // SAFETY: values are always stored with the key of their type
-        Some(unsafe { self.entries[index].1.downcast_ref_unchecked::<T>() })
+        self.entries[index].1.downcast_ref::<T>()
     }
 
     #[inline]
@@ -214,8 +197,10 @@ impl Extensions {
             Some(index) => index,
             None => self.insert_default::<T>(),
         };
-        // SAFETY: values are always stored with the key of their type
-        unsafe { self.entries[index].1.downcast_mut_unchecked::<T>() }
+        match self.entries[index].1.downcast_mut::<T>() {
+            Some(value) => value,
+            None => wrong_type(),
+        }
     }
 
     #[cold]
@@ -262,8 +247,7 @@ impl Extensions {
         if !entry.active {
             return None;
         }
-        // SAFETY: values are always stored with the key of their type
-        Some(unsafe { entry.value.downcast_ref_unchecked::<T>() })
+        entry.value.downcast_ref::<T>()
     }
 
     /// Returns the data of a type attached to the current event mutably.
@@ -278,8 +262,9 @@ impl Extensions {
             None => self.insert_event::<T>(),
         };
         let entry = &mut self.events[index];
-        // SAFETY: values are always stored with the key of their type
-        let value = unsafe { entry.value.downcast_mut_unchecked::<T>() };
+        let Some(value) = entry.value.downcast_mut::<T>() else {
+            wrong_type()
+        };
         if !entry.active {
             // the value of a previous event is reset in place which retains
             // the memory of collections
@@ -539,8 +524,7 @@ impl EventData {
     /// Returns the data of a type.
     pub fn get<T: Debug + Send + 'static>(&self) -> Option<&T> {
         let entry = &self.entries[self.position(TypeId::of::<T>())?];
-        // SAFETY: values are always stored with the key of their type
-        Some(unsafe { entry.value.downcast_ref_unchecked::<T>() })
+        entry.value.downcast_ref::<T>()
     }
 
     /// Returns the data of a type mutably.
@@ -559,8 +543,10 @@ impl EventData {
             }
         };
         let entry = &mut self.entries[index];
-        // SAFETY: values are always stored with the key of their type
-        unsafe { entry.value.downcast_mut_unchecked::<T>() }
+        match entry.value.downcast_mut::<T>() {
+            Some(value) => value,
+            None => wrong_type(),
+        }
     }
 
     /// Inserts data, replacing data of the same type.
@@ -729,14 +715,10 @@ fn test_downcast_through_box() {
     // the boxes are values of the traits too: auto-deref has to reach the
     // value in them
     let boxed: Box<dyn DebugAny> = Box::new(42u32);
-    // SAFETY: the value is a `u32`
-    assert_eq!(unsafe { *boxed.downcast_ref_unchecked::<u32>() }, 42);
+    assert_eq!(boxed.downcast_ref::<u32>(), Some(&42));
     let arc: Arc<dyn DebugAny> = Arc::new(42u32);
-    // SAFETY: the value is a `u32`
-    assert_eq!(unsafe { *arc.downcast_ref_unchecked::<u32>() }, 42);
+    assert_eq!(arc.downcast_ref::<u32>(), Some(&42));
     let mut boxed: Box<dyn EventAny> = Box::new(1u32);
-    // SAFETY: the value is a `u32`
-    unsafe { *boxed.downcast_mut_unchecked::<u32>() += 1 };
-    // SAFETY: the value is a `u32`
-    assert_eq!(unsafe { *boxed.downcast_ref_unchecked::<u32>() }, 2);
+    *boxed.downcast_mut::<u32>().unwrap() += 1;
+    assert_eq!(boxed.downcast_ref::<u32>(), Some(&2));
 }

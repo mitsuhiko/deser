@@ -11,12 +11,6 @@ use deser_core::ser::{self, EventSink, SerializeDriver};
 use deser_core::{Atom, BytesFormat, Error, ErrorKind, Event, Serialize, State};
 
 use crate::parser::{Dialect, load_u32, load_u64};
-
-/// Reads sixteen bytes at `pos`.
-#[inline(always)]
-fn load_u128(bytes: &[u8], pos: usize) -> u128 {
-    u128::from_ne_bytes(*bytes[pos..].first_chunk().unwrap())
-}
 use crate::{Escape, Nulls, QuoteStyle, Terminator};
 
 /// Configures how values are serialized into delimited text.
@@ -1583,51 +1577,10 @@ impl Scratch {
 /// Appends bytes to the output.
 ///
 /// Fields are mostly short, and for them `extend_from_slice` spends more
-/// time calling `memcpy` than copying.  Up to 32 bytes are copied with two
-/// writes that overlap.
+/// time calling `memcpy` than copying (see `copy::extend`).
 #[inline(always)]
 fn push_bytes(out: &mut Vec<u8>, bytes: &[u8]) {
-    let len = bytes.len();
-    if len > 32 {
-        out.extend_from_slice(bytes);
-        return;
-    }
-    out.reserve(32);
-    let start = out.len();
-    // SAFETY: there is room for 32 bytes after the end of the output.  The
-    // writes are within the first `len` of them and cover all of them, so
-    // the output is initialized up to its new length.
-    unsafe {
-        let dst = out.as_mut_ptr().add(start);
-        match len {
-            0 => {}
-            // the first, middle and last byte are all bytes
-            1..=3 => {
-                *dst = bytes[0];
-                *dst.add(len / 2) = bytes[len / 2];
-                *dst.add(len - 1) = bytes[len - 1];
-            }
-            4..=8 => {
-                dst.cast::<u32>().write_unaligned(load_u32(bytes, 0));
-                dst.add(len - 4)
-                    .cast::<u32>()
-                    .write_unaligned(load_u32(bytes, len - 4));
-            }
-            9..=16 => {
-                dst.cast::<u64>().write_unaligned(load_u64(bytes, 0));
-                dst.add(len - 8)
-                    .cast::<u64>()
-                    .write_unaligned(load_u64(bytes, len - 8));
-            }
-            _ => {
-                dst.cast::<u128>().write_unaligned(load_u128(bytes, 0));
-                dst.add(len - 16)
-                    .cast::<u128>()
-                    .write_unaligned(load_u128(bytes, len - 16));
-            }
-        }
-        out.set_len(start + len);
-    }
+    crate::copy::extend(out, bytes);
 }
 
 /// Returns `true` if a key is the name of a column.

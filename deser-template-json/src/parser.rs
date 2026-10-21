@@ -2733,11 +2733,10 @@ impl<'a> Cursor<'a> {
     #[cold]
     #[inline(never)]
     fn parse_float_text(&self) -> Result<f64, Error> {
-        // SAFETY: the number was validated and only consists of ASCII
-        // characters
-        let text = unsafe { str::from_utf8_unchecked(&self.input[self.number_start..self.pos]) };
-        match text.parse::<f64>() {
-            Ok(value) if value.is_finite() => Ok(value),
+        // the text is ASCII, checking that on this slow path is cheap
+        let text = str::from_utf8(&self.input[self.number_start..self.pos]);
+        match text.map(str::parse::<f64>) {
+            Ok(Ok(value)) if value.is_finite() => Ok(value),
             _ => Err(number_out_of_range()),
         }
     }
@@ -2968,7 +2967,9 @@ fn emit_literal<'i, O: Out<'i>>(
     start: usize,
     end: usize,
 ) -> Result<(), Error> {
-    // SAFETY: numbers only consist of ASCII characters
+    // SAFETY: numbers only consist of ASCII characters.  This is not
+    // checked as it's not a slow path: with exact numbers (and for `f32`)
+    // every float whose text is not the shortest one comes here.
     let text = unsafe { str::from_utf8_unchecked(&input[start..end]) };
     #[cfg(json5)]
     let normalized = json_number(text);

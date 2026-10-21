@@ -1794,8 +1794,7 @@ impl<'de, T: Send, A: Deserialize<'de, T>, const N: usize> Deserialize<'de, [T; 
             SinkHandle::arena_unbounded(
                 ArraySink::<T, A, N> {
                     slot: out,
-                    // an array of `MaybeUninit` does not require initialization
-                    buffer: Some(MaybeUninit::uninit().assume_init()),
+                    buffer: Some([const { MaybeUninit::uninit() }; N]),
                     element: None,
                     index: 0,
                     is_seq: false,

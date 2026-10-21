@@ -165,6 +165,7 @@
 
 extern crate alloc;
 
+mod copy;
 mod de;
 mod parser;
 mod ser;

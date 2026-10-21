@@ -178,10 +178,7 @@ impl Context {
     #[inline]
     pub fn get<T: Debug + Send + Sync + 'static>(&self) -> Option<&T> {
         let values = self.values.as_deref()?;
-        self.lookup(values, TypeId::of::<T>()).map(|value| {
-            // SAFETY: values are always stored with the key of their type
-            unsafe { value.downcast_ref_unchecked::<T>() }
-        })
+        self.lookup(values, TypeId::of::<T>())?.downcast_ref::<T>()
     }
 
     #[inline]
