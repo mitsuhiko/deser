@@ -14,6 +14,7 @@ use std::collections::HashSet;
 
 use crate::State;
 use crate::Text;
+use crate::adapted::{self, Adapted};
 use crate::adapters::Same;
 use crate::de::{Deserialize, Sink, SinkHandle};
 use crate::error::{Error, ErrorKind};
@@ -337,16 +338,17 @@ fn is_blank(atom: &Atom) -> bool {
 /// The sink of the value is only created once a value arrives that is not
 /// blank, as creating it can already set the slot (like it does for
 /// optionals).  A blank string leaves a null sink.
-enum SkipBlankSink<'a, 'de, T, A> {
-    Pending(&'a mut Option<T>, PhantomData<fn() -> A>),
+enum SkipBlankSink<'a, 'de, T> {
+    Pending(&'a mut Option<T>),
     Active(SinkHandle<'a, 'de>),
 }
 
-impl<'a, 'de, T: Send, A: Deserialize<'de, T>> SkipBlankSink<'a, 'de, T, A> {
-    /// Returns the sink of the value, creates it if needed.
-    fn active(&mut self, state: &mut State) -> &mut SinkHandle<'a, 'de> {
+impl<'a, 'de, T: Send> SkipBlankSink<'a, 'de, T> {
+    /// Returns the sink of the value, creates it with the adapter `A` if
+    /// needed.
+    fn active<A: Deserialize<'de, T>>(&mut self, state: &mut State) -> &mut SinkHandle<'a, 'de> {
         if let SkipBlankSink::Pending(..) = self
-            && let SkipBlankSink::Pending(out, _) =
+            && let SkipBlankSink::Pending(out) =
                 core::mem::replace(self, SkipBlankSink::Active(SinkHandle::null()))
         {
             *self = SkipBlankSink::Active(A::deserialize_into(out, state));
@@ -367,43 +369,43 @@ impl<'a, 'de, T: Send, A: Deserialize<'de, T>> SkipBlankSink<'a, 'de, T, A> {
     }
 }
 
-impl<'a, 'de, T: Send, A: Deserialize<'de, T>> Sink<'de> for SkipBlankSink<'a, 'de, T, A> {
+impl<'a, 'de, T: Send, A: Deserialize<'de, T>> Sink<'de> for Adapted<A, SkipBlankSink<'a, 'de, T>> {
     fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
         if self.skip(&atom) {
             return Ok(());
         }
-        self.active(state).atom(atom, state)
+        self.active::<A>(state).atom(atom, state)
     }
 
     fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
         if self.skip(&atom) {
             return Ok(());
         }
-        self.active(state).borrowed_atom(atom, state)
+        self.active::<A>(state).borrowed_atom(atom, state)
     }
 
     fn map(&mut self, state: &mut State) -> Result<(), Error> {
-        self.active(state).map(state)
+        self.active::<A>(state).map(state)
     }
 
     fn seq(&mut self, state: &mut State) -> Result<(), Error> {
-        self.active(state).seq(state)
+        self.active::<A>(state).seq(state)
     }
 
     fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-        self.active(state).next_key(state)
+        self.active::<A>(state).next_key(state)
     }
 
     fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
-        self.active(state).next_value(state)
+        self.active::<A>(state).next_value(state)
     }
 
     fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        self.active(state).__private_key_atom(atom, state)
+        self.active::<A>(state).__private_key_atom(atom, state)
     }
 
     fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
-        self.active(state).__private_value_atom(atom, state)
+        self.active::<A>(state).__private_value_atom(atom, state)
     }
 
     fn __private_borrowed_key_atom(
@@ -411,7 +413,8 @@ impl<'a, 'de, T: Send, A: Deserialize<'de, T>> Sink<'de> for SkipBlankSink<'a, '
         atom: Atom<'de>,
         state: &mut State,
     ) -> Result<(), Error> {
-        self.active(state).__private_borrowed_key_atom(atom, state)
+        self.active::<A>(state)
+            .__private_borrowed_key_atom(atom, state)
     }
 
     fn __private_borrowed_value_atom(
@@ -419,7 +422,7 @@ impl<'a, 'de, T: Send, A: Deserialize<'de, T>> Sink<'de> for SkipBlankSink<'a, '
         atom: Atom<'de>,
         state: &mut State,
     ) -> Result<(), Error> {
-        self.active(state)
+        self.active::<A>(state)
             .__private_borrowed_value_atom(atom, state)
     }
 
@@ -428,19 +431,19 @@ impl<'a, 'de, T: Send, A: Deserialize<'de, T>> Sink<'de> for SkipBlankSink<'a, '
         key: &str,
         state: &mut State,
     ) -> Result<Option<SinkHandle<'_, 'de>>, Error> {
-        self.active(state).value_for_key(key, state)
+        self.active::<A>(state).value_for_key(key, state)
     }
 
     fn recover(&mut self, err: Error, state: &mut State) -> Result<(), Error> {
-        self.active(state).recover(err, state)
+        self.active::<A>(state).recover(err, state)
     }
 
     fn finish(&mut self, state: &mut State) -> Result<(), Error> {
-        self.active(state).finish(state)
+        self.active::<A>(state).finish(state)
     }
 
     fn expecting(&self) -> Cow<'_, str> {
-        match self {
+        match &**self {
             SkipBlankSink::Active(sink) => sink.expecting(),
             // the sink of the value does not exist yet
             SkipBlankSink::Pending(..) => A::expecting(),
@@ -453,10 +456,7 @@ impl<'de, T: Send, A: Deserialize<'de, T>> Deserialize<'de, T> for SkipBlank<A> 
         out: &'out mut Option<T>,
         state: &mut State,
     ) -> SinkHandle<'out, 'de> {
-        // SAFETY: `A` is an adapter, the sink only holds a marker of it
-        unsafe {
-            SinkHandle::arena_unbounded(SkipBlankSink::<T, A>::Pending(out, PhantomData), state)
-        }
+        adapted::arena_sink::<A, _>(SkipBlankSink::Pending(out), state)
     }
 
     fn expecting() -> Cow<'static, str> {

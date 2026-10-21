@@ -9,13 +9,13 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 #[cfg(feature = "std")]
 use core::hash::{BuildHasher, Hash};
-use core::marker::PhantomData;
 use core::mem::{MaybeUninit, take};
 #[cfg(feature = "std")]
 use std::collections::{HashMap, HashSet, hash_map};
 
 use crate::State;
 use crate::Text;
+use crate::adapted::{self, Adapted};
 use crate::adapters::Same;
 use crate::de::lexical;
 use crate::de::mapped::MappedSink;
@@ -448,16 +448,15 @@ where
     T: Send + 'a,
     A: Deserialize<'de, T>,
 {
-    struct SeqSink<'a, C, T, A> {
+    struct SeqSink<'a, C, T> {
         slot: &'a mut Option<C>,
         vec: Vec<T>,
         element: Option<T>,
         is_seq: bool,
         errors: CollectedErrors,
-        _marker: PhantomData<fn() -> A>,
     }
 
-    impl<'a, C, T, A> SeqSink<'a, C, T, A> {
+    impl<'a, C, T> SeqSink<'a, C, T> {
         fn flush(&mut self) {
             if let Some(element) = self.element.take() {
                 self.vec.push(element);
@@ -465,7 +464,9 @@ where
         }
     }
 
-    impl<'de, 'a, C: SeqTarget<T>, T: Send, A: Deserialize<'de, T>> Sink<'de> for SeqSink<'a, C, T, A> {
+    impl<'de, 'a, C: SeqTarget<T>, T: Send, A: Deserialize<'de, T>> Sink<'de>
+        for Adapted<A, SeqSink<'a, C, T>>
+    {
         fn expecting(&self) -> Cow<'_, str> {
             seq_expecting::<C, T, A>()
         }
@@ -589,20 +590,16 @@ where
         }
     }
 
-    // SAFETY: `A` is an adapter, the sink only holds a marker of it
-    unsafe {
-        SinkHandle::arena_unbounded(
-            SeqSink::<C, T, A> {
-                slot: out,
-                vec: Vec::new(),
-                element: None,
-                is_seq: false,
-                errors: CollectedErrors::new(),
-                _marker: PhantomData,
-            },
-            state,
-        )
-    }
+    adapted::arena_sink::<A, _>(
+        SeqSink {
+            slot: out,
+            vec: Vec::new(),
+            element: None,
+            is_seq: false,
+            errors: CollectedErrors::new(),
+        },
+        state,
+    )
 }
 
 /// The methods of `Deserialize` for collections that collect the values
@@ -875,17 +872,16 @@ where
     // when it's complete.  This keeps the detection of duplicate keys (which
     // are duplicates in the data, not keys of the existing map) and moves
     // the smaller map into the larger one.
-    struct MapSink<'a, M, K, V, KA, VA> {
+    struct MapSink<'a, M, K, V> {
         out: MapOut<'a, M>,
         map: M,
         key: Option<K>,
         value: Option<V>,
         duplicate_keys: DuplicateKeys,
         errors: CollectedErrors,
-        _marker: PhantomData<fn() -> (KA, VA)>,
     }
 
-    impl<'a, M: MapTarget<K, V>, K, V, KA, VA> MapSink<'a, M, K, V, KA, VA> {
+    impl<'a, M: MapTarget<K, V>, K, V> MapSink<'a, M, K, V> {
         #[inline]
         fn flush(&mut self) -> Result<(), Error> {
             if let (Some(key), Some(value)) = (self.key.take(), self.value.take()) {
@@ -904,7 +900,7 @@ where
         /// [`Deserialize::__private_collects`]) collect the values of all
         /// occurrences of their key.
         #[cold]
-        fn collect_value<'de>(&mut self, state: &mut State) -> SinkHandle<'_, 'de>
+        fn collect_value<'de, VA>(&mut self, state: &mut State) -> SinkHandle<'_, 'de>
         where
             VA: Deserialize<'de, V>,
             V: Send,
@@ -930,7 +926,7 @@ where
         }
     }
 
-    impl<'de, 'a, M, K, V, KA, VA> Sink<'de> for MapSink<'a, M, K, V, KA, VA>
+    impl<'de, 'a, M, K, V, KA, VA> Sink<'de> for Adapted<(KA, VA), MapSink<'a, M, K, V>>
     where
         M: MapTarget<K, V>,
         K: Send,
@@ -956,7 +952,7 @@ where
 
         fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
             if VA::__private_collects() && state.is_multimap() {
-                return Ok(self.collect_value(state));
+                return Ok(self.collect_value::<VA>(state));
             }
             Ok(VA::deserialize_into(&mut self.value, state))
         }
@@ -973,7 +969,7 @@ where
 
         fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
             if VA::__private_collects() && state.is_multimap() {
-                return atom_into_handle(self.collect_value(state), atom, state);
+                return atom_into_handle(self.collect_value::<VA>(state), atom, state);
             }
             VA::__private_atom_into(&mut self.value, atom, state)
         }
@@ -997,7 +993,7 @@ where
             state: &mut State,
         ) -> Result<(), Error> {
             if VA::__private_collects() && state.is_multimap() {
-                return borrowed_atom_into_handle(self.collect_value(state), atom, state);
+                return borrowed_atom_into_handle(self.collect_value::<VA>(state), atom, state);
             }
             VA::__private_borrowed_atom_into(&mut self.value, atom, state)
         }
@@ -1016,7 +1012,7 @@ where
             self.flush_before(state)?;
             KA::__private_atom_into(&mut self.key, Atom::Lexical(Text::borrowed(key)), state)?;
             if VA::__private_collects() && state.is_multimap() {
-                return Ok(Some(self.collect_value(state)));
+                return Ok(Some(self.collect_value::<VA>(state)));
             }
             Ok(Some(VA::deserialize_into(&mut self.value, state)))
         }
@@ -1039,22 +1035,17 @@ where
         }
     }
 
-    // SAFETY: `KA` and `VA` are adapters, the sink only holds a marker of
-    // them
-    unsafe {
-        SinkHandle::arena_unbounded(
-            MapSink::<M, K, V, KA, VA> {
-                out,
-                map: M::default(),
-                key: None,
-                value: None,
-                duplicate_keys: DuplicateKeys::Error,
-                errors: CollectedErrors::new(),
-                _marker: PhantomData,
-            },
-            state,
-        )
-    }
+    adapted::arena_sink::<(KA, VA), _>(
+        MapSink {
+            out,
+            map: M::default(),
+            key: None,
+            value: None,
+            duplicate_keys: DuplicateKeys::Error,
+            errors: CollectedErrors::new(),
+        },
+        state,
+    )
 }
 
 impl<'de, K, V, KA, VA> Deserialize<'de, BTreeMap<K, V>> for BTreeMap<KA, VA>
@@ -1194,15 +1185,14 @@ where
     T: Send + 'a,
     A: Deserialize<'de, T>,
 {
-    struct SetSink<'a, S, T, A> {
+    struct SetSink<'a, S, T> {
         slot: &'a mut Option<S>,
         set: S,
         element: Option<T>,
         errors: CollectedErrors,
-        _marker: PhantomData<fn() -> A>,
     }
 
-    impl<'a, S: SetTarget<T>, T, A> SetSink<'a, S, T, A> {
+    impl<'a, S: SetTarget<T>, T> SetSink<'a, S, T> {
         fn flush(&mut self) {
             if let Some(element) = self.element.take() {
                 self.set.insert_element(element);
@@ -1210,7 +1200,9 @@ where
         }
     }
 
-    impl<'de, 'a, S: SetTarget<T>, T: Send, A: Deserialize<'de, T>> Sink<'de> for SetSink<'a, S, T, A> {
+    impl<'de, 'a, S: SetTarget<T>, T: Send, A: Deserialize<'de, T>> Sink<'de>
+        for Adapted<A, SetSink<'a, S, T>>
+    {
         fn expecting(&self) -> Cow<'_, str> {
             Cow::Borrowed(S::NAME)
         }
@@ -1253,19 +1245,15 @@ where
         }
     }
 
-    // SAFETY: `A` is an adapter, the sink only holds a marker of it
-    unsafe {
-        SinkHandle::arena_unbounded(
-            SetSink::<S, T, A> {
-                slot: out,
-                set: S::default(),
-                element: None,
-                errors: CollectedErrors::new(),
-                _marker: PhantomData,
-            },
-            state,
-        )
-    }
+    adapted::arena_sink::<A, _>(
+        SetSink {
+            slot: out,
+            set: S::default(),
+            element: None,
+            errors: CollectedErrors::new(),
+        },
+        state,
+    )
 }
 
 impl<'de, T: Ord + Send, A: Deserialize<'de, T>> Deserialize<'de, BTreeSet<T>> for BTreeSet<A> {
@@ -1487,16 +1475,15 @@ macro_rules! deserialize_for_tuple {
             fn deserialize_into<'out>(out: &'out mut Option<($($name,)*)>, state: &mut State) -> SinkHandle<'out, 'de> {
                 #![allow(non_snake_case)]
 
-                struct TupleSink<'a, $($name,)* $($adapter,)*> {
+                struct TupleSink<'a, $($name,)*> {
                     slot: &'a mut Option<($($name,)*)>,
                     index: usize,
                     $(
                         $name: Option<$name>,
                     )*
-                    _marker: PhantomData<fn() -> ($($adapter,)*)>,
                 }
 
-                impl<'de, 'a, $($name: Send,)* $($adapter: Deserialize<'de, $name>,)*> Sink<'de> for TupleSink<'a, $($name,)* $($adapter,)*> {
+                impl<'de, 'a, $($name: Send,)* $($adapter: Deserialize<'de, $name>,)*> Sink<'de> for Adapted<($($adapter,)*), TupleSink<'a, $($name,)*>> {
                     fn expecting(&self) -> Cow<'_, str> {
                         Cow::Borrowed(TUPLE_NAME)
                     }
@@ -1554,18 +1541,13 @@ macro_rules! deserialize_for_tuple {
                     }
                 }
 
-                // SAFETY: the adapters are adapters, the sink only holds a
-                // marker of them
-                unsafe {
-                    SinkHandle::arena_unbounded(TupleSink::<$($name,)* $($adapter,)*> {
-                        slot: out,
-                        index: 0,
-                        $(
-                            $name: None,
-                        )*
-                        _marker: PhantomData,
-                    }, state)
-                }
+                adapted::arena_sink::<($($adapter,)*), _>(TupleSink {
+                    slot: out,
+                    index: 0,
+                    $(
+                        $name: None,
+                    )*
+                }, state)
             }
         }
 
@@ -1644,16 +1626,15 @@ impl<'de, T: Send, A: Deserialize<'de, T>, const N: usize> Deserialize<'de, [T; 
         // Invariant: if `buffer` is `Some`, the first `index` elements of it
         // are initialized.  Once the buffer was moved into the slot, `buffer`
         // is `None`.
-        struct ArraySink<'a, T, A, const N: usize> {
+        struct ArraySink<'a, T, const N: usize> {
             slot: &'a mut Option<[T; N]>,
             buffer: Option<[MaybeUninit<T>; N]>,
             element: Option<T>,
             index: usize,
             is_seq: bool,
-            _marker: PhantomData<fn() -> A>,
         }
 
-        impl<'a, T, A, const N: usize> ArraySink<'a, T, A, N> {
+        impl<'a, T, const N: usize> ArraySink<'a, T, N> {
             fn flush(&mut self) {
                 if let Some(element) = self.element.take() {
                     // indexing panics if the sink is misused and too many
@@ -1665,7 +1646,7 @@ impl<'de, T: Send, A: Deserialize<'de, T>, const N: usize> Deserialize<'de, [T; 
             }
         }
 
-        impl<'a, T, A, const N: usize> Drop for ArraySink<'a, T, A, N> {
+        impl<'a, T, const N: usize> Drop for ArraySink<'a, T, N> {
             fn drop(&mut self) {
                 if let Some(ref mut buffer) = self.buffer {
                     for elem in &mut buffer[..self.index] {
@@ -1677,7 +1658,7 @@ impl<'de, T: Send, A: Deserialize<'de, T>, const N: usize> Deserialize<'de, [T; 
         }
 
         impl<'de, 'a, T: Send + 'a, A: Deserialize<'de, T>, const N: usize> Sink<'de>
-            for ArraySink<'a, T, A, N>
+            for Adapted<A, ArraySink<'a, T, N>>
         {
             fn expecting(&self) -> Cow<'_, str> {
                 Cow::Borrowed(ARRAY_NAME)
@@ -1789,20 +1770,16 @@ impl<'de, T: Send, A: Deserialize<'de, T>, const N: usize> Deserialize<'de, [T; 
             }
         }
 
-        // SAFETY: `A` is an adapter, the sink only holds a marker of it
-        unsafe {
-            SinkHandle::arena_unbounded(
-                ArraySink::<T, A, N> {
-                    slot: out,
-                    buffer: Some([const { MaybeUninit::uninit() }; N]),
-                    element: None,
-                    index: 0,
-                    is_seq: false,
-                    _marker: PhantomData,
-                },
-                state,
-            )
-        }
+        adapted::arena_sink::<A, _>(
+            ArraySink {
+                slot: out,
+                buffer: Some([const { MaybeUninit::uninit() }; N]),
+                element: None,
+                index: 0,
+                is_seq: false,
+            },
+            state,
+        )
     }
 }
 

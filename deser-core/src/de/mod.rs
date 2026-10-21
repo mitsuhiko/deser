@@ -443,31 +443,10 @@ impl<'a, 'de> SinkHandle<'a, 'de> {
         SinkHandle(HandleInner::Arena(arena_sink(sink, &mut state.arena)))
     }
 
-    /// Like [`arena`](Self::arena) but the sink does not need to outlive the
-    /// handle.
-    ///
-    /// This is how the implementations that are generic over adapters (like
-    /// `Vec<A>` for `Vec<T>`) create their sinks.  The compiler requires
-    /// the sink to outlive the handle, which includes the adapter.  The
-    /// adapter always does: it's either the type of the value, which
-    /// outlives the slot, or a marker type.  But this cannot be expressed.
-    ///
-    /// # Safety
-    ///
-    /// Everything the sink holds has to outlive `'a`.  The type parameters
-    /// that do not need to outlive it are the ones of adapters, which are
-    /// only used for their functions and never instantiated (the sink holds
-    /// no values of them, only markers like `PhantomData<fn() -> A>`).
-    /// Functions cannot hold borrowed data.
+    /// Creates an owned handle to a sink in an arena.
     #[inline(always)]
-    pub(crate) unsafe fn arena_unbounded<S: Sink<'de>>(
-        sink: S,
-        state: &mut State,
-    ) -> SinkHandle<'a, 'de> {
-        // SAFETY: guaranteed by the caller
-        SinkHandle(HandleInner::Arena(unsafe {
-            sinkbox::arena_sink_unbounded(sink, &mut state.arena)
-        }))
+    pub(crate) fn from_arena(sink: ArenaSink<'a, 'de>) -> SinkHandle<'a, 'de> {
+        SinkHandle(HandleInner::Arena(sink))
     }
 
     /// Drops the handle, the block of an owned sink is returned to the arena

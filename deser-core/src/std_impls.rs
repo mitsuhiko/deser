@@ -22,6 +22,7 @@ use core::str::FromStr;
 
 use crate::State;
 use crate::Text;
+use crate::adapted::{self, Adapted};
 use crate::de::duplicates::duplicate_field;
 use crate::de::impls::{Via, deserialize_via};
 use crate::de::{Deserialize, Sink, SinkHandle, Slot, default_atom};
@@ -392,15 +393,14 @@ where
     TA: Deserialize<'de, T>,
     EA: Deserialize<'de, E>,
 {
-    struct ResultSink<'a, T, E, TA, EA> {
+    struct ResultSink<'a, T, E> {
         slot: &'a mut Option<Result<T, E>>,
         variant: Option<ResultVariant>,
         ok: Option<T>,
         err: Option<E>,
-        _marker: PhantomData<fn() -> (TA, EA)>,
     }
 
-    impl<'de, 'a, T, E, TA, EA> Sink<'de> for ResultSink<'a, T, E, TA, EA>
+    impl<'de, 'a, T, E, TA, EA> Sink<'de> for Adapted<(TA, EA), ResultSink<'a, T, E>>
     where
         T: Send,
         E: Send,
@@ -472,20 +472,15 @@ where
         }
     }
 
-    // SAFETY: `TA` and `EA` are adapters, the sink only holds a marker of
-    // them
-    unsafe {
-        SinkHandle::arena_unbounded(
-            ResultSink::<T, E, TA, EA> {
-                slot: out,
-                variant: None,
-                ok: None,
-                err: None,
-                _marker: PhantomData,
-            },
-            state,
-        )
-    }
+    adapted::arena_sink::<(TA, EA), _>(
+        ResultSink {
+            slot: out,
+            variant: None,
+            ok: None,
+            err: None,
+        },
+        state,
+    )
 }
 
 impl<'de, T, E, TA, EA> Deserialize<'de, Result<T, E>> for Result<TA, EA>

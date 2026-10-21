@@ -87,18 +87,10 @@ impl<'de, T: Send, A: Deserialize<'de, T>> Slot<T, A> {
     /// Returns a handle to the slot of the `Option<T>`.
     ///
     /// Unlike [`SinkHandle::to`] this does not require `A` to outlive the
-    /// handle: `A` is only used for its functions, which cannot hold
-    /// borrowed data (see `SinkHandle::arena_unbounded`).
+    /// handle (see [`adapted`](crate::adapted)).
     #[inline(always)]
     pub(crate) fn handle<'a>(out: &'a mut Option<T>) -> SinkHandle<'a, 'de> {
-        // the slot outlives this function (like every type parameter)
-        let sink: *mut (dyn Sink<'de> + '_) = out as *mut Option<T> as *mut Slot<T, A>;
-        // SAFETY: the slot is a transparent wrapper around the option which
-        // is borrowed for the lifetime of the handle.  What `A` stands for
-        // is not used, the sink only invokes the functions of `A`.
-        SinkHandle::to(unsafe {
-            &mut *core::mem::transmute::<*mut (dyn Sink<'de> + '_), *mut (dyn Sink<'de> + 'a)>(sink)
-        })
+        crate::adapted::slot_sink::<T, A>(out)
     }
 }
 

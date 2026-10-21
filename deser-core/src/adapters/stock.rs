@@ -15,6 +15,7 @@ use std::collections::HashMap;
 
 use crate::State;
 use crate::Text;
+use crate::adapted::{self, Adapted};
 use crate::adapters::Same;
 use crate::de::impls::{MapTarget, SeqTarget};
 use crate::de::lexical::parse_bool_with;
@@ -769,15 +770,14 @@ impl<'de, T: Send, A: Deserialize<'de, T>> Deserialize<'de, Vec<T>> for VecSkipE
         out: &'out mut Option<Vec<T>>,
         state: &mut State,
     ) -> SinkHandle<'out, 'de> {
-        struct SkipSink<'a, T, A> {
+        struct SkipSink<'a, T> {
             slot: &'a mut Option<Vec<T>>,
             vec: Vec<T>,
             // the current element, added once the next one starts
             item: Option<T>,
-            _marker: PhantomData<fn() -> A>,
         }
 
-        impl<'a, T, A> SkipSink<'a, T, A> {
+        impl<'a, T> SkipSink<'a, T> {
             fn flush(&mut self) {
                 if let Some(item) = self.item.take() {
                     self.vec.push(item);
@@ -785,7 +785,7 @@ impl<'de, T: Send, A: Deserialize<'de, T>> Deserialize<'de, Vec<T>> for VecSkipE
             }
         }
 
-        impl<'a, 'de, T: Send, A: Deserialize<'de, T>> Sink<'de> for SkipSink<'a, T, A> {
+        impl<'a, 'de, T: Send, A: Deserialize<'de, T>> Sink<'de> for Adapted<A, SkipSink<'a, T>> {
             fn expecting(&self) -> Cow<'_, str> {
                 Cow::Borrowed(<Vec<T> as SeqTarget<T>>::NAME)
             }
@@ -831,18 +831,14 @@ impl<'de, T: Send, A: Deserialize<'de, T>> Deserialize<'de, Vec<T>> for VecSkipE
             }
         }
 
-        // SAFETY: `A` is an adapter, the sink only holds a marker of it
-        unsafe {
-            SinkHandle::arena_unbounded(
-                SkipSink::<T, A> {
-                    slot: out,
-                    vec: Vec::new(),
-                    item: None,
-                    _marker: PhantomData,
-                },
-                state,
-            )
-        }
+        adapted::arena_sink::<A, _>(
+            SkipSink {
+                slot: out,
+                vec: Vec::new(),
+                item: None,
+            },
+            state,
+        )
     }
 }
 
@@ -910,8 +906,7 @@ where
     KA: Deserialize<'de, K>,
     VA: Deserialize<'de, V>,
 {
-    #[allow(clippy::type_complexity)]
-    struct SkipMapSink<'a, M, K, V, KA, VA> {
+    struct SkipMapSink<'a, M, K, V> {
         slot: &'a mut Option<M>,
         map: M,
         // the key of the current entry, `None` if it failed
@@ -922,10 +917,9 @@ where
         // if the values of duplicate keys replace earlier ones.  With
         // `DuplicateKeys::Error` duplicate entries fail and are skipped.
         replace: bool,
-        _marker: PhantomData<fn() -> (V, KA, VA)>,
     }
 
-    impl<'a, M: MapTarget<K, V>, K, V, KA, VA> SkipMapSink<'a, M, K, V, KA, VA> {
+    impl<'a, M: MapTarget<K, V>, K, V> SkipMapSink<'a, M, K, V> {
         fn flush(&mut self) {
             if let Some(value) = self.value.take()
                 && let Some(key) = self.key.take()
@@ -936,7 +930,7 @@ where
         }
     }
 
-    impl<'a, 'de, M, K, V, KA, VA> Sink<'de> for SkipMapSink<'a, M, K, V, KA, VA>
+    impl<'a, 'de, M, K, V, KA, VA> Sink<'de> for Adapted<(KA, VA), SkipMapSink<'a, M, K, V>>
     where
         M: MapTarget<K, V>,
         K: Send,
@@ -992,7 +986,8 @@ where
             if let Some(key) = self.key.take()
                 && let Some(value) = try_atom::<V, VA>(atom, state)
             {
-                self.map.insert_entry(key, value, self.replace);
+                let replace = self.replace;
+                self.map.insert_entry(key, value, replace);
             }
             Ok(())
         }
@@ -1005,7 +1000,8 @@ where
             if let Some(key) = self.key.take()
                 && let Some(value) = try_borrowed_atom::<V, VA>(atom, state)
             {
-                self.map.insert_entry(key, value, self.replace);
+                let replace = self.replace;
+                self.map.insert_entry(key, value, replace);
             }
             Ok(())
         }
@@ -1017,21 +1013,16 @@ where
         }
     }
 
-    // SAFETY: `KA` and `VA` are adapters, the sink only holds a marker of
-    // them
-    unsafe {
-        SinkHandle::arena_unbounded(
-            SkipMapSink::<M, K, V, KA, VA> {
-                slot: out,
-                map: M::default(),
-                key: None,
-                value: None,
-                replace: true,
-                _marker: PhantomData,
-            },
-            state,
-        )
-    }
+    adapted::arena_sink::<(KA, VA), _>(
+        SkipMapSink {
+            slot: out,
+            map: M::default(),
+            key: None,
+            value: None,
+            replace: true,
+        },
+        state,
+    )
 }
 
 impl<'de, K, V, KA, VA> Deserialize<'de, BTreeMap<K, V>> for MapSkipError<KA, VA>

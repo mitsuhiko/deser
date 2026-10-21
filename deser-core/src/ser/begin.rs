@@ -99,45 +99,6 @@ impl<'a> Begin<'a> {
             needs_finish: false,
         }
     }
-
-    /// Like [`indexed_seq`](Self::indexed_seq) but the sequence does not
-    /// need to outlive `'a`.
-    ///
-    /// This is for the sequences which are generic over adapters (see
-    /// [`erase_unbounded`](crate::ser::handle::erase_unbounded)).
-    ///
-    /// # Safety
-    ///
-    /// The pointer must be valid for `'a`.  The parts of `S` that do not
-    /// outlive `'a` must be adapters that are only used for their
-    /// functions, `S` holds no values of them.
-    #[inline]
-    pub(crate) unsafe fn indexed_seq_unbounded<S: IndexedSeq>(
-        value: *const S,
-        shape: ContainerShape,
-    ) -> Begin<'a> {
-        // SAFETY: guaranteed by the caller
-        Begin::indexed_seq(unsafe { indexed_unbounded(value) }, shape)
-    }
-}
-
-/// Converts a reference to a sequence into a trait object without
-/// requiring the sequence to outlive `'a`.
-///
-/// # Safety
-///
-/// The pointer must be valid for `'a`.  See
-/// [`Begin::indexed_seq_unbounded`].
-#[inline(always)]
-pub(crate) unsafe fn indexed_unbounded<'a, S: IndexedSeq>(
-    value: *const S,
-) -> &'a (dyn IndexedSeq + 'a) {
-    // like every type parameter, `S` outlives this function
-    let value: *const (dyn IndexedSeq + '_) = value;
-    // SAFETY: guaranteed by the caller
-    unsafe {
-        &*core::mem::transmute::<*const (dyn IndexedSeq + '_), *const (dyn IndexedSeq + 'a)>(value)
-    }
 }
 
 /// A field of an [`IndexedStruct`].

@@ -15,6 +15,8 @@ extern crate alloc;
 mod macros;
 mod event;
 
+mod adapted;
+
 pub mod adapters;
 mod arena;
 pub mod de;

@@ -1,60 +1,13 @@
 //! References to values that are serialized with their type erased.
 use alloc::boxed::Box;
 use core::fmt;
-use core::marker::PhantomData;
 
 use crate::State;
+use crate::adapted::Adapted;
 use crate::error::Error;
 use crate::event::ContainerShape;
 use crate::ser::boxed::{self, Boxed};
 use crate::ser::{Begin, Describe, Emit, PlainSink, Serialize};
-
-/// A value that serializes with an adapter.
-///
-/// The wrapper is transparent over the value, it can be created from a
-/// reference to the value without copying it.  The adapter is only a
-/// marker, it's never instantiated.
-#[repr(transparent)]
-pub(crate) struct Adapted<A, T: ?Sized> {
-    _marker: PhantomData<fn() -> A>,
-    value: T,
-}
-
-impl<A, T: ?Sized> Adapted<A, T> {
-    /// Wraps a reference to a value.
-    #[inline(always)]
-    pub(crate) fn new(value: &T) -> &Adapted<A, T> {
-        // SAFETY: the wrapper is transparent over `T` (the marker is zero
-        // sized and has an alignment of one).
-        unsafe { &*(value as *const T as *const Adapted<A, T>) }
-    }
-
-    /// Returns a pointer to the wrapper of a value.
-    ///
-    /// Unlike a reference, the pointer does not require the adapter to
-    /// outlive it.
-    #[inline(always)]
-    pub(crate) fn ptr(value: &T) -> *const Adapted<A, T> {
-        value as *const T as *const Adapted<A, T>
-    }
-
-    /// Returns the wrapped value.
-    #[inline(always)]
-    pub(crate) fn get(&self) -> &T {
-        &self.value
-    }
-}
-
-impl<A, T> Adapted<A, T> {
-    /// Wraps a value.
-    #[inline(always)]
-    fn owned(value: T) -> Adapted<A, T> {
-        Adapted {
-            _marker: PhantomData,
-            value,
-        }
-    }
-}
 
 /// A value that is serialized, with its type erased.
 ///
@@ -74,61 +27,40 @@ pub(crate) trait Erased: Sync {
 
 impl<A: Serialize<T>, T: ?Sized + Sync> Erased for Adapted<A, T> {
     fn erased_serialize(&self, state: &mut State) -> Result<Emit<'_>, Error> {
-        A::serialize(&self.value, state)
+        A::serialize(self.get(), state)
     }
 
     fn erased_finish(&self, state: &mut State) -> Result<(), Error> {
-        A::finish(&self.value, state)
+        A::finish(self.get(), state)
     }
 
     fn erased_is_optional(&self) -> bool {
-        A::is_optional(&self.value)
+        A::is_optional(self.get())
     }
 
     fn erased_container_shape(&self) -> ContainerShape {
-        A::container_shape(&self.value)
+        A::container_shape(self.get())
     }
 
     fn erased_describe(&self, d: &mut dyn Describe) {
-        A::describe(&self.value, d)
+        A::describe(self.get(), d)
     }
 
     fn erased_begin(&self, state: &mut State) -> Result<Begin<'_>, Error> {
-        A::__private_begin(&self.value, state)
+        A::__private_begin(self.get(), state)
     }
 
     fn erased_is_plain_value(&self) -> bool {
-        A::__private_is_plain_value(&self.value)
+        A::__private_is_plain_value(self.get())
     }
 
     fn erased_emit_plain(&self, sink: &mut dyn PlainSink) -> Result<(), Error> {
-        A::__private_emit_plain(&self.value, sink)
+        A::__private_emit_plain(self.get(), sink)
     }
 
     fn erased_plain_cost(&self, budget: usize) -> Option<usize> {
-        A::__private_plain_cost(&self.value, budget)
+        A::__private_plain_cost(self.get(), budget)
     }
-}
-
-/// Converts a pointer to a wrapper into a trait object.
-///
-/// The compiler requires the wrapper, and with it the adapter, to outlive
-/// the trait object (even a reference to it).  The adapter always does
-/// (it's the type of the value or a marker type) but this cannot be
-/// expressed for adapters that are type parameters, like the element
-/// adapter of `Vec<A>`.
-///
-/// # Safety
-///
-/// The pointer must be valid for `'a`.  The parts of `S` that do not
-/// outlive `'a` must be adapters that are only used for their functions
-/// (which cannot hold borrowed data), `S` holds no values of them.
-#[inline(always)]
-pub(crate) unsafe fn erase_unbounded<'a, S: Erased>(value: *const S) -> &'a (dyn Erased + 'a) {
-    // like every type parameter, `S` outlives this function
-    let value: *const (dyn Erased + '_) = value;
-    // SAFETY: guaranteed by the caller
-    unsafe { &*core::mem::transmute::<*const (dyn Erased + '_), *const (dyn Erased + 'a)>(value) }
 }
 
 /// A reference to a value that is serialized.
@@ -174,9 +106,7 @@ impl<'a> SerializeRef<'a> {
     #[inline(always)]
     pub fn serialize_as<A: Serialize<T>, T: Sync>(value: &'a T) -> SerializeRef<'a> {
         SerializeRef {
-            // SAFETY: the wrapper is valid for 'a (it's the value), it only
-            // holds a marker of the adapter
-            value: unsafe { erase_unbounded(Adapted::<A, T>::ptr(value)) },
+            value: Adapted::<A, T>::erased(value),
         }
     }
 

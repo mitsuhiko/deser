@@ -18,6 +18,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::State;
 use crate::Text;
+use crate::adapted;
 use crate::error::Error;
 use crate::event::{Atom, Bytes, ContainerShape};
 use crate::ext::ExtValue;
@@ -184,27 +185,25 @@ pub(crate) fn handle_as<A: Serialize<T>, T: Sync>(value: &T) -> SerializeHandle<
 }
 
 /// Emits the elements of an iterator with an adapter.
-#[allow(clippy::type_complexity)]
-pub(crate) struct IterEmitter<'a, I, A>(I, PhantomData<(&'a (), fn() -> A)>);
+pub(crate) struct IterEmitter<'a, I>(I, PhantomData<&'a ()>);
 
-impl<'a, I, A> IterEmitter<'a, I, A> {
-    /// Emits a sequence of the elements.
+impl<'a, I> IterEmitter<'a, I> {
+    /// Emits a sequence of the elements with the adapter `A`.
     ///
     /// The adapter does not need to outlive the `Emit` (see
-    /// `Emit::seq_unbounded`).
+    /// [`adapted`](crate::adapted)).
     #[inline(always)]
-    pub(crate) fn emit<T>(iter: I, state: &mut State) -> Emit<'a>
+    pub(crate) fn emit<A, T>(iter: I, state: &mut State) -> Emit<'a>
     where
         I: Iterator<Item = &'a T> + Send + 'a,
         T: Sync + 'a,
         A: Serialize<T>,
     {
-        // SAFETY: the emitter only holds a marker of the adapter
-        unsafe { Emit::seq_unbounded(IterEmitter::<'a, I, A>(iter, PhantomData), state) }
+        adapted::seq_emitter::<A, _>(IterEmitter(iter, PhantomData), state)
     }
 }
 
-impl<'a, I, T, A> SeqEmitter for IterEmitter<'a, I, A>
+impl<'a, I, T, A> SeqEmitter for Adapted<A, IterEmitter<'a, I>>
 where
     I: Iterator<Item = &'a T> + Send,
     T: Sync + 'a,
@@ -216,19 +215,18 @@ where
 }
 
 /// Emits the entries of a map iterator with adapters.
-pub(crate) struct MapIterEmitter<'a, I, V, KA, VA> {
+pub(crate) struct MapIterEmitter<'a, I, V> {
     iter: I,
     value: Option<&'a V>,
-    _marker: PhantomData<fn() -> (KA, VA)>,
 }
 
-impl<'a, I, V, KA, VA> MapIterEmitter<'a, I, V, KA, VA> {
-    /// Emits a map of the entries.
+impl<'a, I, V> MapIterEmitter<'a, I, V> {
+    /// Emits a map of the entries with the adapters `KA` and `VA`.
     ///
     /// The adapters do not need to outlive the `Emit` (see
-    /// `Emit::map_unbounded`).
+    /// [`adapted`](crate::adapted)).
     #[inline(always)]
-    pub(crate) fn emit<K>(iter: I, state: &mut State) -> Emit<'a>
+    pub(crate) fn emit<K, KA, VA>(iter: I, state: &mut State) -> Emit<'a>
     where
         I: Iterator<Item = (&'a K, &'a V)> + Send + 'a,
         K: Sync + 'a,
@@ -236,17 +234,12 @@ impl<'a, I, V, KA, VA> MapIterEmitter<'a, I, V, KA, VA> {
         KA: Serialize<K>,
         VA: Serialize<V>,
     {
-        let emitter = MapIterEmitter::<I, V, KA, VA> {
-            iter,
-            value: None,
-            _marker: PhantomData,
-        };
-        // SAFETY: the emitter only holds a marker of the adapters
-        unsafe { Emit::map_unbounded(emitter, state) }
+        let emitter = MapIterEmitter { iter, value: None };
+        adapted::map_emitter::<(KA, VA), _>(emitter, state)
     }
 }
 
-impl<'a, I, K, V, KA, VA> MapEmitter for MapIterEmitter<'a, I, V, KA, VA>
+impl<'a, I, K, V, KA, VA> MapEmitter for Adapted<(KA, VA), MapIterEmitter<'a, I, V>>
 where
     I: Iterator<Item = (&'a K, &'a V)> + Send,
     K: Sync + 'a,
@@ -255,8 +248,9 @@ where
     VA: Serialize<V>,
 {
     fn next_key(&mut self, _state: &mut State) -> Result<Option<SerializeHandle<'_>>, Error> {
-        Ok(self.iter.next().map(|(k, v)| {
-            self.value = Some(v);
+        let this = &mut **self;
+        Ok(this.iter.next().map(|(k, v)| {
+            this.value = Some(v);
             handle_as::<KA, K>(k)
         }))
     }
@@ -270,15 +264,13 @@ where
 /// [`Adapted`]).
 ///
 /// The adapter does not need to outlive the value (see
-/// `Begin::indexed_seq_unbounded`).
+/// [`adapted`](crate::adapted)).
 #[inline(always)]
 pub(crate) fn begin_indexed<'a, A, T>(value: &'a T, shape: ContainerShape) -> Begin<'a>
 where
     Adapted<A, T>: IndexedSeq,
 {
-    // SAFETY: the wrapper is valid for 'a (it's the value), it only holds a
-    // marker of the adapter
-    unsafe { Begin::indexed_seq_unbounded(Adapted::<A, T>::ptr(value), shape) }
+    Begin::indexed_seq(Adapted::<A, T>::indexed(value), shape)
 }
 
 /// Begins a plain value with an adapter (see [`Begin::plain`]).
@@ -332,7 +324,7 @@ macro_rules! serialize_slice {
                         Some(bytes) => {
                             $crate::ser::Emit::Atom($crate::Atom::Bytes($crate::Bytes::new(bytes)))
                         }
-                        None => $crate::ser::impls::IterEmitter::<_, $elem>::emit(value[..].iter(), state),
+                        None => $crate::ser::impls::IterEmitter::emit::<$elem, _>(value[..].iter(), state),
                     })
                 }
 
@@ -534,7 +526,7 @@ impl<T: Sync, A: Serialize<T>> Serialize<VecDeque<T>> for VecDeque<A> {
     fn serialize<'a>(value: &'a VecDeque<T>, state: &mut State) -> Result<Emit<'a>, Error> {
         Ok(match deque_bytes::<T, A>(value) {
             Some(bytes) => Emit::Atom(Atom::Bytes(Bytes::new(bytes))),
-            None => IterEmitter::<_, A>::emit(value.iter(), state),
+            None => IterEmitter::emit::<A, _>(value.iter(), state),
         })
     }
 
@@ -598,7 +590,7 @@ impl<T: Sync, A: Serialize<T>> Serialize<LinkedList<T>> for LinkedList<A> {
     }
 
     fn serialize<'a>(value: &'a LinkedList<T>, state: &mut State) -> Result<Emit<'a>, Error> {
-        Ok(IterEmitter::<_, A>::emit(value.iter(), state))
+        Ok(IterEmitter::emit::<A, _>(value.iter(), state))
     }
 }
 
@@ -626,7 +618,7 @@ impl<T: Sync, A: Serialize<T>> Serialize<BinaryHeap<T>> for BinaryHeap<A> {
     fn serialize<'a>(value: &'a BinaryHeap<T>, state: &mut State) -> Result<Emit<'a>, Error> {
         Ok(match A::__private_slice_as_bytes(value.as_slice()) {
             Some(bytes) => Emit::Atom(Atom::Bytes(Bytes::new(bytes))),
-            None => IterEmitter::<_, A>::emit(value.as_slice().iter(), state),
+            None => IterEmitter::emit::<A, _>(value.as_slice().iter(), state),
         })
     }
 }
@@ -677,7 +669,7 @@ macro_rules! serialize_map {
                     value: &'a $ty,
                     state: &mut $crate::State,
                 ) -> Result<$crate::ser::Emit<'a>, $crate::Error> {
-                    Ok($crate::ser::impls::MapIterEmitter::<_, V, KA, VA>::emit::<K>(value.iter(), state))
+                    Ok($crate::ser::impls::MapIterEmitter::emit::<K, KA, VA>(value.iter(), state))
                 }
 
                 #[inline]
@@ -768,7 +760,7 @@ macro_rules! serialize_set {
                     value: &'a $ty,
                     state: &mut $crate::State,
                 ) -> Result<$crate::ser::Emit<'a>, $crate::Error> {
-                    Ok($crate::ser::impls::IterEmitter::<_, A>::emit(value.iter(), state))
+                    Ok($crate::ser::impls::IterEmitter::emit::<A, _>(value.iter(), state))
                 }
 
                 #[inline]
@@ -940,9 +932,7 @@ macro_rules! serialize_for_tuple {
             }
 
             fn serialize<'a>(value: &'a ($($name,)*), state: &mut State) -> Result<Emit<'a>, Error> {
-                // SAFETY: the wrapper is valid for 'a (it's the value), it only
-                // holds a marker of the adapters
-                let seq = unsafe { crate::ser::begin::indexed_unbounded(Adapted::<Self, _>::ptr(value)) };
+                let seq = Adapted::<Self, _>::indexed(value);
                 Ok(Emit::seq(crate::ser::IndexedSeqEmitter::new(seq), state))
             }
         }
@@ -1008,7 +998,7 @@ impl<T: Sync, A: Serialize<T>, const N: usize> Serialize<[T; N]> for [A; N] {
     fn serialize<'a>(value: &'a [T; N], state: &mut State) -> Result<Emit<'a>, Error> {
         Ok(match A::__private_slice_as_bytes(value) {
             Some(bytes) => Emit::Atom(Atom::Bytes(Bytes::new(bytes))),
-            None => IterEmitter::<_, A>::emit(value.iter(), state),
+            None => IterEmitter::emit::<A, _>(value.iter(), state),
         })
     }
 

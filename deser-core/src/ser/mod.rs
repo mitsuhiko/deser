@@ -107,7 +107,7 @@ use crate::error::Error;
 use crate::event::ContainerShape;
 
 pub(crate) mod begin;
-mod boxed;
+pub(crate) mod boxed;
 mod describe;
 mod driver;
 mod emit;
@@ -126,11 +126,12 @@ pub use self::boxed::Boxed;
 pub(crate) use self::describe::is_unit_struct;
 pub use self::describe::{Describe, Variant, VariantKind, VariantRepr};
 pub use self::emit::Emit;
-pub(crate) use self::handle::{Adapted, Erased, HandleInner};
+pub(crate) use self::handle::{Erased, HandleInner};
 pub use self::handle::{SerializeHandle, SerializeRef};
 pub use self::layer::{Layer, Next};
 pub use self::serializer::Serializer;
 pub use self::stream::StreamSerializer;
+pub(crate) use crate::adapted::Adapted;
 
 pub use driver::{EventSink, SerializeDriver};
 

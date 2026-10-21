@@ -5,6 +5,7 @@ use core::marker::PhantomData;
 use core::ptr::NonNull;
 
 use crate::State;
+use crate::adapted::{self, Adapted};
 use crate::arena::ArenaBox;
 use crate::de::{Deserialize, OwnedSink, Sink, SinkHandle, is_null_atom};
 use crate::error::Error;
@@ -486,23 +487,19 @@ enum CollectTarget<'a, C> {
 /// A value that is a sequence which the element rejects is the values of
 /// the key: they are all added to the collection (like `multi[]=a` in a
 /// query string for a `Vec<String>`).
-struct CollectSink<'a, 'de, C, T, A> {
+struct CollectSink<'a, 'de, C, T> {
     target: CollectTarget<'a, C>,
     element: OwnedSink<'de, T>,
     // `true` if the value is a sequence whose items are added
     extend: bool,
-    _marker: PhantomData<fn() -> A>,
 }
 
-impl<'a, 'de, C: Collection<T>, T: Send> CollectSink<'a, 'de, C, T, ()> {
+impl<'a, 'de, C: Collection<T>, T: Send> CollectSink<'a, 'de, C, T> {
     /// Adds the value of the element (if there is one).
-    fn add(
-        target: &mut CollectTarget<'a, C>,
-        element: &mut OwnedSink<'de, T>,
-    ) -> Result<(), Error> {
+    fn add(&mut self) -> Result<(), Error> {
         // a null (for an optional element) leaves no value
-        if let Some(value) = element.take() {
-            match *target {
+        if let Some(value) = self.element.take() {
+            match self.target {
                 CollectTarget::Slot(ref mut slot) => {
                     slot.get_or_insert_with(C::empty).add(value)?
                 }
@@ -513,7 +510,7 @@ impl<'a, 'de, C: Collection<T>, T: Send> CollectSink<'a, 'de, C, T, ()> {
     }
 }
 
-impl<'a, 'de, C, T, A> Sink<'de> for CollectSink<'a, 'de, C, T, A>
+impl<'a, 'de, C, T, A> Sink<'de> for Adapted<A, CollectSink<'a, 'de, C, T>>
 where
     C: Collection<T>,
     T: Send,
@@ -551,7 +548,7 @@ where
     fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
         if self.extend {
             // the previous item was finished by the driver
-            CollectSink::<C, T, ()>::add(&mut self.target, &mut self.element)?;
+            self.add()?;
             self.element = OwnedSink::deserialize_as::<A>(state);
             return Ok(SinkHandle::to(self.element.get_mut()));
         }
@@ -618,7 +615,7 @@ where
         if !self.extend {
             self.element.get_mut().finish(state)?;
         }
-        CollectSink::<C, T, ()>::add(&mut self.target, &mut self.element)
+        self.add()
     }
 }
 
@@ -635,18 +632,14 @@ where
     A: Deserialize<'de, T>,
 {
     let element = OwnedSink::deserialize_as::<A>(state);
-    // SAFETY: `A` is an adapter, the sink only holds a marker of it
-    unsafe {
-        SinkHandle::arena_unbounded(
-            CollectSink {
-                target: CollectTarget::Slot(out),
-                element,
-                extend: false,
-                _marker: PhantomData::<fn() -> A>,
-            },
-            state,
-        )
-    }
+    adapted::arena_sink::<A, _>(
+        CollectSink {
+            target: CollectTarget::Slot(out),
+            element,
+            extend: false,
+        },
+        state,
+    )
 }
 
 /// Creates the sink of a value that is added to a collection that is
@@ -668,16 +661,12 @@ where
         *value = C::empty();
     }
     let element = OwnedSink::deserialize_as::<A>(state);
-    // SAFETY: `A` is an adapter, the sink only holds a marker of it
-    unsafe {
-        SinkHandle::arena_unbounded(
-            CollectSink {
-                target: CollectTarget::Value(value),
-                element,
-                extend: false,
-                _marker: PhantomData::<fn() -> A>,
-            },
-            state,
-        )
-    }
+    adapted::arena_sink::<A, _>(
+        CollectSink {
+            target: CollectTarget::Value(value),
+            element,
+            extend: false,
+        },
+        state,
+    )
 }
