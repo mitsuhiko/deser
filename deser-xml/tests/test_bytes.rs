@@ -1,6 +1,6 @@
 use deser::{BytesFormat, Context, Deserialize, Serialize};
 use deser_encoding::Hex;
-use deser_xml::{Deserializer, DeserializerConfig, SerializerConfig, from_str, to_string};
+use deser_xml::{Deserializer, SerializerConfig, from_str, to_string};
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 struct Blob {
@@ -55,7 +55,7 @@ fn test_bytes_config_reader() {
     let xml = SerializerConfig::new()
         .to_string_with(&blob(), |driver| driver.set_context(hex.clone()))
         .unwrap();
-    let mut reader = DeserializerConfig::new().reader(xml.as_bytes());
+    let mut reader = deser_xml::DeserializerConfig::new().reader(xml.as_bytes());
     reader.set_context(hex);
     let value: Blob = reader.read().unwrap().unwrap();
     assert_eq!(value, blob());

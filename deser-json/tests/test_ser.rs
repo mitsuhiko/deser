@@ -486,13 +486,16 @@ fn test_config_context() {
     assert_eq!(ser.finish(), "[1,255]");
 
     // and so do the writers
-    let mut out = Vec::new();
-    config.to_writer(&mut out, bytes).unwrap();
-    assert_eq!(out, b"[1,255]");
-    let mut out = Vec::new();
-    let mut writer = config.writer(&mut out);
-    writer.set_context(Context::with(BytesFormat::BASE64));
-    writer.write(bytes).unwrap();
-    drop(writer);
-    assert_eq!(out, br#""Af8=""#);
+    #[cfg(feature = "io")]
+    {
+        let mut out = Vec::new();
+        config.to_writer(&mut out, bytes).unwrap();
+        assert_eq!(out, b"[1,255]");
+        let mut out = Vec::new();
+        let mut writer = config.writer(&mut out);
+        writer.set_context(Context::with(BytesFormat::BASE64));
+        writer.write(bytes).unwrap();
+        drop(writer);
+        assert_eq!(out, br#""Af8=""#);
+    }
 }

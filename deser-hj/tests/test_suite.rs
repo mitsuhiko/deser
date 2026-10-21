@@ -129,6 +129,8 @@ fn test_hjson_suite() {
             deser_json::from_slice::<Value>(&expected).unwrap()
         });
 
+        // chunked reads are only added with `io`
+        #[cfg_attr(not(feature = "io"), allow(unused_mut))]
         let mut results = vec![(
             "in memory".to_string(),
             deser_hj::from_slice::<Value>(&input),

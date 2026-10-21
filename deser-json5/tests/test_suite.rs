@@ -162,6 +162,8 @@ fn test_json5_suite() {
             continue;
         }
 
+        // chunked reads are only added with `io`
+        #[cfg_attr(not(feature = "io"), allow(unused_mut))]
         let mut results = vec![(
             "in memory".to_string(),
             deser_json5::from_slice::<Value>(&input),
