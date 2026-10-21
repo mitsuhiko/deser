@@ -83,9 +83,24 @@ pub(crate) struct DriverCore<'de> {
     // non-zero while the driver is lent out with a shorter lifetime for
     // the borrowed data (see `DeserializeDriver::transient`): borrowed
     // atoms are delivered as transient ones.  The value identifies the
-    // call that lent the driver out.
+    // call that lent the driver out.  Code that hands the sinks data
+    // borrowed for `'de` or puts a sink into the driver needs a
+    // `NotLent` (see there), which is only created while this is zero.
     transient: usize,
 }
+
+/// Proof that a driver is not lent out (see `DeserializeDriver::transient`).
+///
+/// While a driver is lent out its sinks are typed for the shorter lifetime
+/// `'f` of the callback, but they were created for `'de`.  Data of `'f`
+/// must not reach them as borrowed data and sinks of `'f` must not be put
+/// into the driver (they would be used for `'de` after the callback).  The
+/// sink methods that take data borrowed for `'de` (`Sink::borrowed_atom`
+/// and the borrowed key and value atoms) are only called with this proof,
+/// and so is the root sink replaced.  It's only created by
+/// `DriverCore::not_lent`, which checks that the driver is not lent out.
+#[derive(Copy, Clone)]
+struct NotLent(());
 
 const STACK_CAPACITY: usize = 128;
 
@@ -197,9 +212,9 @@ where
     // sinks accept data borrowed for `'de` and receive data that lives for
     // `'f`: the driver delivers borrowed atoms as transient ones while it's
     // lent out (`DriverCore::transient`), so no data of `'f` is passed to
-    // them as borrowed.  Sinks cannot be wrapped while it's lent out, and
-    // if the driver is replaced the replacement is dropped before `'f`
-    // ends (see `transient`).
+    // them as borrowed.  Sinks cannot be wrapped while it's lent out (both
+    // need a `NotLent`), and if the driver is replaced the replacement is
+    // dropped before `'f` ends (see `transient`).
     unsafe { &mut *(driver as *mut DeserializeDriver<'a, 'de>).cast::<DeserializeDriver<'r, 'f>>() }
 }
 
@@ -476,12 +491,13 @@ impl<'a, 'de> DeserializeDriver<'a, 'de> {
             "sinks can only be wrapped before events are emitted"
         );
         // a wrapper could keep data of the shorter lifetime
-        assert!(
-            self.core.transient == 0,
-            "sinks cannot be wrapped in a transient driver"
-        );
+        let not_lent = self
+            .core
+            .not_lent()
+            .expect("sinks cannot be wrapped in a transient driver");
         let root = self.core.root.take().expect("no active sink");
-        self.core.root = Some(f(root, &mut self.core.state));
+        let root = f(root, &mut self.core.state);
+        self.core.set_root(root, not_lent);
     }
 
     /// Emits an event into the driver.
@@ -727,14 +743,26 @@ impl<'de> DriverCore<'de> {
         }
     }
 
+    /// Returns the proof that the driver is not lent out, `None` if it is.
+    #[inline(always)]
+    fn not_lent(&self) -> Option<NotLent> {
+        (self.transient == 0).then_some(NotLent(()))
+    }
+
+    /// Replaces the root sink with a sink from outside the driver.
+    #[inline(always)]
+    fn set_root(&mut self, root: SinkHandle<'de, 'de>, _: NotLent) {
+        self.root = Some(root);
+    }
+
     #[inline(always)]
     fn deliver_borrowed_atom(&mut self, atom: Atom<'de>) -> Result<(), Error> {
-        // the data does not live for the lifetime of the sinks (see
-        // `DeserializeDriver::transient`)
-        if self.transient != 0 {
+        // while the driver is lent out the data does not live for the
+        // lifetime of the sinks (see `DeserializeDriver::transient`)
+        let Some(not_lent) = self.not_lent() else {
             return self.deliver_atom(atom);
-        }
-        match self.emit_borrowed_atom(atom) {
+        };
+        match self.emit_borrowed_atom(atom, not_lent) {
             Ok(()) => Ok(()),
             Err(err) => self.recover(err, None),
         }
@@ -827,8 +855,12 @@ impl<'de> DriverCore<'de> {
         self.sink_stack.pop();
     }
 
+    /// Delivers an atom that borrows for `'de` to the sinks.
+    ///
+    /// This is the only place where sinks receive data borrowed for `'de`,
+    /// which needs the proof that the driver is not lent out.
     #[inline(always)]
-    fn emit_borrowed_atom(&mut self, atom: Atom<'de>) -> Result<(), Error> {
+    fn emit_borrowed_atom(&mut self, atom: Atom<'de>, _: NotLent) -> Result<(), Error> {
         match self.sink_stack.last_mut() {
             Some((sink, Container::Map(is_key, _))) => {
                 let key = *is_key;
