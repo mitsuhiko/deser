@@ -4,7 +4,8 @@ use std::net::IpAddr;
 use std::str::FromStr;
 
 use deser::adapters::{
-    As, DefaultOnError, DisplayFromStr, FromInto, MapSkipError, TryFromInto, VecSkipError,
+    As, DefaultOnError, DefaultOnNull, DisplayFromStr, FromInto, FromIntoRef, MapSkipError,
+    TryFromInto, TryFromIntoRef, VecSkipError,
 };
 use deser::de::{DeserializeDriver, DeserializeOwned, Recording, Slot, default_atom};
 use deser::ser::{Emit, SerializeDriver, SerializeHandle, SerializeRef};
@@ -341,6 +342,176 @@ fn test_conversions() {
         .drive(|_, _| Ok(()))
         .unwrap_err();
     assert_eq!(err.to_string(), "InvalidValue: invalid value: bad percent");
+}
+
+/// A color that is not `Clone`, converted from references.
+#[derive(Debug, PartialEq)]
+struct Hsl(u16, u8, u8);
+
+impl From<(u16, u8, u8)> for Hsl {
+    fn from(value: (u16, u8, u8)) -> Hsl {
+        Hsl(value.0, value.1, value.2)
+    }
+}
+
+impl From<&Hsl> for (u16, u8, u8) {
+    fn from(value: &Hsl) -> (u16, u8, u8) {
+        (value.0, value.1, value.2)
+    }
+}
+
+/// A level that is not `Clone`, converted from references.
+#[derive(Debug, PartialEq)]
+struct Level(u8);
+
+impl TryFrom<u64> for Level {
+    type Error = &'static str;
+
+    fn try_from(value: u64) -> Result<Level, Self::Error> {
+        u8::try_from(value).map(Level).map_err(|_| "level too high")
+    }
+}
+
+impl TryFrom<&Level> for u64 {
+    type Error = &'static str;
+
+    fn try_from(value: &Level) -> Result<u64, Self::Error> {
+        if value.0 == 0 {
+            Err("level zero")
+        } else {
+            Ok(value.0.into())
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+struct RefConversions {
+    #[deser(as = FromIntoRef<(u16, u8, u8)>)]
+    color: Hsl,
+    #[deser(as = Option<FromIntoRef<(u16, u8, u8)>>)]
+    accent: Option<Hsl>,
+    #[deser(as = Vec<TryFromIntoRef<u64>>)]
+    levels: Vec<Level>,
+}
+
+#[test]
+fn test_ref_conversions() {
+    check(
+        RefConversions {
+            color: Hsl(300, 2, 3),
+            accent: None,
+            levels: vec![Level(1), Level(2)],
+        },
+        vec![
+            Event::map_start(),
+            "color".into(),
+            Event::seq_start(),
+            300u64.into(),
+            2u64.into(),
+            3u64.into(),
+            Event::SeqEnd,
+            "accent".into(),
+            Event::Atom(Atom::Null),
+            "levels".into(),
+            Event::seq_start(),
+            1u64.into(),
+            2u64.into(),
+            Event::SeqEnd,
+            Event::MapEnd,
+        ],
+    );
+
+    let err = deserialize::<RefConversions>(vec![
+        Event::map_start(),
+        "levels".into(),
+        Event::seq_start(),
+        256u64.into(),
+    ])
+    .unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "InvalidValue: invalid value: level too high"
+    );
+
+    let value = RefConversions {
+        color: Hsl(1, 2, 3),
+        accent: Some(Hsl(4, 5, 6)),
+        levels: vec![Level(0)],
+    };
+    let err = SerializeDriver::new(&value)
+        .drive(|_, _| Ok(()))
+        .unwrap_err();
+    assert_eq!(err.to_string(), "InvalidValue: invalid value: level zero");
+}
+
+#[derive(Debug, PartialEq, Deserialize)]
+struct Nulls {
+    #[deser(as = DefaultOnNull)]
+    count: u32,
+    #[deser(as = DefaultOnNull<Vec<DisplayFromStr>>)]
+    ids: Vec<u32>,
+    #[deser(as = DefaultOnNull, default)]
+    point: Point,
+}
+
+#[test]
+fn test_default_on_null() {
+    let nulls: Nulls = deserialize(vec![
+        Event::map_start(),
+        "count".into(),
+        Event::Atom(Atom::Null),
+        "ids".into(),
+        Event::Atom(Atom::Null),
+        "point".into(),
+        Event::Atom(Atom::Null),
+        Event::MapEnd,
+    ])
+    .unwrap();
+    assert_eq!(
+        nulls,
+        Nulls {
+            count: 0,
+            ids: vec![],
+            point: Point::default(),
+        }
+    );
+
+    // other values go to the inner adapter, which also serializes
+    let nulls: Nulls = deserialize(vec![
+        Event::map_start(),
+        "count".into(),
+        2u64.into(),
+        "ids".into(),
+        Event::seq_start(),
+        "1".into(),
+        Event::SeqEnd,
+        "point".into(),
+        Event::map_start(),
+        "x".into(),
+        1u64.into(),
+        "y".into(),
+        2u64.into(),
+        Event::MapEnd,
+        Event::MapEnd,
+    ])
+    .unwrap();
+    assert_eq!(nulls.count, 2);
+    assert_eq!(nulls.ids, [1]);
+    assert_eq!(nulls.point, Point { x: 1, y: 2 });
+
+    // missing values are not null
+    let err = deserialize::<Nulls>(vec![
+        Event::map_start(),
+        "count".into(),
+        1u64.into(),
+        Event::MapEnd,
+    ])
+    .unwrap_err();
+    assert_eq!(err.kind(), ErrorKind::MissingField);
+
+    let err =
+        deserialize::<Nulls>(vec![Event::map_start(), "count".into(), "x".into()]).unwrap_err();
+    assert_eq!(err.message(), "unexpected string, expected u32");
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]

@@ -20,7 +20,9 @@ use crate::adapters::Same;
 use crate::de::impls::{MapTarget, SeqTarget};
 use crate::de::lexical::parse_bool_with;
 use crate::de::mapped::MappedSink;
-use crate::de::{Deserialize, DuplicateKeys, OwnedSink, Sink, SinkHandle, Slot, default_atom};
+use crate::de::{
+    Deserialize, DuplicateKeys, OwnedSink, Sink, SinkHandle, Slot, default_atom, is_null_atom,
+};
 use crate::error::{Error, ErrorKind, conversion_error};
 use crate::event::{Atom, Bytes, ContainerShape};
 use crate::ser::{Begin, Describe, Emit, Serialize, SerializeHandle};
@@ -481,6 +483,469 @@ where
 
     fn is_optional(value: &T) -> bool {
         TryInto::<U>::try_into(value.clone()).is_ok_and(|x| U::is_optional(&x))
+    }
+}
+
+/// Converts from another type and into it from a reference.
+///
+/// This is like [`FromInto`] but the value is serialized by converting a
+/// reference to it (`&T: Into<U>`), so it does not need to be cloned.
+/// Deserialization is the same as with [`FromInto`]: the value is
+/// deserialized as `U` and converted with [`Into`].
+///
+/// ```
+/// use deser::{Deserialize, Serialize};
+/// use deser::adapters::FromIntoRef;
+///
+/// pub struct Rgb(u8, u8, u8);
+///
+/// impl From<(u8, u8, u8)> for Rgb {
+///     fn from(value: (u8, u8, u8)) -> Rgb {
+///         Rgb(value.0, value.1, value.2)
+///     }
+/// }
+///
+/// impl From<&Rgb> for (u8, u8, u8) {
+///     fn from(value: &Rgb) -> (u8, u8, u8) {
+///         (value.0, value.1, value.2)
+///     }
+/// }
+///
+/// #[derive(Serialize, Deserialize)]
+/// pub struct Theme {
+///     #[deser(as = FromIntoRef<(u8, u8, u8)>)]
+///     background: Rgb,
+/// }
+/// ```
+pub struct FromIntoRef<U>(PhantomData<fn() -> U>);
+
+impl<'de, T, U> Deserialize<'de, T> for FromIntoRef<U>
+where
+    T: Send,
+    U: Deserialize<'de> + Into<T> + 'static,
+{
+    fn deserialize_into<'out>(
+        out: &'out mut Option<T>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        <FromInto<U> as Deserialize<'de, T>>::deserialize_into(out, state)
+    }
+
+    fn expecting() -> Cow<'static, str> {
+        U::expecting()
+    }
+
+    fn initial_value() -> Option<T> {
+        U::initial_value().map(Into::into)
+    }
+
+    #[inline]
+    fn __private_atom_into(
+        out: &mut Option<T>,
+        atom: Atom,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        <FromInto<U> as Deserialize<'de, T>>::__private_atom_into(out, atom, state)
+    }
+
+    #[inline]
+    fn __private_borrowed_atom_into(
+        out: &mut Option<T>,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        <FromInto<U> as Deserialize<'de, T>>::__private_borrowed_atom_into(out, atom, state)
+    }
+}
+
+impl<T, U> Serialize<T> for FromIntoRef<U>
+where
+    T: Sync + ?Sized,
+    for<'x> &'x T: Into<U>,
+    U: Serialize + Send + 'static,
+{
+    fn serialize<'a>(value: &'a T, state: &mut State) -> Result<Emit<'a>, Error> {
+        Ok(Emit::Forward(SerializeHandle::arena(
+            Into::<U>::into(value),
+            state,
+        )))
+    }
+
+    // converts once more, but only `skip_serializing_optionals` asks
+    fn is_optional(value: &T) -> bool {
+        U::is_optional(&Into::<U>::into(value))
+    }
+}
+
+/// Converts from another type and into it from a reference with fallible
+/// conversions.
+///
+/// This is like [`TryFromInto`] but the value is serialized by converting
+/// a reference to it (`&T: TryInto<U>`), so it does not need to be cloned.
+/// Failed conversions are reported as errors.
+///
+/// ```
+/// use deser::{Deserialize, Serialize};
+/// use deser::adapters::TryFromIntoRef;
+///
+/// pub struct Percent(u8);
+///
+/// impl TryFrom<u64> for Percent {
+///     type Error = &'static str;
+///     fn try_from(value: u64) -> Result<Percent, Self::Error> {
+///         if value <= 100 {
+///             Ok(Percent(value as u8))
+///         } else {
+///             Err("out of range")
+///         }
+///     }
+/// }
+///
+/// impl TryFrom<&Percent> for u64 {
+///     type Error = std::convert::Infallible;
+///     fn try_from(value: &Percent) -> Result<u64, Self::Error> {
+///         Ok(value.0 as u64)
+///     }
+/// }
+///
+/// #[derive(Serialize, Deserialize)]
+/// pub struct Progress {
+///     #[deser(as = TryFromIntoRef<u64>)]
+///     done: Percent,
+/// }
+/// ```
+pub struct TryFromIntoRef<U>(PhantomData<fn() -> U>);
+
+impl<'de, T, U> Deserialize<'de, T> for TryFromIntoRef<U>
+where
+    U: Deserialize<'de> + 'static,
+    T: TryFrom<U> + Send,
+    T::Error: Display,
+{
+    fn deserialize_into<'out>(
+        out: &'out mut Option<T>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        <TryFromInto<U> as Deserialize<'de, T>>::deserialize_into(out, state)
+    }
+
+    fn expecting() -> Cow<'static, str> {
+        U::expecting()
+    }
+
+    fn initial_value() -> Option<T> {
+        <TryFromInto<U> as Deserialize<'de, T>>::initial_value()
+    }
+
+    #[inline]
+    fn __private_atom_into(
+        out: &mut Option<T>,
+        atom: Atom,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        <TryFromInto<U> as Deserialize<'de, T>>::__private_atom_into(out, atom, state)
+    }
+
+    #[inline]
+    fn __private_borrowed_atom_into(
+        out: &mut Option<T>,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        <TryFromInto<U> as Deserialize<'de, T>>::__private_borrowed_atom_into(out, atom, state)
+    }
+}
+
+impl<T, U> Serialize<T> for TryFromIntoRef<U>
+where
+    T: Sync + ?Sized,
+    for<'x> &'x T: TryInto<U>,
+    for<'x> <&'x T as TryInto<U>>::Error: Display,
+    U: Serialize + Send + 'static,
+{
+    fn serialize<'a>(value: &'a T, state: &mut State) -> Result<Emit<'a>, Error> {
+        let value: U = value.try_into().map_err(conversion_error)?;
+        Ok(Emit::Forward(SerializeHandle::arena(value, state)))
+    }
+
+    fn is_optional(value: &T) -> bool {
+        TryInto::<U>::try_into(value).is_ok_and(|x| U::is_optional(&x))
+    }
+}
+
+/// Uses the [`Default`] if the value is null.
+///
+/// A null (or a value that is null in the format, like `~` in YAML) is
+/// replaced with the default value, everything else is deserialized with
+/// the adapter `A` (by default [`Same`]).  This is for data that sends
+/// `null` instead of an empty list or a zero.  Missing values are handled
+/// by the inner adapter, combine it with `#[deser(default)]` to also
+/// accept them.  Serialization uses the inner adapter.
+///
+/// ```
+/// use deser::Deserialize;
+/// use deser::adapters::DefaultOnNull;
+///
+/// #[derive(Deserialize)]
+/// pub struct Item {
+///     #[deser(as = DefaultOnNull)]
+///     tags: Vec<String>,
+///     #[deser(as = DefaultOnNull, default)]
+///     count: u32,
+/// }
+///
+/// let item: Item = deser_json::from_str(r#"{"tags": null}"#).unwrap();
+/// assert!(item.tags.is_empty());
+/// assert_eq!(item.count, 0);
+/// ```
+///
+/// In formats where keys can be given more than once (see
+/// [`ContainerShape::set_multimap`]) collections receive the values of all
+/// occurrences of their key from the inner adapter, nulls among them are
+/// not replaced.
+pub struct DefaultOnNull<A = Same>(PhantomData<fn() -> A>);
+
+/// The sink of [`DefaultOnNull`].
+///
+/// The sink of the value is only created once a value arrives that is not
+/// null, as creating it can already set the slot (like it does for
+/// optionals).
+enum DefaultOnNullSink<'a, 'de, T> {
+    Pending(&'a mut Option<T>),
+    Active(SinkHandle<'a, 'de>),
+}
+
+impl<'a, 'de, T: Default + Send> DefaultOnNullSink<'a, 'de, T> {
+    /// Returns the sink of the value, creates it with the adapter `A` if
+    /// needed.
+    fn active<A: Deserialize<'de, T>>(&mut self, state: &mut State) -> &mut SinkHandle<'a, 'de> {
+        if let DefaultOnNullSink::Pending(..) = self
+            && let DefaultOnNullSink::Pending(out) =
+                core::mem::replace(self, DefaultOnNullSink::Active(SinkHandle::null()))
+        {
+            *self = DefaultOnNullSink::Active(A::deserialize_into(out, state));
+        }
+        match self {
+            DefaultOnNullSink::Active(sink) => sink,
+            DefaultOnNullSink::Pending(..) => unreachable!(),
+        }
+    }
+
+    /// Uses the default if the atom is null and the first event.
+    fn default_on_null(&mut self, atom: &Atom) -> bool {
+        if let DefaultOnNullSink::Pending(..) = self
+            && is_null_atom(atom)
+            && let DefaultOnNullSink::Pending(out) =
+                core::mem::replace(self, DefaultOnNullSink::Active(SinkHandle::null()))
+        {
+            *out = Some(T::default());
+            return true;
+        }
+        false
+    }
+}
+
+impl<'a, 'de, T, A> Sink<'de> for Adapted<A, DefaultOnNullSink<'a, 'de, T>>
+where
+    T: Default + Send,
+    A: Deserialize<'de, T>,
+{
+    fn atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        if self.default_on_null(&atom) {
+            return Ok(());
+        }
+        self.active::<A>(state).atom(atom, state)
+    }
+
+    fn borrowed_atom(&mut self, atom: Atom<'de>, state: &mut State) -> Result<(), Error> {
+        if self.default_on_null(&atom) {
+            return Ok(());
+        }
+        self.active::<A>(state).borrowed_atom(atom, state)
+    }
+
+    fn map(&mut self, state: &mut State) -> Result<(), Error> {
+        self.active::<A>(state).map(state)
+    }
+
+    fn seq(&mut self, state: &mut State) -> Result<(), Error> {
+        self.active::<A>(state).seq(state)
+    }
+
+    fn next_key(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+        self.active::<A>(state).next_key(state)
+    }
+
+    fn next_value(&mut self, state: &mut State) -> Result<SinkHandle<'_, 'de>, Error> {
+        self.active::<A>(state).next_value(state)
+    }
+
+    fn __private_key_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        self.active::<A>(state).__private_key_atom(atom, state)
+    }
+
+    fn __private_value_atom(&mut self, atom: Atom, state: &mut State) -> Result<(), Error> {
+        self.active::<A>(state).__private_value_atom(atom, state)
+    }
+
+    fn __private_borrowed_key_atom(
+        &mut self,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        self.active::<A>(state)
+            .__private_borrowed_key_atom(atom, state)
+    }
+
+    fn __private_borrowed_value_atom(
+        &mut self,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        self.active::<A>(state)
+            .__private_borrowed_value_atom(atom, state)
+    }
+
+    fn value_for_key(
+        &mut self,
+        key: &str,
+        state: &mut State,
+    ) -> Result<Option<SinkHandle<'_, 'de>>, Error> {
+        self.active::<A>(state).value_for_key(key, state)
+    }
+
+    fn recover(&mut self, err: Error, state: &mut State) -> Result<(), Error> {
+        self.active::<A>(state).recover(err, state)
+    }
+
+    fn finish(&mut self, state: &mut State) -> Result<(), Error> {
+        self.active::<A>(state).finish(state)
+    }
+
+    fn expecting(&self) -> Cow<'_, str> {
+        match &**self {
+            DefaultOnNullSink::Active(sink) => sink.expecting(),
+            // the sink of the value does not exist yet
+            DefaultOnNullSink::Pending(..) => A::expecting(),
+        }
+    }
+}
+
+impl<'de, T: Default + Send, A: Deserialize<'de, T>> Deserialize<'de, T> for DefaultOnNull<A> {
+    fn deserialize_into<'out>(
+        out: &'out mut Option<T>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        adapted::arena_sink::<A, _>(DefaultOnNullSink::Pending(out), state)
+    }
+
+    fn expecting() -> Cow<'static, str> {
+        A::expecting()
+    }
+
+    fn describe_type(d: &mut dyn Describe) {
+        A::describe_type(d)
+    }
+
+    fn initial_value() -> Option<T> {
+        A::initial_value()
+    }
+
+    #[inline]
+    fn __private_atom_into(
+        out: &mut Option<T>,
+        atom: Atom,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        if is_null_atom(&atom) {
+            *out = Some(T::default());
+            return Ok(());
+        }
+        A::__private_atom_into(out, atom, state)
+    }
+
+    #[inline]
+    fn __private_borrowed_atom_into(
+        out: &mut Option<T>,
+        atom: Atom<'de>,
+        state: &mut State,
+    ) -> Result<(), Error> {
+        if is_null_atom(&atom) {
+            *out = Some(T::default());
+            return Ok(());
+        }
+        A::__private_borrowed_atom_into(out, atom, state)
+    }
+
+    fn __private_is_bytes() -> bool {
+        A::__private_is_bytes()
+    }
+
+    fn __private_vec_from_bytes(bytes: Vec<u8>) -> Option<Vec<T>> {
+        A::__private_vec_from_bytes(bytes)
+    }
+
+    fn __private_array_from_bytes<const N: usize>(bytes: &[u8]) -> Option<[T; N]> {
+        A::__private_array_from_bytes::<N>(bytes)
+    }
+
+    // the occurrences of a repeated key go to the inner adapter
+
+    fn __private_collects() -> bool {
+        A::__private_collects()
+    }
+
+    fn __private_collect_into<'out>(
+        out: &'out mut Option<T>,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        A::__private_collect_into(out, state)
+    }
+
+    fn __private_collect_update<'out>(
+        value: &'out mut T,
+        first: bool,
+        state: &mut State,
+    ) -> SinkHandle<'out, 'de> {
+        A::__private_collect_update(value, first, state)
+    }
+
+    fn __private_collect_empty() -> Option<T> {
+        A::__private_collect_empty()
+    }
+}
+
+impl<T: ?Sized, A: Serialize<T>> Serialize<T> for DefaultOnNull<A> {
+    fn serialize<'a>(value: &'a T, state: &mut State) -> Result<Emit<'a>, Error> {
+        A::serialize(value, state)
+    }
+
+    fn finish(value: &T, state: &mut State) -> Result<(), Error> {
+        A::finish(value, state)
+    }
+
+    fn is_optional(value: &T) -> bool {
+        A::is_optional(value)
+    }
+
+    fn container_shape(value: &T) -> ContainerShape {
+        A::container_shape(value)
+    }
+
+    fn describe(value: &T, d: &mut dyn Describe) {
+        A::describe(value, d)
+    }
+
+    #[inline]
+    fn __private_begin<'a>(value: &'a T, state: &mut State) -> Result<Begin<'a>, Error> {
+        A::__private_begin(value, state)
+    }
+
+    fn __private_slice_as_bytes(val: &[T]) -> Option<Cow<'_, [u8]>>
+    where
+        T: Sized,
+    {
+        A::__private_slice_as_bytes(val)
     }
 }
 

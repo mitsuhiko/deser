@@ -19,6 +19,7 @@ mod test_event_data;
 mod test_expecting;
 mod test_ext;
 mod test_facade;
+mod test_forms;
 mod test_implicit;
 #[cfg(feature = "io")]
 mod test_io;
@@ -36,6 +37,7 @@ mod test_soundness;
 mod test_std;
 mod test_structs;
 mod test_tagged;
+mod test_time_units;
 mod test_unknown;
 mod test_update;
 mod test_variant_adapters;

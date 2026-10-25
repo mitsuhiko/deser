@@ -4,6 +4,7 @@
 //!
 //! These are the tests of writing JSON.  Reading is tested for all dialects
 //! (JSON, JSONC and JSON5) by `deser-template-json`.
+mod test_adapters;
 mod test_pretty;
 mod test_ser;
 #[cfg(feature = "io")]

@@ -844,3 +844,25 @@ fn test_multimap() {
         }
     );
 }
+
+#[test]
+fn test_one_or_many() {
+    use deser::adapters::OneOrMany;
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Query {
+        #[deser(as = OneOrMany)]
+        tag: Vec<String>,
+        #[deser(as = OneOrMany)]
+        page: Vec<u32>,
+    }
+
+    // repeated keys are collected
+    let query: Query = from_str("tag=a&page=1&tag=b").unwrap();
+    assert_eq!(query.tag, ["a", "b"]);
+    assert_eq!(query.page, [1]);
+    // missing keys are empty
+    let query: Query = from_str("tag=a").unwrap();
+    assert_eq!(query.tag, ["a"]);
+    assert!(query.page.is_empty());
+}

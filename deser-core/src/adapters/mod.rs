@@ -52,8 +52,18 @@
 //! * [`DisplayFromStr`]: serializes with [`Display`](core::fmt::Display) and
 //!   deserializes with [`FromStr`](core::str::FromStr).
 //! * [`FromInto`] and [`TryFromInto`]: convert from and into another type.
+//!   [`FromIntoRef`] and [`TryFromIntoRef`] convert a reference when
+//!   serializing, so the value does not need to be cloned.
 //! * [`DefaultOnError`]: uses the [`Default`] if a value cannot be
 //!   deserialized.
+//! * [`DefaultOnNull`]: uses the [`Default`] if the value is null.
+//! * [`PickFirst`]: tries adapters in order until one of them accepts the
+//!   value (like numbers that are also sent as strings).
+//! * [`OneOrMany`]: a collection that also accepts a single element.
+//! * [`MapAsPairs`] and [`PairsAsMap`]: a map that is written as a
+//!   sequence of key and value pairs and the other way around.
+//! * [`Seconds`], [`Millis`], [`Micros`] and [`Nanos`]: durations and
+//!   timestamps as numbers of a unit.
 //! * [`VecSkipError`] and [`MapSkipError`]: skip elements and entries that
 //!   cannot be deserialized.
 //! * [`Borrowed`]: deserializes a `Cow<str>` or `Cow<[u8]>` borrowed from the
@@ -242,8 +252,10 @@ use crate::ser::{Begin, Describe, Emit, PlainSink, Serialize};
 
 pub(crate) mod bytes;
 mod derived;
+mod forms;
 mod stock;
 mod text;
+mod time;
 
 pub use self::bytes::{
     Base64, Base64NoPad, Base64Url, Base64UrlNoPad, BytesBuf, BytesEncoding, BytesFallback,
@@ -252,11 +264,15 @@ pub use self::bytes::{
 pub use self::derived::Derived;
 #[doc(hidden)]
 pub use self::derived::{DerivedDeserialize, DerivedSerialize};
+pub use self::forms::{
+    MapAsPairs, OneOrMany, OneOrManyForm, PairsAsMap, PickFirst, PreferMany, PreferOne,
+};
 pub use self::stock::{
-    Borrowed, DefaultOnError, DisplayFromStr, Flag, FromInto, MapSkipError, TryFromInto,
-    VecSkipError,
+    Borrowed, DefaultOnError, DefaultOnNull, DisplayFromStr, Flag, FromInto, FromIntoRef,
+    MapSkipError, TryFromInto, TryFromIntoRef, VecSkipError,
 };
 pub use self::text::{Separated, SkipBlank, TrimWhitespace};
+pub use self::time::{Micros, Millis, Nanos, Seconds, TimeValue, UnitFormat};
 // used for the maps of other crates
 #[allow(unused_imports)]
 pub(crate) use self::stock::skip_map_sink;

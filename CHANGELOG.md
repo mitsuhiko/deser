@@ -2,6 +2,25 @@
 
 All notable changes to deser are documented here.
 
+## Unreleased
+
+- Added adapters for values that come in more than one form:
+  `OneOrMany` (a collection that also accepts a single element, written
+  as the element with `PreferOne` or always as sequence with
+  `PreferMany`), `PickFirst` (tries two to four adapters in order, like
+  `PickFirst<(_, DisplayFromStr)>` for numbers that are also sent as
+  strings), `MapAsPairs` (a map written as sequence of key and value
+  pairs, for keys a format cannot have as map keys) and `PairsAsMap` (a
+  `Vec<(K, V)>` written as map, which keeps the order and repeated keys).
+- Added `DefaultOnNull`, which uses the default for null values.
+- Added `FromIntoRef` and `TryFromIntoRef`, which convert a reference
+  when serializing so that the value does not need to be `Clone`.
+- Added the time unit adapters `Seconds`, `Millis`, `Micros` and `Nanos`
+  for durations and timestamps as numbers (written as `i64`, `f64` or
+  `String`).  They support `std::time::Duration`, `SystemTime`, the
+  well-known `ext::Duration` and `ext::Timestamp` and the duration and
+  UTC timestamp types of `chrono`, `jiff` and `time`.
+
 ## 0.10.1
 
 - `deser-jsonc`, `deser-json5` and `deser-hj` no longer depend on

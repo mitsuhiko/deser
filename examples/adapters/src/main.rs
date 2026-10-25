@@ -10,10 +10,17 @@
 //! Some adapters handle errors: `DefaultOnError` falls back to the default
 //! and `VecSkipError` skips elements that fail to deserialize, which helps
 //! with data from newer versions of a program.
+//!
+//! Others accept a value in more than one form: `OneOrMany` takes a single
+//! element for a list, `PickFirst` tries adapters in order and `Seconds`
+//! reads and writes durations as numbers.
 use std::collections::BTreeMap;
 use std::net::{IpAddr, SocketAddr};
+use std::time::Duration;
 
-use deser::adapters::{As, DefaultOnError, DisplayFromStr, FromInto, VecSkipError};
+use deser::adapters::{
+    As, DefaultOnError, DisplayFromStr, FromInto, OneOrMany, PickFirst, Seconds, VecSkipError,
+};
 use deser::{Deserialize, Serialize};
 
 /// A type from another crate that knows nothing about deser.
@@ -59,6 +66,15 @@ pub struct Config {
     /// an invalid value becomes the default
     #[deser(as = DefaultOnError, default)]
     workers: u32,
+    /// a single address or a list of them
+    #[deser(as = OneOrMany<DisplayFromStr>)]
+    allow: Vec<IpAddr>,
+    /// a number, also when it is sent as a string
+    #[deser(as = PickFirst<(_, DisplayFromStr)>)]
+    port: u16,
+    /// a duration as number of seconds
+    #[deser(as = Seconds<f64>)]
+    timeout: Duration,
 }
 
 fn main() {
@@ -68,7 +84,10 @@ fn main() {
             "aliases": {"local": ["127.0.0.1", "::1"]},
             "color": [255, 128, 0],
             "protocols": ["http", "gopher", "https"],
-            "workers": "many"
+            "workers": "many",
+            "allow": "10.0.0.0",
+            "port": "443",
+            "timeout": 2.5
         }"#,
     )
     .unwrap();
@@ -77,12 +96,15 @@ fn main() {
     assert_eq!(config.color, Rgb(255, 128, 0));
     assert_eq!(config.protocols.len(), 2);
     assert_eq!(config.workers, 0);
+    assert_eq!(config.allow.len(), 1);
+    assert_eq!(config.port, 443);
+    assert_eq!(config.timeout, Duration::from_millis(2500));
 
     let json = deser_json::to_string(&config).unwrap();
     println!("{}", json);
     assert_eq!(
         json,
-        r#"{"listen":"127.0.0.1:8080","upstream":null,"aliases":{"local":["127.0.0.1","::1"]},"color":[255,128,0],"protocols":["http","https"],"workers":0}"#
+        r#"{"listen":"127.0.0.1:8080","upstream":null,"aliases":{"local":["127.0.0.1","::1"]},"color":[255,128,0],"protocols":["http","https"],"workers":0,"allow":"10.0.0.0","port":443,"timeout":2.5}"#
     );
 
     // outside of the derive the `As` wrapper applies an adapter
