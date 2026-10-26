@@ -2,7 +2,7 @@
 
 All notable changes to deser are documented here.
 
-## Unreleased
+## 0.10.2
 
 - Added adapters for values that come in more than one form:
   `OneOrMany` (a collection that also accepts a single element, written
