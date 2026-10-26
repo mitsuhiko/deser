@@ -20,6 +20,22 @@ All notable changes to deser are documented here.
   `String`).  They support `std::time::Duration`, `SystemTime`, the
   well-known `ext::Duration` and `ext::Timestamp` and the duration and
   UTC timestamp types of `chrono`, `jiff` and `time`.
+- `Limits` are now enforced inside raw values.  The containers, items,
+  events and string or byte lengths of a raw value of `deser-json`,
+  `deser-msgpack` and `deser-cbor` count against the limits, previously
+  the whole raw value counted as a single opaque atom.
+- The `max_len` limit now also applies to the original text of implicit
+  scalars (values whose type was inferred from text, as in YAML).
+- `deser-yaml` now resolves an alias to the most recent definition of
+  its anchor when the anchor is redefined inside a collection that is
+  itself still open under the same name, rather than rejecting it as a
+  recursive alias or resolving it to the outer collection.
+- Fixed parsing of `ext::Timestamp` across the full range of seconds:
+  timestamps near `i64::MIN` round-trip and oversized years are reported
+  as errors instead of overflowing.
+- Fixed parsing of negative `ext::Duration` values down to `i64::MIN`
+  seconds and carry rounded nanoseconds into whole seconds when a
+  duration is deserialized from a float just below a whole second.
 
 ## 0.10.1
 
